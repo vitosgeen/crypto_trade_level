@@ -54,3 +54,5 @@ go test ./...
 - `internal/usecase/`: Business logic (Trading engine, Level evaluation).
 - `internal/infrastructure/`: External adapters (Exchange, Storage, Logger).
 - `internal/web/`: HTTP handlers and templates.
+
+### created by Vitos with ❤️ 🚀 supercharged by Antigravity 🚀 superfast by Antigravity 🚀
