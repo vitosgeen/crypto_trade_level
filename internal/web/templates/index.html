@@ -88,12 +88,12 @@
                 <input type="number" name="cool_down_ms" placeholder="Cooldown (ms)" value="5000" required>
                 <div style="margin-top: 10px;">
                     <label>Tiers (%):</label>
-                    <input type="number" step="0.0001" name="tier1" placeholder="Tier 1 (0.005)" value="0.005" required
+                    <input type="number" step="0.01" name="tier1" placeholder="Tier 1 (0.5)" value="0.5" required
                         style="width: 80px;">
-                    <input type="number" step="0.0001" name="tier2" placeholder="Tier 2 (0.003)" value="0.003" required
+                    <input type="number" step="0.01" name="tier2" placeholder="Tier 2 (0.3)" value="0.3" required
                         style="width: 80px;">
-                    <input type="number" step="0.0001" name="tier3" placeholder="Tier 3 (0.0015)" value="0.0015"
-                        required style="width: 80px;">
+                    <input type="number" step="0.01" name="tier3" placeholder="Tier 3 (0.15)" value="0.15" required
+                        style="width: 80px;">
                 </div>
                 <button type="submit" style="margin-top: 10px;">Add Level</button>
             </form>
@@ -132,6 +132,10 @@
             <th>Symbol</th>
             <th>Level Price</th>
             <th>Current Price</th>
+            <th>Side</th>
+            <th>Tier 1</th>
+            <th>Tier 2</th>
+            <th>Tier 3</th>
             <th>Size</th>
             <th>Lev</th>
             <th>Cooldown</th>
@@ -145,6 +149,10 @@
             <td>{{ .Symbol }}</td>
             <td>{{ .LevelPrice }}</td>
             <td>{{ .CurrentPrice }}</td>
+            <td>{{ .Side }}</td>
+            <td>{{ printf "%.2f" .Tier1 }}</td>
+            <td>{{ printf "%.2f" .Tier2 }}</td>
+            <td>{{ printf "%.2f" .Tier3 }}</td>
             <td>{{ .BaseSize }}</td>
             <td>{{ .Leverage }}</td>
             <td>{{ .CoolDownMs }}</td>

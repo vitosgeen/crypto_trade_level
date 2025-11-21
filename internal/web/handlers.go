@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/vitos/crypto_trade_level/internal/domain"
+	"github.com/vitos/crypto_trade_level/internal/usecase"
 	"go.uber.org/zap"
 )
 
@@ -21,19 +22,47 @@ func InitTemplates(dir string) error {
 	return err
 }
 
+type LevelView struct {
+	*domain.Level
+	CurrentPrice float64
+	Side         domain.Side
+	Tier1        float64
+	Tier2        float64
+	Tier3        float64
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// Fetch initial data
 	levels, _ := s.levelRepo.ListLevels(r.Context())
 
-	type LevelView struct {
-		*domain.Level
-		CurrentPrice float64
-	}
-
 	var views []LevelView
+	evaluator := usecase.NewLevelEvaluator()
+
 	for _, l := range levels {
 		price := s.service.GetLatestPrice(l.Symbol)
-		views = append(views, LevelView{Level: l, CurrentPrice: price})
+
+		// Fetch tiers
+		tiers, err := s.levelRepo.GetSymbolTiers(r.Context(), l.Exchange, l.Symbol)
+		if err != nil || tiers == nil {
+			// Defaults if not found
+			tiers = &domain.SymbolTiers{
+				Tier1Pct: 0.005,
+				Tier2Pct: 0.003,
+				Tier3Pct: 0.0015,
+			}
+		}
+
+		side := evaluator.DetermineSide(l.LevelPrice, price)
+		boundaries := evaluator.CalculateBoundaries(l, tiers, side)
+
+		views = append(views, LevelView{
+			Level:        l,
+			CurrentPrice: price,
+			Side:         side,
+			Tier1:        boundaries[0],
+			Tier2:        boundaries[1],
+			Tier3:        boundaries[2],
+		})
 	}
 
 	data := map[string]interface{}{
@@ -49,15 +78,34 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 	levels, _ := s.levelRepo.ListLevels(r.Context())
 
-	type LevelView struct {
-		*domain.Level
-		CurrentPrice float64
-	}
-
 	var views []LevelView
+	evaluator := usecase.NewLevelEvaluator()
+
 	for _, l := range levels {
 		price := s.service.GetLatestPrice(l.Symbol)
-		views = append(views, LevelView{Level: l, CurrentPrice: price})
+
+		// Fetch tiers
+		tiers, err := s.levelRepo.GetSymbolTiers(r.Context(), l.Exchange, l.Symbol)
+		if err != nil || tiers == nil {
+			// Defaults if not found
+			tiers = &domain.SymbolTiers{
+				Tier1Pct: 0.001,
+				Tier2Pct: 0.002,
+				Tier3Pct: 0.003,
+			}
+		}
+
+		side := evaluator.DetermineSide(l.LevelPrice, price)
+		boundaries := evaluator.CalculateBoundaries(l, tiers, side)
+
+		views = append(views, LevelView{
+			Level:        l,
+			CurrentPrice: price,
+			Side:         side,
+			Tier1:        boundaries[0],
+			Tier2:        boundaries[1],
+			Tier3:        boundaries[2],
+		})
 	}
 
 	if err := templates.ExecuteTemplate(w, "levels_table", views); err != nil {
@@ -79,6 +127,11 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	tier1, _ := strconv.ParseFloat(r.FormValue("tier1"), 64)
 	tier2, _ := strconv.ParseFloat(r.FormValue("tier2"), 64)
 	tier3, _ := strconv.ParseFloat(r.FormValue("tier3"), 64)
+
+	// Convert percentage to decimal (e.g. 1.0 -> 0.01)
+	tier1 = tier1 / 100
+	tier2 = tier2 / 100
+	tier3 = tier3 / 100
 
 	exchange := r.FormValue("exchange")
 	symbol := r.FormValue("symbol")

@@ -132,6 +132,7 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 	action, size := s.engine.Evaluate(level, boundaries, prevPrice, currPrice, side)
 
 	if action != ActionNone {
+		log.Printf("AUDIT: Action Triggered: %s. Level: %s, Symbol: %s, Side: %s, Size: %f", action, level.ID, level.Symbol, side, size)
 		log.Printf("Triggered: %s on %s %s (Side: %s, Size: %f)", action, level.Exchange, level.Symbol, side, size)
 
 		// 4. Execute Trade

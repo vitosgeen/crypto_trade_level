@@ -69,6 +69,12 @@ func (b *BybitAdapter) sendRequest(ctx context.Context, method, path string, pay
 		jsonBody, _ := json.Marshal(payload)
 		body = jsonBody
 		paramsStr = string(jsonBody)
+	} else if method == "GET" {
+		// For GET, params are in the query string
+		// Extract query params from path
+		if idx := strings.Index(path, "?"); idx != -1 {
+			paramsStr = path[idx+1:]
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, b.baseURL+path, bytes.NewBuffer(body))
@@ -253,7 +259,9 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 		return nil, err
 	}
 
+	// Debug: Print raw response if empty
 	if len(result.Result.List) == 0 {
+		fmt.Printf("DEBUG: Position List Empty. Raw: %s\n", string(resp))
 		return &domain.Position{Symbol: symbol}, nil
 	}
 
