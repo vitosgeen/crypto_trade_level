@@ -220,16 +220,16 @@
                     priceHistory[selectedLevelId].shift();
                 }
 
-                // Calculate BOTH zone tiers (LONG and SHORT)
-                // LONG zone (Support): Tiers are BELOW level (Level * (1-t))
-                const longTier1 = levelPrice * (1 - 0.001);  // -0.1%
-                const longTier2 = levelPrice * (1 - 0.002);  // -0.2%
-                const longTier3 = levelPrice * (1 - 0.003);  // -0.3%
+                // Calculate BOTH zone tiers (LONG and SHORT) per spec
+                // LONG zone (price ABOVE level): Tiers are ABOVE level (Level * (1+t))
+                const longTier1 = levelPrice * (1 + 0.005);  // +0.5%
+                const longTier2 = levelPrice * (1 + 0.003);  // +0.3%
+                const longTier3 = levelPrice * (1 + 0.0015); // +0.15%
 
-                // SHORT zone (Resistance): Tiers are ABOVE level (Level * (1+t))
-                const shortTier1 = levelPrice * (1 + 0.001);  // +0.1%
-                const shortTier2 = levelPrice * (1 + 0.002);  // +0.2%
-                const shortTier3 = levelPrice * (1 + 0.003);  // +0.3%
+                // SHORT zone (price BELOW level): Tiers are BELOW level (Level * (1-t))
+                const shortTier1 = levelPrice * (1 - 0.005);  // -0.5%
+                const shortTier2 = levelPrice * (1 - 0.003);  // -0.3%
+                const shortTier3 = levelPrice * (1 - 0.0015); // -0.15%
 
                 // Fixed scale showing both zones with padding
                 const allPrices = [levelPrice, currentPrice, longTier3, shortTier3]; // Use outermost tiers
@@ -329,19 +329,19 @@
                                             font: { size: 11, weight: 'bold' }
                                         }
                                     },
-                                    // LONG Zone Background (Below Level)
+                                    // LONG Zone Background (Above Level - Green)
                                     longZone: {
-                                        type: 'box',
-                                        yMin: minPrice,
-                                        yMax: levelPrice,
-                                        backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                                        borderWidth: 0
-                                    },
-                                    // SHORT Zone Background (Above Level)
-                                    shortZone: {
                                         type: 'box',
                                         yMin: levelPrice,
                                         yMax: maxPrice,
+                                        backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                                        borderWidth: 0
+                                    },
+                                    // SHORT Zone Background (Below Level - Red)
+                                    shortZone: {
+                                        type: 'box',
+                                        yMin: minPrice,
+                                        yMax: levelPrice,
                                         backgroundColor: 'rgba(220, 53, 69, 0.1)',
                                         borderWidth: 0
                                     },
