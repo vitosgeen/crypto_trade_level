@@ -1,4 +1,4 @@
-.PHONY: run build test clean deps
+.PHONY: run build test clean deps start stop force-stop
 
 APP_NAME=bot
 CMD_PATH=cmd/bot/main.go
@@ -38,3 +38,14 @@ stop:
 	else \
 		echo "No bot.pid file found."; \
 	fi
+
+force-stop:
+	@echo "Force stopping all bot processes..."
+	@# Kill process holding the port first
+	@fuser -k 8078/tcp >/dev/null 2>&1 || true
+	@# Kill the binary if it exists
+	@pkill -x "bot" || true
+	@# Kill go run process, being careful not to kill make
+	@pgrep -f "go run.*cmd/bot/main.go" | grep -v $$ | xargs -r kill -9 || true
+	@rm -f bot.pid
+	@echo "All bot processes stopped and port 8078 freed."

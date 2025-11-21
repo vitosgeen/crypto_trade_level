@@ -26,9 +26,8 @@ type LevelView struct {
 	*domain.Level
 	CurrentPrice float64
 	Side         domain.Side
-	Tier1        float64
-	Tier2        float64
-	Tier3        float64
+	LongTiers    []float64
+	ShortTiers   []float64
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -53,15 +52,15 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 
 		side := evaluator.DetermineSide(l.LevelPrice, price)
-		boundaries := evaluator.CalculateBoundaries(l, tiers, side)
+		longTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideLong)
+		shortTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideShort)
 
 		views = append(views, LevelView{
 			Level:        l,
 			CurrentPrice: price,
 			Side:         side,
-			Tier1:        boundaries[0],
-			Tier2:        boundaries[1],
-			Tier3:        boundaries[2],
+			LongTiers:    longTiers,
+			ShortTiers:   shortTiers,
 		})
 	}
 
@@ -96,20 +95,21 @@ func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 		}
 
 		side := evaluator.DetermineSide(l.LevelPrice, price)
-		boundaries := evaluator.CalculateBoundaries(l, tiers, side)
+		longTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideLong)
+		shortTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideShort)
 
 		views = append(views, LevelView{
 			Level:        l,
 			CurrentPrice: price,
 			Side:         side,
-			Tier1:        boundaries[0],
-			Tier2:        boundaries[1],
-			Tier3:        boundaries[2],
+			LongTiers:    longTiers,
+			ShortTiers:   shortTiers,
 		})
 	}
 
 	if err := templates.ExecuteTemplate(w, "levels_table", views); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", 500)
 	}
 }
 
