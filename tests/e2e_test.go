@@ -1,0 +1,123 @@
+package tests
+
+import (
+	"context"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/vitos/crypto_trade_level/internal/domain"
+	"github.com/vitos/crypto_trade_level/internal/infrastructure/storage"
+	"github.com/vitos/crypto_trade_level/internal/usecase"
+)
+
+type MockExchange struct {
+	Price      float64
+	BuyCalled  bool
+	SellCalled bool
+}
+
+func (m *MockExchange) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
+	return m.Price, nil
+}
+func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string) error {
+	m.BuyCalled = true
+	return nil
+}
+func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string) error {
+	m.SellCalled = true
+	return nil
+}
+func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error { return nil }
+func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
+	return nil, nil
+}
+
+func TestEndToEnd_LevelDefense(t *testing.T) {
+	// Enable logs
+	// log.SetOutput(os.Stdout) // Default is stderr which go test shows on failure
+
+	// 1. Setup SQLite
+	dbPath := "test_e2e.db"
+	os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := storage.NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to init store: %v", err)
+	}
+
+	// 2. Setup Mock Exchange
+	mockEx := &MockExchange{Price: 51000.0}
+
+	// 3. Setup Service
+	svc := usecase.NewLevelService(store, store, mockEx)
+
+	// 4. Create Level & Tiers
+	ctx := context.Background()
+	level := &domain.Level{
+		ID:         "test-level-1",
+		Exchange:   "mock",
+		Symbol:     "BTCUSDT",
+		LevelPrice: 50000.0,
+		BaseSize:   0.1,
+		CoolDownMs: 0,
+		CreatedAt:  time.Now(),
+	}
+	if err := store.SaveLevel(ctx, level); err != nil {
+		t.Fatalf("Failed to save level: %v", err)
+	}
+
+	tiers := &domain.SymbolTiers{
+		Exchange:  "mock",
+		Symbol:    "BTCUSDT",
+		Tier1Pct:  0.005,  // 50250
+		Tier2Pct:  0.003,  // 50150
+		Tier3Pct:  0.0015, // 50075
+		UpdatedAt: time.Now(),
+	}
+	if err := store.SaveSymbolTiers(ctx, tiers); err != nil {
+		t.Fatalf("Failed to save tiers: %v", err)
+	}
+
+	// Verify Tiers saved
+	savedTiers, err := store.GetSymbolTiers(ctx, "mock", "BTCUSDT")
+	if err != nil {
+		t.Fatalf("Failed to get tiers: %v", err)
+	}
+	if savedTiers.Tier1Pct != 0.005 {
+		t.Fatalf("Saved tiers mismatch: %v", savedTiers)
+	}
+
+	// 5. Run Scenario
+	// Initial Tick (Price 51000)
+	if err := svc.ProcessTick(ctx, "mock", "BTCUSDT", 51000.0); err != nil {
+		t.Fatalf("ProcessTick 1 failed: %v", err)
+	}
+
+	// Move Price to 50240 (Definitely below Tier1: 50250)
+	if err := svc.ProcessTick(ctx, "mock", "BTCUSDT", 50240.0); err != nil {
+		t.Fatalf("ProcessTick 2 failed: %v", err)
+	}
+
+	// Verify Trade Executed
+	if !mockEx.BuyCalled {
+		t.Error("Expected MarketBuy to be called for Tier1 trigger")
+	}
+
+	// Verify Trade Saved
+	trades, err := store.ListTrades(ctx, 10)
+	if err != nil {
+		t.Fatalf("Failed to list trades: %v", err)
+	}
+	if len(trades) != 1 {
+		t.Errorf("Expected 1 trade, got %d", len(trades))
+	} else {
+		if trades[0].Side != domain.SideLong {
+			t.Errorf("Expected Long trade, got %s", trades[0].Side)
+		}
+		if trades[0].Size != 0.1 {
+			t.Errorf("Expected Size 0.1, got %f", trades[0].Size)
+		}
+	}
+}

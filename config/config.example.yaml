@@ -1,0 +1,12 @@
+exchanges:
+  - name: "bybit"
+    api_key: "YOUR_API_KEY"
+    api_secret: "YOUR_API_SECRET"
+    ws_endpoint: "wss://stream.bybit.com/v5/public/linear"
+    rest_endpoint: "https://api.bybit.com" # or https://api-demo.bybit.com for testnet
+
+polling:
+  levels_reload_ms: 5000
+
+logging:
+  level: "info"

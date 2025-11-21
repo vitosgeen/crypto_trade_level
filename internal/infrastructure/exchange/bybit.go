@@ -1,0 +1,423 @@
+package exchange
+
+import (
+	"bytes"
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/vitos/crypto_trade_level/internal/domain"
+)
+
+const (
+	BybitBaseURL = "https://api.bybit.com"
+	BybitWSURL   = "wss://stream.bybit.com/v5/public/linear"
+)
+
+type BybitAdapter struct {
+	apiKey    string
+	apiSecret string
+	baseURL   string
+	wsURL     string
+	client    *http.Client
+	wsConn    *websocket.Conn
+	wsDone    chan struct{}
+	callbacks []func(symbol string, price float64)
+	mu        sync.Mutex
+}
+
+func NewBybitAdapter(apiKey, apiSecret, baseURL, wsURL string) *BybitAdapter {
+	return &BybitAdapter{
+		apiKey:    apiKey,
+		apiSecret: apiSecret,
+		baseURL:   baseURL,
+		wsURL:     wsURL,
+		client:    &http.Client{Timeout: 10 * time.Second},
+		wsDone:    make(chan struct{}),
+	}
+}
+
+// --- REST API ---
+
+func (b *BybitAdapter) sign(params string, timestamp int64, recvWindow int) string {
+	// timestamp + apiKey + recvWindow + params
+	toSign := fmt.Sprintf("%d%s%d%s", timestamp, b.apiKey, recvWindow, params)
+	h := hmac.New(sha256.New, []byte(b.apiSecret))
+	h.Write([]byte(toSign))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (b *BybitAdapter) sendRequest(ctx context.Context, method, path string, payload map[string]interface{}) ([]byte, error) {
+	timestamp := time.Now().UnixMilli()
+	recvWindow := 5000
+
+	var body []byte
+	var paramsStr string
+
+	if payload != nil {
+		jsonBody, _ := json.Marshal(payload)
+		body = jsonBody
+		paramsStr = string(jsonBody)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, b.baseURL+path, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+
+	signature := b.sign(paramsStr, timestamp, recvWindow)
+
+	req.Header.Set("X-BAPI-API-KEY", b.apiKey)
+	req.Header.Set("X-BAPI-TIMESTAMP", strconv.FormatInt(timestamp, 10))
+	req.Header.Set("X-BAPI-SIGN", signature)
+	req.Header.Set("X-BAPI-RECV-WINDOW", strconv.Itoa(recvWindow))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("API error: %s", string(respBody))
+	}
+
+	return respBody, nil
+}
+
+func (b *BybitAdapter) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
+	// For MVP, we might not use REST for price if we have WS.
+	// But implementing it for initial fetch or fallback.
+	// V5 Ticker
+	path := "/v5/market/tickers?category=linear&symbol=" + symbol
+	resp, err := http.Get(b.baseURL + path)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	var result struct {
+		RetCode int `json:"retCode"`
+		Result  struct {
+			List []struct {
+				LastPrice string `json:"lastPrice"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return 0, err
+	}
+
+	if len(result.Result.List) == 0 {
+		return 0, fmt.Errorf("symbol not found")
+	}
+
+	return strconv.ParseFloat(result.Result.List[0].LastPrice, 64)
+}
+
+func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side string, size float64, leverage int, marginType string) error {
+	// 1. Set Leverage (Best effort, ignore error if already set)
+	// In V5, set-leverage
+	b.setLeverage(ctx, symbol, leverage)
+
+	// 2. Place Order
+	payload := map[string]interface{}{
+		"category":    "linear",
+		"symbol":      symbol,
+		"side":        side,
+		"orderType":   "Market",
+		"qty":         fmt.Sprintf("%f", size),
+		"timeInForce": "GTC",
+	}
+
+	resp, err := b.sendRequest(ctx, "POST", "/v5/order/create", payload)
+	if err != nil {
+		return err
+	}
+
+	// Check retCode in response
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+	}
+	json.Unmarshal(resp, &result)
+	if result.RetCode != 0 {
+		return fmt.Errorf("bybit order error: %s", result.RetMsg)
+	}
+
+	return nil
+}
+
+func (b *BybitAdapter) setLeverage(ctx context.Context, symbol string, leverage int) {
+	payload := map[string]interface{}{
+		"category":     "linear",
+		"symbol":       symbol,
+		"buyLeverage":  fmt.Sprintf("%d", leverage),
+		"sellLeverage": fmt.Sprintf("%d", leverage),
+	}
+	// This often fails if leverage is already set, so we just log and ignore
+	_, _ = b.sendRequest(ctx, "POST", "/v5/position/set-leverage", payload)
+}
+
+func (b *BybitAdapter) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string) error {
+	return b.placeOrder(ctx, symbol, "Buy", size, leverage, marginType)
+}
+
+func (b *BybitAdapter) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string) error {
+	return b.placeOrder(ctx, symbol, "Sell", size, leverage, marginType)
+}
+
+func (b *BybitAdapter) ClosePosition(ctx context.Context, symbol string) error {
+	// Get position to know size and side
+	pos, err := b.GetPosition(ctx, symbol)
+	if err != nil {
+		return err
+	}
+	if pos.Size == 0 {
+		return nil
+	}
+
+	closeSide := "Sell"
+	if pos.Side == domain.SideShort {
+		closeSide = "Buy"
+	}
+
+	payload := map[string]interface{}{
+		"category":   "linear",
+		"symbol":     symbol,
+		"side":       closeSide,
+		"orderType":  "Market",
+		"qty":        fmt.Sprintf("%f", pos.Size),
+		"reduceOnly": true,
+	}
+
+	resp, err := b.sendRequest(ctx, "POST", "/v5/order/create", payload)
+	if err != nil {
+		return err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+	}
+	json.Unmarshal(resp, &result)
+	if result.RetCode != 0 {
+		return fmt.Errorf("bybit close error: %s", result.RetMsg)
+	}
+	return nil
+}
+
+func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
+	path := "/v5/position/list?category=linear&symbol=" + symbol
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int `json:"retCode"`
+		Result  struct {
+			List []struct {
+				Symbol        string `json:"symbol"`
+				Side          string `json:"side"`
+				Size          string `json:"size"`
+				AvgPrice      string `json:"avgPrice"`
+				MarkPrice     string `json:"markPrice"`
+				UnrealisedPnl string `json:"unrealisedPnl"`
+				Leverage      string `json:"leverage"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if len(result.Result.List) == 0 {
+		return &domain.Position{Symbol: symbol}, nil
+	}
+
+	raw := result.Result.List[0]
+	size, _ := strconv.ParseFloat(raw.Size, 64)
+	entry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
+	curr, _ := strconv.ParseFloat(raw.MarkPrice, 64)
+	pnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
+	lev, _ := strconv.Atoi(raw.Leverage)
+
+	side := domain.SideLong
+	if raw.Side == "Sell" {
+		side = domain.SideShort
+	}
+
+	return &domain.Position{
+		Exchange:      "bybit",
+		Symbol:        raw.Symbol,
+		Side:          side,
+		Size:          size,
+		EntryPrice:    entry,
+		CurrentPrice:  curr,
+		UnrealizedPnL: pnl,
+		Leverage:      lev,
+	}, nil
+}
+
+// --- WebSocket ---
+
+func (b *BybitAdapter) OnPriceUpdate(callback func(symbol string, price float64)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.callbacks = append(b.callbacks, callback)
+}
+
+func (b *BybitAdapter) ConnectWS(symbols []string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.wsConn != nil {
+		// Already connected, just subscribe
+		return b.subscribe(symbols)
+	}
+
+	c, _, err := websocket.DefaultDialer.Dial(b.wsURL, nil)
+	if err != nil {
+		return err
+	}
+	b.wsConn = c
+
+	go b.readLoop()
+
+	return b.subscribe(symbols)
+}
+
+func (b *BybitAdapter) Subscribe(symbols []string) error {
+	b.mu.Lock()
+	if b.wsConn == nil {
+		b.mu.Unlock()
+		// Not connected yet, ConnectWS will handle it
+		return b.ConnectWS(symbols)
+	}
+	defer b.mu.Unlock()
+	return b.subscribe(symbols)
+}
+
+func (b *BybitAdapter) subscribe(symbols []string) error {
+	if len(symbols) == 0 {
+		return nil
+	}
+	args := make([]interface{}, len(symbols))
+	for i, s := range symbols {
+		args[i] = "orderbook.1." + s
+	}
+
+	subMsg := map[string]interface{}{
+		"op":   "subscribe",
+		"args": args,
+	}
+	if err := b.wsConn.WriteJSON(subMsg); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (b *BybitAdapter) readLoop() {
+	defer func() {
+		b.wsConn.Close()
+		b.mu.Lock()
+		b.wsConn = nil
+		b.mu.Unlock()
+	}()
+
+	for {
+		_, message, err := b.wsConn.ReadMessage()
+		if err != nil {
+			log.Println("WS Read error:", err)
+			close(b.wsDone)
+			return
+		}
+
+		// log.Printf("WS Received: %s", string(message)) // Very verbose, maybe just topic?
+
+		var event map[string]interface{}
+		if err := json.Unmarshal(message, &event); err != nil {
+			log.Println("WS Unmarshal error:", err)
+			continue
+		}
+
+		topic, ok := event["topic"].(string)
+		if !ok {
+			// log.Println("WS No topic in message")
+			continue
+		}
+
+		if strings.HasPrefix(topic, "orderbook.1.") {
+			data, ok := event["data"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			symbol := strings.TrimPrefix(topic, "orderbook.1.")
+
+			// Parse Ask
+			a, ok := data["a"].([]interface{})
+			if !ok || len(a) == 0 {
+				continue
+			}
+			askEntry, ok := a[0].([]interface{})
+			if !ok || len(askEntry) < 1 {
+				continue
+			}
+			askStr, ok := askEntry[0].(string)
+			if !ok {
+				continue
+			}
+			ask, _ := strconv.ParseFloat(askStr, 64)
+
+			// Parse Bid
+			bidList, ok := data["b"].([]interface{})
+			if !ok || len(bidList) == 0 {
+				continue
+			}
+			bidEntry, ok := bidList[0].([]interface{})
+			if !ok || len(bidEntry) < 1 {
+				continue
+			}
+			bidStr, ok := bidEntry[0].(string)
+			if !ok {
+				continue
+			}
+			bid, _ := strconv.ParseFloat(bidStr, 64)
+
+			// Use mid price
+			price := (ask + bid) / 2
+
+			b.mu.Lock()
+			callbacks := make([]func(string, float64), len(b.callbacks))
+			copy(callbacks, b.callbacks)
+			b.mu.Unlock()
+
+			for _, cb := range callbacks {
+				cb(symbol, price)
+			}
+		}
+	}
+}
