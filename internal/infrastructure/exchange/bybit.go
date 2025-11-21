@@ -142,11 +142,13 @@ func (b *BybitAdapter) GetCurrentPrice(ctx context.Context, symbol string) (floa
 }
 
 func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side string, size float64, leverage int, marginType string) error {
-	// 1. Set Leverage (Best effort, ignore error if already set)
-	// In V5, set-leverage
+	// 1. Set Margin Mode (isolated/cross)
+	b.setMarginMode(ctx, symbol, marginType)
+
+	// 2. Set Leverage
 	b.setLeverage(ctx, symbol, leverage)
 
-	// 2. Place Order
+	// 3. Place Order
 	payload := map[string]interface{}{
 		"category":    "linear",
 		"symbol":      symbol,
@@ -183,6 +185,24 @@ func (b *BybitAdapter) setLeverage(ctx context.Context, symbol string, leverage 
 	}
 	// This often fails if leverage is already set, so we just log and ignore
 	_, _ = b.sendRequest(ctx, "POST", "/v5/position/set-leverage", payload)
+}
+
+func (b *BybitAdapter) setMarginMode(ctx context.Context, symbol string, marginMode string) {
+	// Convert "isolated" to 1, "cross" to 0 for Bybit API
+	tradeMode := 0 // cross
+	if marginMode == "isolated" {
+		tradeMode = 1
+	}
+
+	payload := map[string]interface{}{
+		"category":     "linear",
+		"symbol":       symbol,
+		"tradeMode":    tradeMode,
+		"buyLeverage":  "10", // Required by API but will be overridden by setLeverage
+		"sellLeverage": "10",
+	}
+	// This may fail if already set to the same mode, so we ignore errors
+	_, _ = b.sendRequest(ctx, "POST", "/v5/position/switch-mode", payload)
 }
 
 func (b *BybitAdapter) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string) error {
