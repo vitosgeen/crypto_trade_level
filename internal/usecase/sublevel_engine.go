@@ -56,6 +56,7 @@ func (e *SublevelEngine) ResetState(levelID string) {
 func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, prevPrice, currPrice float64, side domain.Side) (Action, float64) {
 	e.mu.Lock()
 	state, ok := e.states[level.ID]
+	isNewState := !ok
 	if !ok {
 		state = &LevelState{}
 		e.states[level.ID] = state
@@ -73,6 +74,46 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	// Long: Price comes from BELOW. Trigger if prev < Tier <= curr
 
 	tier1Price, tier2Price, tier3Price := boundaries[0], boundaries[1], boundaries[2]
+
+	// CRITICAL FIX: On first evaluation, mark already-passed tiers as triggered
+	// to avoid false triggers on old price levels
+	if isNewState {
+		e.mu.Lock()
+		if side == domain.SideShort {
+			// For SHORT: tiers are BELOW level, price rises UP through them
+			// Mark tiers that current price is already above
+			if currPrice >= tier3Price {
+				state.Tier1Triggered = true
+				state.Tier2Triggered = true
+				state.Tier3Triggered = true
+				log.Printf("INFO: Level %s initialized with price already above all tiers (SHORT)", level.ID)
+			} else if currPrice >= tier2Price {
+				state.Tier1Triggered = true
+				state.Tier2Triggered = true
+				log.Printf("INFO: Level %s initialized with price already above Tier1 and Tier2 (SHORT)", level.ID)
+			} else if currPrice >= tier1Price {
+				state.Tier1Triggered = true
+				log.Printf("INFO: Level %s initialized with price already above Tier1 (SHORT)", level.ID)
+			}
+		} else {
+			// For LONG: tiers are ABOVE level, price falls DOWN through them
+			// Mark tiers that current price is already below
+			if currPrice <= tier3Price {
+				state.Tier1Triggered = true
+				state.Tier2Triggered = true
+				state.Tier3Triggered = true
+				log.Printf("INFO: Level %s initialized with price already below all tiers (LONG)", level.ID)
+			} else if currPrice <= tier2Price {
+				state.Tier1Triggered = true
+				state.Tier2Triggered = true
+				log.Printf("INFO: Level %s initialized with price already below Tier1 and Tier2 (LONG)", level.ID)
+			} else if currPrice <= tier1Price {
+				state.Tier1Triggered = true
+				log.Printf("INFO: Level %s initialized with price already below Tier1 (LONG)", level.ID)
+			}
+		}
+		e.mu.Unlock()
+	}
 
 	triggered := false
 	action := ActionNone

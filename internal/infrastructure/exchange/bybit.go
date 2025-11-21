@@ -188,21 +188,31 @@ func (b *BybitAdapter) setLeverage(ctx context.Context, symbol string, leverage 
 }
 
 func (b *BybitAdapter) setMarginMode(ctx context.Context, symbol string, marginMode string) {
-	// Convert "isolated" to 1, "cross" to 0 for Bybit API
-	tradeMode := 0 // cross
+	// For Bybit V5: 0 = cross margin, 1 = isolated margin
+	mode := 0 // cross
 	if marginMode == "isolated" {
-		tradeMode = 1
+		mode = 1
 	}
 
+	log.Printf("DEBUG: Setting margin mode for %s: %s (mode=%d)", symbol, marginMode, mode)
+
+	// Use the correct V5 endpoint for switching isolated margin
+	// This endpoint sets the margin mode for a specific symbol
 	payload := map[string]interface{}{
 		"category":     "linear",
 		"symbol":       symbol,
-		"tradeMode":    tradeMode,
-		"buyLeverage":  "10", // Required by API but will be overridden by setLeverage
-		"sellLeverage": "10",
+		"tradeMode":    mode, // 0: cross margin, 1: isolated margin
+		"buyLeverage":  "10", // Required by API
+		"sellLeverage": "10", // Required by API
 	}
-	// This may fail if already set to the same mode, so we ignore errors
-	_, _ = b.sendRequest(ctx, "POST", "/v5/position/switch-mode", payload)
+
+	resp, err := b.sendRequest(ctx, "POST", "/v5/position/switch-mode", payload)
+	if err != nil {
+		log.Printf("WARNING: Failed to set margin mode for %s: %v", symbol, err)
+		log.Printf("DEBUG: This might be because the mode is already set or position already exists")
+	} else {
+		log.Printf("DEBUG: Margin mode API response for %s: %s", symbol, string(resp))
+	}
 }
 
 func (b *BybitAdapter) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string) error {
@@ -271,6 +281,7 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 				MarkPrice     string `json:"markPrice"`
 				UnrealisedPnl string `json:"unrealisedPnl"`
 				Leverage      string `json:"leverage"`
+				TradeMode     int    `json:"tradeMode"` // 0: cross margin, 1: isolated margin
 			} `json:"list"`
 		} `json:"result"`
 	}
@@ -297,6 +308,12 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 		side = domain.SideShort
 	}
 
+	// Convert tradeMode to margin type string
+	marginType := "cross"
+	if raw.TradeMode == 1 {
+		marginType = "isolated"
+	}
+
 	return &domain.Position{
 		Exchange:      "bybit",
 		Symbol:        raw.Symbol,
@@ -306,6 +323,7 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 		CurrentPrice:  curr,
 		UnrealizedPnL: pnl,
 		Leverage:      lev,
+		MarginType:    marginType,
 	}, nil
 }
 

@@ -503,6 +503,7 @@
             <th>Zone/Tiers</th>
             <th>Size</th>
             <th>Lev</th>
+            <th>Margin</th>
             <th>Cooldown</th>
             <th>Action</th>
         </tr>
@@ -538,6 +539,8 @@
             </td>
             <td>{{ .BaseSize }}</td>
             <td>{{ .Leverage }}x</td>
+            <td style="font-weight: bold; color: {{ if eq .MarginType " isolated" }}#007bff{{ else }}#6c757d{{ end }};">
+                {{ .MarginType }}</td>
             <td>{{ .CoolDownMs }}ms</td>
             <td>
                 <button class="delete-btn" hx-delete="/levels/{{ .ID }}" hx-target="#levels-table">Delete</button>
@@ -584,6 +587,7 @@
             <th>Mark Price</th>
             <th>Unrealized PnL</th>
             <th>Lev</th>
+            <th>Margin</th>
         </tr>
     </thead>
     <tbody>
@@ -598,11 +602,13 @@
             <td style="color: {{ if gt .UnrealizedPnL 0.0 }}green{{ else }}red{{ end }};">{{ printf "%.6f"
                 .UnrealizedPnL }}</td>
             <td>{{ .Leverage }}</td>
+            <td style="font-weight: bold; color: {{ if eq .MarginType " isolated" }}#007bff{{ else }}#6c757d{{ end }};">
+                {{ .MarginType }}</td>
         </tr>
         {{ end }}
         {{ else }}
         <tr>
-            <td colspan="7">No active positions</td>
+            <td colspan="8">No active positions</td>
         </tr>
         {{ end }}
     </tbody>
