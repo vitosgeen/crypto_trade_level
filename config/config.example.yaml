@@ -10,3 +10,6 @@ polling:
 
 logging:
   level: "info"
+
+server:
+  port: 8080

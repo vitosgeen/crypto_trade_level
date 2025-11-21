@@ -31,6 +31,9 @@ type Config struct {
 	Logging struct {
 		Level string `yaml:"level"`
 	} `yaml:"logging"`
+	Server struct {
+		Port int `yaml:"port"`
+	} `yaml:"server"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -142,7 +145,11 @@ func main() {
 
 	// 7. Init Web Server
 	web.InitTemplates("internal/web/templates")
-	server := web.NewServer(8080, store, store, svc, log)
+	port := cfg.Server.Port
+	if port == 0 {
+		port = 8080 // Default
+	}
+	server := web.NewServer(port, store, store, svc, log)
 
 	// 8. Start Server
 	go func() {
