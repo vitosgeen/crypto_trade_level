@@ -46,7 +46,9 @@ func TestCalculateTierBoundaries(t *testing.T) {
 		Tier3Pct: 0.0015, // 0.15%
 	}
 
-	// Test Short Side (Price < Level)
+	// Test Short Zone (Price < Level)
+	// Price is below level, in SHORT zone
+	// Tiers are BELOW level at L * (1 - Pct)
 	// Tier1 = 10000 * 0.995 = 9950
 	// Tier2 = 10000 * 0.997 = 9970
 	// Tier3 = 10000 * 0.9985 = 9985
@@ -62,7 +64,9 @@ func TestCalculateTierBoundaries(t *testing.T) {
 		t.Errorf("Tier3 Short wrong: %f", boundariesShort[2])
 	}
 
-	// Test Long Side (Price > Level)
+	// Test Long Zone (Price > Level)
+	// Price is above level, in LONG zone
+	// Tiers are ABOVE level at L * (1 + Pct)
 	// Tier1 = 10000 * 1.005 = 10050
 	// Tier2 = 10000 * 1.003 = 10030
 	// Tier3 = 10000 * 1.0015 = 10015

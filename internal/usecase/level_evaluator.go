@@ -23,18 +23,16 @@ func (e *LevelEvaluator) CalculateBoundaries(level *domain.Level, tiers *domain.
 	boundaries := make([]float64, 3)
 
 	if side == domain.SideShort {
-		// Short (Resistance): Price is BELOW level. We want to Sell when it rises.
-		// Boundaries should be BELOW level? No, wait.
-		// If Resistance is 10000. Price 9000.
-		// We want to Sell at 9950, 9970... (Below Level).
-		// So Level * (1 - Pct).
+		// SHORT zone: Price is BELOW level
+		// Tiers are BELOW level at L * (1 - Pct)
+		// Price rises UP through these tiers toward the level
 		boundaries[0] = level.LevelPrice * (1 - tiers.Tier1Pct)
 		boundaries[1] = level.LevelPrice * (1 - tiers.Tier2Pct)
 		boundaries[2] = level.LevelPrice * (1 - tiers.Tier3Pct)
 	} else {
-		// Long (Support): Price is ABOVE level. We want to Buy when it falls.
-		// Boundaries should be ABOVE level.
-		// So Level * (1 + Pct).
+		// LONG zone: Price is ABOVE level
+		// Tiers are ABOVE level at L * (1 + Pct)
+		// Price falls DOWN through these tiers toward the level
 		boundaries[0] = level.LevelPrice * (1 + tiers.Tier1Pct)
 		boundaries[1] = level.LevelPrice * (1 + tiers.Tier2Pct)
 		boundaries[2] = level.LevelPrice * (1 + tiers.Tier3Pct)
