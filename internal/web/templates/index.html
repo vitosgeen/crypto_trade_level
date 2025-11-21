@@ -81,7 +81,7 @@
             <form hx-post="/levels" hx-target="#levels-table">
                 <input type="text" name="exchange" placeholder="Exchange (bybit)" value="bybit" required>
                 <input type="text" name="symbol" placeholder="Symbol (BTCUSDT)" required>
-                <input type="number" step="0.01" name="level_price" placeholder="Level Price" required>
+                <input type="number" step="0.000001" name="level_price" placeholder="Level Price" required>
                 <input type="number" step="0.001" name="base_size" placeholder="Base Size" required>
                 <input type="number" name="leverage" placeholder="Leverage" value="10" required>
                 <select name="margin_type">
@@ -257,7 +257,7 @@
                         datasets: [
                             // Price History Curve
                             {
-                                label: `Price: ${currentPrice.toFixed(2)}`,
+                                label: `Price: ${currentPrice.toFixed(6)}`,
                                 data: priceHistory[selectedLevelId],
                                 borderColor: '#007bff',
                                 backgroundColor: 'rgba(0, 123, 255, 0.1)',
@@ -284,7 +284,7 @@
                                 },
                                 ticks: {
                                     callback: function (value) {
-                                        return value.toFixed(2);
+                                        return value.toFixed(6);
                                     }
                                 },
                                 grid: {
@@ -321,7 +321,7 @@
                                         borderColor: '#000',
                                         borderWidth: 3,
                                         label: {
-                                            content: `Base Level: ${levelPrice.toFixed(2)}`,
+                                            content: `Base Level: ${levelPrice.toFixed(6)}`,
                                             enabled: true,
                                             position: 'start',
                                             backgroundColor: '#000',
@@ -354,7 +354,7 @@
                                         borderWidth: 2,
                                         borderDash: [10, 5],
                                         label: {
-                                            content: `L-T1: ${longTier1.toFixed(2)}`,
+                                            content: `L-T1: ${longTier1.toFixed(6)}`,
                                             enabled: true,
                                             position: 'start',
                                             backgroundColor: '#28a745',
@@ -370,7 +370,7 @@
                                         borderWidth: 2,
                                         borderDash: [10, 5],
                                         label: {
-                                            content: `L-T2: ${longTier2.toFixed(2)}`,
+                                            content: `L-T2: ${longTier2.toFixed(6)}`,
                                             enabled: true,
                                             position: 'start',
                                             backgroundColor: '#28a745',
@@ -386,7 +386,7 @@
                                         borderWidth: 2,
                                         borderDash: [10, 5],
                                         label: {
-                                            content: `L-T3: ${longTier3.toFixed(2)}`,
+                                            content: `L-T3: ${longTier3.toFixed(6)}`,
                                             enabled: true,
                                             position: 'start',
                                             backgroundColor: '#28a745',
@@ -403,7 +403,7 @@
                                         borderWidth: 2,
                                         borderDash: [10, 5],
                                         label: {
-                                            content: `S-T1: ${shortTier1.toFixed(2)}`,
+                                            content: `S-T1: ${shortTier1.toFixed(6)}`,
                                             enabled: true,
                                             position: 'start',
                                             backgroundColor: '#dc3545',
@@ -419,7 +419,7 @@
                                         borderWidth: 2,
                                         borderDash: [10, 5],
                                         label: {
-                                            content: `S-T2: ${shortTier2.toFixed(2)}`,
+                                            content: `S-T2: ${shortTier2.toFixed(6)}`,
                                             enabled: true,
                                             position: 'start',
                                             backgroundColor: '#dc3545',
@@ -435,7 +435,7 @@
                                         borderWidth: 2,
                                         borderDash: [10, 5],
                                         label: {
-                                            content: `S-T3: ${shortTier3.toFixed(2)}`,
+                                            content: `S-T3: ${shortTier3.toFixed(6)}`,
                                             enabled: true,
                                             position: 'start',
                                             backgroundColor: '#dc3545',
@@ -512,26 +512,26 @@
         <tr>
             <td>{{ .Exchange }}</td>
             <td><strong>{{ .Symbol }}</strong></td>
-            <td>{{ printf "%.2f" .LevelPrice }}</td>
-            <td>{{ printf "%.2f" .CurrentPrice }}</td>
+            <td>{{ printf "%.6f" .LevelPrice }}</td>
+            <td>{{ printf "%.6f" .CurrentPrice }}</td>
             <td>
                 <table style="width: 100%; font-size: 0.9em;">
                     <tr>
                         <td style="font-weight: bold; color: #28a745; padding: 2px;">LONG</td>
-                        <td style="background-color: #d4edda; font-weight: bold; padding: 2px;">{{ printf "%.2f" (index
+                        <td style="background-color: #d4edda; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
                             .LongTiers 0) }}</td>
-                        <td style="background-color: #d4edda; font-weight: bold; padding: 2px;">{{ printf "%.2f" (index
+                        <td style="background-color: #d4edda; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
                             .LongTiers 1) }}</td>
-                        <td style="background-color: #d4edda; font-weight: bold; padding: 2px;">{{ printf "%.2f" (index
+                        <td style="background-color: #d4edda; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
                             .LongTiers 2) }}</td>
                     </tr>
                     <tr>
                         <td style="font-weight: bold; color: #dc3545; padding: 2px;">SHORT</td>
-                        <td style="background-color: #f8d7da; font-weight: bold; padding: 2px;">{{ printf "%.2f" (index
+                        <td style="background-color: #f8d7da; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
                             .ShortTiers 0) }}</td>
-                        <td style="background-color: #f8d7da; font-weight: bold; padding: 2px;">{{ printf "%.2f" (index
+                        <td style="background-color: #f8d7da; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
                             .ShortTiers 1) }}</td>
-                        <td style="background-color: #f8d7da; font-weight: bold; padding: 2px;">{{ printf "%.2f" (index
+                        <td style="background-color: #f8d7da; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
                             .ShortTiers 2) }}</td>
                     </tr>
                 </table>
@@ -566,7 +566,7 @@
             <td>{{ .Symbol }}</td>
             <td>{{ .Side }}</td>
             <td>{{ .Size }}</td>
-            <td>{{ .Price }}</td>
+            <td>{{ printf "%.6f" .Price }}</td>
         </tr>
         {{ end }}
     </tbody>
@@ -593,9 +593,10 @@
             <td>{{ .Symbol }}</td>
             <td>{{ .Side }}</td>
             <td>{{ .Size }}</td>
-            <td>{{ .EntryPrice }}</td>
-            <td>{{ .CurrentPrice }}</td>
-            <td style="color: {{ if gt .UnrealizedPnL 0.0 }}green{{ else }}red{{ end }};">{{ .UnrealizedPnL }}</td>
+            <td>{{ printf "%.6f" .EntryPrice }}</td>
+            <td>{{ printf "%.6f" .CurrentPrice }}</td>
+            <td style="color: {{ if gt .UnrealizedPnL 0.0 }}green{{ else }}red{{ end }};">{{ printf "%.6f"
+                .UnrealizedPnL }}</td>
             <td>{{ .Leverage }}</td>
         </tr>
         {{ end }}
