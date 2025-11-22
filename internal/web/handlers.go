@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -214,4 +215,34 @@ func (s *Server) handleTradesTable(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// Return status HTML
 	w.Write([]byte("<div>System OK</div>"))
+}
+
+func (s *Server) handleGetCandles(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	interval := r.URL.Query().Get("interval")
+	limitStr := r.URL.Query().Get("limit")
+
+	if symbol == "" {
+		symbol = "BTCUSDT"
+	}
+	if interval == "" {
+		interval = "15" // 15 minutes default
+	}
+	limit := 200
+	if limitStr != "" {
+		l, err := strconv.Atoi(limitStr)
+		if err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	candles, err := s.service.GetExchange().GetCandles(r.Context(), symbol, interval, limit)
+	if err != nil {
+		s.logger.Error("Failed to get candles", zap.Error(err))
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(candles)
 }
