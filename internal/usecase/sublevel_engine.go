@@ -36,13 +36,13 @@ func NewSublevelEngine() *SublevelEngine {
 	}
 }
 
-func (e *SublevelEngine) GetState(levelID string) *LevelState {
+func (e *SublevelEngine) GetState(levelID string) LevelState {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	if s, ok := e.states[levelID]; ok {
-		return s
+		return *s
 	}
-	return &LevelState{}
+	return LevelState{}
 }
 
 func (e *SublevelEngine) ResetState(levelID string) {

@@ -6,9 +6,7 @@
     <meta charset="UTF-8">
     <title>Level Trader Bot</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script
-        src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body {
             font-family: sans-serif;
@@ -118,7 +116,7 @@
                 </div>
             </div>
             <div style="position: relative; height: 400px;">
-                <canvas id="levelChart"></canvas>
+                <div id="levelChart" style="width: 100%; height: 100%;"></div>
             </div>
             <div id="chart-legend" style="margin-top: 10px; font-size: 12px; color: #666;">
                 <span style="color: #28a745;">█</span> LONG Zone (above level) |
@@ -136,10 +134,71 @@
         </div>
 
         <script>
-            let levelChart = null;
-            let selectedLevelId = null; // Store selected level ID (symbol + price)
-            let priceHistory = {}; // Store history per level: { "BTCUSDT-85000": [price1, price2...] }
-            const MAX_HISTORY = 100; // Keep last 100 points
+            let chart = null;
+            let candleSeries = null;
+            let selectedLevelId = null;
+            let currentPriceLines = [];
+
+            function initChart() {
+                console.log("Initializing Chart...");
+                const chartContainer = document.getElementById('levelChart');
+                if (!chartContainer) {
+                    console.error("Chart container not found!");
+                    return;
+                }
+
+                // Clear previous content
+                chartContainer.innerHTML = '';
+
+                if (typeof LightweightCharts === 'undefined') {
+                    console.error("LightweightCharts library not loaded!");
+                    return;
+                }
+
+                try {
+                    chart = LightweightCharts.createChart(chartContainer, {
+                        width: chartContainer.clientWidth || 800, // Fallback width
+                        height: 400,
+                        layout: {
+                            background: { type: 'solid', color: 'white' },
+                            textColor: 'black',
+                        },
+                        grid: {
+                            vertLines: { color: '#eee' },
+                            horzLines: { color: '#eee' },
+                        },
+                        rightPriceScale: {
+                            borderColor: '#d1d4dc',
+                        },
+                        timeScale: {
+                            borderColor: '#d1d4dc',
+                            timeVisible: true,
+                            secondsVisible: false,
+                        },
+                    });
+
+                    candleSeries = chart.addCandlestickSeries({
+                        upColor: '#26a69a',
+                        downColor: '#ef5350',
+                        borderVisible: false,
+                        wickUpColor: '#26a69a',
+                        wickDownColor: '#ef5350',
+                    });
+
+                    console.log("Chart initialized. Series:", candleSeries);
+
+                    // Handle resize
+                    window.addEventListener('resize', () => {
+                        if (chart && chartContainer) {
+                            chart.applyOptions({ width: chartContainer.clientWidth });
+                        }
+                    });
+                } catch (e) {
+                    console.error("Error initializing chart:", e);
+                    chart = null;
+                    candleSeries = null;
+                }
+            }
 
             function changeLevel() {
                 const selector = document.getElementById('level-selector');
@@ -147,21 +206,36 @@
                 updateChart();
             }
 
-            function updateChart() {
-                // Get data from the levels table
+            async function updateChart() {
+                if (!chart) {
+                    initChart();
+                    if (!chart) {
+                        console.warn("Chart init failed, skipping update");
+                        return;
+                    }
+                }
+
+                if (!candleSeries) {
+                    console.error("candleSeries is null, re-initializing...");
+                    // Try to recover?
+                    initChart();
+                    if (!candleSeries) return;
+                }
+
+                // Get data from the levels table to find selected level details
                 const table = document.querySelector('#levels-table table');
                 if (!table) return;
 
                 const rows = table.querySelectorAll('tbody tr');
                 if (rows.length === 0) return;
 
-                // Populate selector if empty or options changed
+                // Populate selector logic (same as before)
                 const selector = document.getElementById('level-selector');
                 const currentOptions = Array.from(selector.options).map(o => o.value);
                 const availableLevels = [];
-                const activeIds = []; // Track currently active IDs
+                const activeIds = [];
 
-                rows.forEach((row, index) => {
+                rows.forEach((row) => {
                     const cells = row.querySelectorAll('td');
                     const symbol = cells[1].textContent.trim();
                     const levelPrice = parseFloat(cells[2].textContent);
@@ -169,7 +243,6 @@
                     activeIds.push(id);
                     availableLevels.push({ id, text: `${symbol} @ ${levelPrice}` });
 
-                    // Add option if not exists
                     if (!currentOptions.includes(id)) {
                         const option = document.createElement('option');
                         option.value = id;
@@ -178,20 +251,20 @@
                     }
                 });
 
-                // Remove options that are no longer active (except the loading placeholder if needed)
+                // Cleanup options
                 Array.from(selector.options).forEach(option => {
                     if (option.value && !activeIds.includes(option.value)) {
                         selector.removeChild(option);
                     }
                 });
 
-                // Select first level by default if nothing selected or selection is invalid
+                // Default selection
                 if ((!selectedLevelId || !activeIds.includes(selectedLevelId)) && availableLevels.length > 0) {
                     selectedLevelId = availableLevels[0].id;
                     selector.value = selectedLevelId;
                 }
 
-                // Find the row for the selected level
+                // Find target row
                 let targetRow = null;
                 rows.forEach(row => {
                     const cells = row.querySelectorAll('td');
@@ -203,266 +276,79 @@
                     }
                 });
 
-                if (!targetRow) return; // Selected level not found (maybe deleted)
+                if (!targetRow) return;
 
-                // Parse level data
                 const cells = targetRow.querySelectorAll('td');
                 const symbol = cells[1].textContent.trim();
                 const levelPrice = parseFloat(cells[2].textContent);
-                const currentPrice = parseFloat(cells[3].textContent);
-                const zone = cells[4].textContent.trim();
-                const tier1 = parseFloat(cells[5].textContent);
-                const tier2 = parseFloat(cells[6].textContent);
-                const tier3 = parseFloat(cells[7].textContent);
 
-                // Update history
-                if (!priceHistory[selectedLevelId]) {
-                    priceHistory[selectedLevelId] = [];
-                }
-                priceHistory[selectedLevelId].push(currentPrice);
-                if (priceHistory[selectedLevelId].length > MAX_HISTORY) {
-                    priceHistory[selectedLevelId].shift();
-                }
+                // Fetch Candles
+                try {
+                    const response = await fetch(`/api/candles?symbol=${symbol}&interval=15&limit=200`);
+                    const candles = await response.json();
+                    if (candles && candles.length > 0) {
+                        // Ensure candles are sorted by time (ascending)
+                        candles.sort((a, b) => a.time - b.time);
 
-                // Calculate BOTH zone tiers (LONG and SHORT) per spec
-                // LONG zone (price ABOVE level): Tiers are ABOVE level (Level * (1+t))
-                const longTier1 = levelPrice * (1 + 0.005);  // +0.5%
-                const longTier2 = levelPrice * (1 + 0.003);  // +0.3%
-                const longTier3 = levelPrice * (1 + 0.0015); // +0.15%
-
-                // SHORT zone (price BELOW level): Tiers are BELOW level (Level * (1-t))
-                const shortTier1 = levelPrice * (1 - 0.005);  // -0.5%
-                const shortTier2 = levelPrice * (1 - 0.003);  // -0.3%
-                const shortTier3 = levelPrice * (1 - 0.0015); // -0.15%
-
-                // Fixed scale showing both zones with padding
-                const allPrices = [levelPrice, currentPrice, longTier3, shortTier3]; // Use outermost tiers
-                const minVal = Math.min(...allPrices);
-                const maxVal = Math.max(...allPrices);
-                const range = maxVal - minVal;
-                const padding = range * 0.10; // 10% padding on each side
-
-                const minPrice = minVal - padding;
-                const maxPrice = maxVal + padding;
-
-                const ctx = document.getElementById('levelChart').getContext('2d');
-
-                if (levelChart) {
-                    levelChart.destroy();
-                }
-
-                // Create labels for X-axis (just empty strings or timestamps)
-                const labels = priceHistory[selectedLevelId].map((_, i) => '');
-
-                levelChart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: [
-                            // Price History Curve
-                            {
-                                label: `Price: ${currentPrice.toFixed(6)}`,
-                                data: priceHistory[selectedLevelId],
-                                borderColor: '#007bff',
-                                backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                                borderWidth: 2,
-                                pointRadius: 0,
-                                tension: 0.1, // Smooth curve
-                                fill: false,
-                                order: 1
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        animation: false, // Disable animation for smooth updates
-                        scales: {
-                            y: {
-                                min: minPrice,
-                                max: maxPrice,
-                                title: {
-                                    display: true,
-                                    text: 'Price (USDT)',
-                                    font: { size: 14, weight: 'bold' }
-                                },
-                                ticks: {
-                                    callback: function (value) {
-                                        return value.toFixed(6);
-                                    }
-                                },
-                                grid: {
-                                    color: '#e0e0e0'
-                                }
-                            },
-                            x: {
-                                display: false
-                            }
-                        },
-                        plugins: {
-                            legend: {
-                                display: true,
-                                position: 'top',
-                                labels: {
-                                    font: { size: 12 },
-                                    filter: function (item) {
-                                        return item.text.includes('Price') || item.text.includes('Base Level');
-                                    }
-                                }
-                            },
-                            tooltip: {
-                                enabled: true,
-                                mode: 'index',
-                                intersect: false,
-                            },
-                            annotation: {
-                                annotations: {
-                                    // Base Level Line
-                                    baseLevelLine: {
-                                        type: 'line',
-                                        yMin: levelPrice,
-                                        yMax: levelPrice,
-                                        borderColor: '#000',
-                                        borderWidth: 3,
-                                        label: {
-                                            content: `Base Level: ${levelPrice.toFixed(6)}`,
-                                            enabled: true,
-                                            position: 'start',
-                                            backgroundColor: '#000',
-                                            color: '#fff',
-                                            font: { size: 11, weight: 'bold' }
-                                        }
-                                    },
-                                    // LONG Zone Background (Above Level - Green)
-                                    longZone: {
-                                        type: 'box',
-                                        yMin: levelPrice,
-                                        yMax: maxPrice,
-                                        backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                                        borderWidth: 0
-                                    },
-                                    // SHORT Zone Background (Below Level - Red)
-                                    shortZone: {
-                                        type: 'box',
-                                        yMin: minPrice,
-                                        yMax: levelPrice,
-                                        backgroundColor: 'rgba(220, 53, 69, 0.1)',
-                                        borderWidth: 0
-                                    },
-                                    // LONG Tier Lines
-                                    longTier1Line: {
-                                        type: 'line',
-                                        yMin: longTier1,
-                                        yMax: longTier1,
-                                        borderColor: '#28a745',
-                                        borderWidth: 2,
-                                        borderDash: [10, 5],
-                                        label: {
-                                            content: `L-T1: ${longTier1.toFixed(6)}`,
-                                            enabled: true,
-                                            position: 'start',
-                                            backgroundColor: '#28a745',
-                                            color: '#fff',
-                                            font: { size: 10 }
-                                        }
-                                    },
-                                    longTier2Line: {
-                                        type: 'line',
-                                        yMin: longTier2,
-                                        yMax: longTier2,
-                                        borderColor: '#28a745',
-                                        borderWidth: 2,
-                                        borderDash: [10, 5],
-                                        label: {
-                                            content: `L-T2: ${longTier2.toFixed(6)}`,
-                                            enabled: true,
-                                            position: 'start',
-                                            backgroundColor: '#28a745',
-                                            color: '#fff',
-                                            font: { size: 10 }
-                                        }
-                                    },
-                                    longTier3Line: {
-                                        type: 'line',
-                                        yMin: longTier3,
-                                        yMax: longTier3,
-                                        borderColor: '#28a745',
-                                        borderWidth: 2,
-                                        borderDash: [10, 5],
-                                        label: {
-                                            content: `L-T3: ${longTier3.toFixed(6)}`,
-                                            enabled: true,
-                                            position: 'start',
-                                            backgroundColor: '#28a745',
-                                            color: '#fff',
-                                            font: { size: 10 }
-                                        }
-                                    },
-                                    // SHORT Tier Lines
-                                    shortTier1Line: {
-                                        type: 'line',
-                                        yMin: shortTier1,
-                                        yMax: shortTier1,
-                                        borderColor: '#dc3545',
-                                        borderWidth: 2,
-                                        borderDash: [10, 5],
-                                        label: {
-                                            content: `S-T1: ${shortTier1.toFixed(6)}`,
-                                            enabled: true,
-                                            position: 'start',
-                                            backgroundColor: '#dc3545',
-                                            color: '#fff',
-                                            font: { size: 10 }
-                                        }
-                                    },
-                                    shortTier2Line: {
-                                        type: 'line',
-                                        yMin: shortTier2,
-                                        yMax: shortTier2,
-                                        borderColor: '#dc3545',
-                                        borderWidth: 2,
-                                        borderDash: [10, 5],
-                                        label: {
-                                            content: `S-T2: ${shortTier2.toFixed(6)}`,
-                                            enabled: true,
-                                            position: 'start',
-                                            backgroundColor: '#dc3545',
-                                            color: '#fff',
-                                            font: { size: 10 }
-                                        }
-                                    },
-                                    shortTier3Line: {
-                                        type: 'line',
-                                        yMin: shortTier3,
-                                        yMax: shortTier3,
-                                        borderColor: '#dc3545',
-                                        borderWidth: 2,
-                                        borderDash: [10, 5],
-                                        label: {
-                                            content: `S-T3: ${shortTier3.toFixed(6)}`,
-                                            enabled: true,
-                                            position: 'start',
-                                            backgroundColor: '#dc3545',
-                                            color: '#fff',
-                                            font: { size: 10 }
-                                        }
-                                    }
-                                }
+                        // Deduplicate candles by time
+                        const uniqueCandles = [];
+                        const seenTimes = new Set();
+                        for (const c of candles) {
+                            if (!seenTimes.has(c.time)) {
+                                seenTimes.add(c.time);
+                                uniqueCandles.push(c);
                             }
                         }
-                    },
-                    plugins: [{
-                        id: 'chartAreaBorder',
-                        beforeDraw(chart) {
-                            const { ctx, chartArea: { left, top, width, height } } = chart;
-                            ctx.save();
-                            ctx.strokeStyle = '#ccc';
-                            ctx.lineWidth = 1;
-                            ctx.strokeRect(left, top, width, height);
-                            ctx.restore();
-                        }
-                    }]
-                });
+
+                        candleSeries.setData(uniqueCandles);
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch candles", e);
+                }
+
+                // Update Price Lines (Level and Tiers)
+                // Clear old lines
+                currentPriceLines.forEach(line => candleSeries.removePriceLine(line));
+                currentPriceLines = [];
+
+                // Base Level
+                currentPriceLines.push(candleSeries.createPriceLine({
+                    price: levelPrice,
+                    color: '#000000',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    axisLabelVisible: true,
+                    title: 'Base Level',
+                }));
+
+                // Calculate Tiers (Same logic as before)
+                const longTier1 = levelPrice * (1 + 0.005);
+                const longTier2 = levelPrice * (1 + 0.003);
+                const longTier3 = levelPrice * (1 + 0.0015);
+
+                const shortTier1 = levelPrice * (1 - 0.005);
+                const shortTier2 = levelPrice * (1 - 0.003);
+                const shortTier3 = levelPrice * (1 - 0.0015);
+
+                // Add Tier Lines
+                const addTierLine = (price, label, color) => {
+                    currentPriceLines.push(candleSeries.createPriceLine({
+                        price: price,
+                        color: color,
+                        lineWidth: 1,
+                        lineStyle: LightweightCharts.LineStyle.Dashed,
+                        axisLabelVisible: true,
+                        title: label,
+                    }));
+                };
+
+                addTierLine(longTier1, 'L-T1', '#28a745');
+                addTierLine(longTier2, 'L-T2', '#28a745');
+                addTierLine(longTier3, 'L-T3', '#28a745');
+
+                addTierLine(shortTier1, 'S-T1', '#dc3545');
+                addTierLine(shortTier2, 'S-T2', '#dc3545');
+                addTierLine(shortTier3, 'S-T3', '#dc3545');
             }
 
             // Update chart when levels table updates
@@ -472,7 +358,7 @@
                 }
             });
 
-            // Initial chart render
+            // Initial render
             setTimeout(updateChart, 500);
         </script>
 

@@ -46,6 +46,10 @@ func (s *LevelService) GetLatestPrice(symbol string) float64 {
 	return s.lastPrices[symbol]
 }
 
+func (s *LevelService) GetExchange() domain.Exchange {
+	return s.exchange
+}
+
 // GetPositions fetches active positions for all symbols with levels
 func (s *LevelService) GetPositions(ctx context.Context) ([]*domain.Position, error) {
 	levels, err := s.levelRepo.ListLevels(ctx)
@@ -140,10 +144,15 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 			err := s.exchange.ClosePosition(ctx, level.Symbol)
 			if err != nil {
 				log.Printf("WARNING: Failed to close position for %s (might be already closed): %v", level.Symbol, err)
-				// We proceed to reset state because if we are here, we hit the stop loss level.
-				// If the exchange stop loss worked, the position is gone.
-				// If it failed, we are in a bad state anyway, but keeping 'Triggered' true prevents recovery.
 			}
+
+			// Use the ActiveSide from state for the Close record, as 'side' might be flipped (e.g. crossing level)
+			state := s.engine.GetState(level.ID)
+			closingSide := state.ActiveSide
+			if closingSide == "" {
+				closingSide = side // Fallback
+			}
+
 			// Reset State
 			s.engine.ResetState(level.ID)
 
@@ -152,7 +161,7 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 				Exchange: level.Exchange,
 				Symbol:   level.Symbol,
 				LevelID:  level.ID,
-				Side:     side, // Or "CLOSE" ? Keeping side consistent with position side for now, or maybe we need a new side enum for Close?
+				Side:     closingSide,
 				// Actually, for trade history, it's better to show "CLOSE" or negative size?
 				// For now, let's just log it as a trade with 0 size or specific marker?
 				// The user wants to see it in trades.
