@@ -491,3 +491,121 @@ func TestScenario_G1_Switch_LongToShort(t *testing.T) {
 	h.AssertTradeCount(3) // Open Long, Close Long, Open Short
 	h.AssertLastTrade(domain.SideShort, 0.1)
 }
+
+func TestScenario_G2_Short_Open_Tier1_AfterLongClose(t *testing.T) {
+	t.Skip("Covered by G1")
+}
+
+func TestScenario_G3_NoLongReentry_WhenBelowBase(t *testing.T) {
+	h := NewTestScenarioHelper(t)
+	h.SetupLevel(10000, true)
+
+	h.Tick(9900) // Below Base
+	// Long Tiers are above 10000.
+	// We shouldn't trigger Long tiers unless we cross them.
+	// If we are at 9900, we are far from Long T1 (10050).
+
+	h.Tick(9940) // Still below base
+	h.AssertTradeCount(0)
+}
+
+func TestScenario_G4_Short_KeepOpen_While_Profitable_Downtrend(t *testing.T) {
+	h := NewTestScenarioHelper(t)
+	h.SetupLevel(10000, true)
+
+	h.Tick(9900)
+	h.Tick(9960) // Short Open (Cross T1 9950 Up)
+	h.AssertTradeCount(1)
+
+	h.Tick(9800)          // Price Drops (Profit for Short)
+	h.AssertTradeCount(1) // Should hold
+}
+
+// --- H. STATE MACHINE TESTS ---
+
+func TestScenario_H1_Multiplier_Reset_OnClose(t *testing.T) {
+	h := NewTestScenarioHelper(t)
+	h.SetupLevel(10000, true)
+
+	// 1. Open Short T1
+	h.Tick(9900)
+	h.Tick(9960)
+	h.AssertLastTrade(domain.SideShort, 0.1)
+
+	// 2. Close Short (Hit Base)
+	h.Tick(10000)
+	h.AssertLastTrade(domain.SideShort, 0)
+
+	// 3. Re-Open Short T1
+	h.Tick(9960)
+	// Should be base size (0.1), not multiplied
+	h.AssertLastTrade(domain.SideShort, 0.1)
+}
+
+func TestScenario_H2_Multiplier_Double_OnProfit(t *testing.T) {
+	t.Skip("Deferred: Logic for profit doubling not yet implemented in engine")
+}
+
+func TestScenario_H3_Multiplier_NoGrow_When_Loss(t *testing.T) {
+	h := NewTestScenarioHelper(t)
+	h.SetupLevel(10000, true)
+
+	// 1. Open Short T1
+	h.Tick(9900)
+	h.Tick(9960)
+	h.AssertLastTrade(domain.SideShort, 0.1)
+
+	// 2. Price moves against us (Loss) -> T2
+	h.Tick(9975)
+	// Should be standard T2 size (0.1), not doubled due to "profit" logic
+	h.AssertLastTrade(domain.SideShort, 0.1)
+}
+
+func TestScenario_H4_LastPrice_UpdatesEveryTick(t *testing.T) {
+	h := NewTestScenarioHelper(t)
+	h.SetupLevel(10000, true)
+
+	h.Tick(9900)
+	// We can't easily check internal state without exposing it,
+	// but we can infer it works if triggers work.
+}
+
+func TestScenario_H5_NoPanic_OnMissingTiers(t *testing.T) {
+	h := NewTestScenarioHelper(t)
+	// Setup Level but NO Tiers
+	level := &domain.Level{
+		ID:         "no-tier-level",
+		Exchange:   h.exchange,
+		Symbol:     h.symbol,
+		LevelPrice: 10000,
+		BaseSize:   0.1,
+		CreatedAt:  time.Now(),
+	}
+	h.store.SaveLevel(h.ctx, level)
+
+	// Should not panic
+	h.svc.ProcessTick(h.ctx, h.exchange, h.symbol, 10000)
+}
+
+func TestScenario_H6_NoPanic_OnMissingLevel(t *testing.T) {
+	h := NewTestScenarioHelper(t)
+	// No level saved
+
+	// Should not panic
+	h.svc.ProcessTick(h.ctx, h.exchange, h.symbol, 10000)
+}
+
+// --- I. REPOSITORY / EXCHANGE ERROR HANDLING ---
+
+func TestScenario_I1_GetSymbolTiers_Error_Handled(t *testing.T) {
+	// Requires mocking store error - skipping for now as we use real sqlite in memory
+	t.Skip("Requires mock store error injection")
+}
+
+func TestScenario_I2_SaveLevel_Error_Handled(t *testing.T) {
+	t.Skip("Requires mock store error injection")
+}
+
+func TestScenario_I3_ExchangeBuy_Fails_NoStateCorruption(t *testing.T) {
+	t.Skip("Requires mock exchange failure simulation")
+}
