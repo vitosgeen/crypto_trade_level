@@ -724,3 +724,39 @@ func TestScenario_I2_SaveLevel_Error_Handled(t *testing.T) {
 func TestScenario_I3_ExchangeBuy_Fails_NoStateCorruption(t *testing.T) {
 	t.Skip("Requires mock exchange failure simulation")
 }
+
+// --- T. TIER LOGIC TESTS ---
+
+func TestScenario_T1_Tier_Triggers_Once(t *testing.T) {
+	h := NewTestScenarioHelper(t)
+	h.SetupLevel(10000, true)
+	// Short T1: 9950
+
+	h.Tick(9900)
+	h.Tick(9960) // Cross T1 Up -> Open Short
+	h.AssertTradeCount(1)
+
+	h.Tick(9940) // Back down below T1
+	h.Tick(9960) // Cross T1 Up again -> Should NOT trigger
+	h.AssertTradeCount(1)
+}
+
+func TestScenario_T2_Tier_Resets_After_Base(t *testing.T) {
+	h := NewTestScenarioHelper(t)
+	h.SetupLevel(10000, true)
+	// Short T1: 9950
+
+	// 1. Trigger T1
+	h.Tick(9900)
+	h.Tick(9960) // Open Short
+	h.AssertTradeCount(1)
+
+	// 2. Close at Base
+	h.Tick(10000) // Hit Base -> Close
+	h.AssertTradeCount(2)
+
+	// 3. Trigger T1 Again
+	h.Tick(9900) // Reset below
+	h.Tick(9960) // Cross T1 Up -> Open Short (Should trigger again)
+	h.AssertTradeCount(3)
+}
