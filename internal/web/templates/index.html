@@ -79,7 +79,8 @@
             <form hx-post="/levels" hx-target="#levels-table">
                 <input type="text" name="exchange" placeholder="Exchange (bybit)" value="bybit" required>
                 <input type="text" name="symbol" placeholder="Symbol (BTCUSDT)" required>
-                <input type="number" step="0.000001" name="level_price" placeholder="Level Price" required>
+                <input type="number" step="0.000001" name="level_price" id="input-level-price" placeholder="Level Price"
+                    required>
                 <input type="number" step="0.001" name="base_size" placeholder="Base Size" required>
                 <input type="number" name="leverage" placeholder="Leverage" value="10" required>
                 <select name="margin_type">
@@ -87,14 +88,23 @@
                     <option value="cross">Cross</option>
                 </select>
                 <input type="number" name="cool_down_ms" placeholder="Cooldown (ms)" value="5000" required>
-                <div style="margin-top: 10px;">
-                    <label>Tiers (%):</label>
-                    <input type="number" step="0.01" name="tier1" placeholder="Tier 1 (0.5)" value="0.5" required
-                        style="width: 80px;">
-                    <input type="number" step="0.01" name="tier2" placeholder="Tier 2 (0.3)" value="0.3" required
-                        style="width: 80px;">
-                    <input type="number" step="0.01" name="tier3" placeholder="Tier 3 (0.15)" value="0.15" required
-                        style="width: 80px;">
+                <div style="margin-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
+                    <label style="margin-top: 5px;">Tiers (%):</label>
+                    <div>
+                        <input type="number" step="0.01" name="tier1" id="input-tier1" placeholder="Tier 1 (0.5)"
+                            value="0.5" required style="width: 80px;">
+                        <div id="tip-tier1" style="font-size: 0.8em; color: #666; margin-top: 2px;"></div>
+                    </div>
+                    <div>
+                        <input type="number" step="0.01" name="tier2" id="input-tier2" placeholder="Tier 2 (0.3)"
+                            value="0.3" required style="width: 80px;">
+                        <div id="tip-tier2" style="font-size: 0.8em; color: #666; margin-top: 2px;"></div>
+                    </div>
+                    <div>
+                        <input type="number" step="0.01" name="tier3" id="input-tier3" placeholder="Tier 3 (0.15)"
+                            value="0.15" required style="width: 80px;">
+                        <div id="tip-tier3" style="font-size: 0.8em; color: #666; margin-top: 2px;"></div>
+                    </div>
                 </div>
                 <div style="margin-top: 10px;">
                     <input type="checkbox" id="stop_loss_at_base" name="stop_loss_at_base">
@@ -389,6 +399,47 @@
 
             // Initial render
             setTimeout(updateChart, 500);
+
+            // Tier Tips Logic
+            function updateTierTips() {
+                const priceInput = document.getElementById('input-level-price');
+                if (!priceInput) return;
+
+                const price = parseFloat(priceInput.value);
+                if (isNaN(price)) return;
+
+                ['tier1', 'tier2', 'tier3'].forEach(tier => {
+                    const input = document.getElementById(`input-${tier}`);
+                    const tip = document.getElementById(`tip-${tier}`);
+                    if (!input || !tip) return;
+
+                    const pct = parseFloat(input.value);
+                    if (isNaN(pct)) {
+                        tip.innerHTML = '';
+                        return;
+                    }
+
+                    const longPrice = price * (1 + pct / 100);
+                    const shortPrice = price * (1 - pct / 100);
+
+                    tip.innerHTML = `<span style="color:#28a745" title="Long (Above)">L:${longPrice.toFixed(6)}</span><br><span style="color:#dc3545" title="Short (Below)">S:${shortPrice.toFixed(6)}</span>`;
+                });
+            }
+
+            // Add listeners
+            const priceInput = document.getElementById('input-level-price');
+            if (priceInput) {
+                priceInput.addEventListener('input', updateTierTips);
+                // Also update on load if value exists
+                updateTierTips();
+            }
+            ['tier1', 'tier2', 'tier3'].forEach(tier => {
+                const input = document.getElementById(`input-${tier}`);
+                if (input) input.addEventListener('input', updateTierTips);
+            });
+
+            // Call once on init
+            setTimeout(updateTierTips, 100);
         </script>
 
 
