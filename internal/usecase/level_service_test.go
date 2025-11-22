@@ -38,6 +38,10 @@ func (m *MockTradeRepo) ListTrades(ctx context.Context, limit int) ([]*domain.Or
 	return nil, nil
 }
 
+func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
+	return nil, nil
+}
+
 func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 	// Setup
 	level := &domain.Level{
@@ -120,4 +124,7 @@ func (m *MockExchangeForService) ClosePosition(ctx context.Context, symbol strin
 }
 func (m *MockExchangeForService) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
 	return &domain.Position{Size: 0.1}, nil // Always return position so Close is attempted
+}
+func (m *MockExchangeForService) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
+	return nil, nil
 }

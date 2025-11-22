@@ -472,3 +472,64 @@ func (b *BybitAdapter) readLoop() {
 		}
 	}
 }
+
+func (b *BybitAdapter) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
+	// V5 Kline Endpoint
+	path := fmt.Sprintf("/v5/market/kline?category=linear&symbol=%s&interval=%s&limit=%d", symbol, interval, limit)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int `json:"retCode"`
+		Result  struct {
+			List [][]string `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit kline error: %d", result.RetCode)
+	}
+
+	var candles []domain.Candle
+	for _, raw := range result.Result.List {
+		// Format: [startTime, open, high, low, close, volume, turnover]
+		if len(raw) < 6 {
+			continue
+		}
+
+		ts, _ := strconv.ParseInt(raw[0], 10, 64)
+		open, _ := strconv.ParseFloat(raw[1], 64)
+		high, _ := strconv.ParseFloat(raw[2], 64)
+		low, _ := strconv.ParseFloat(raw[3], 64)
+		closePrice, _ := strconv.ParseFloat(raw[4], 64)
+		volume, _ := strconv.ParseFloat(raw[5], 64)
+
+		// Bybit returns candles in reverse chronological order (newest first)
+		// We usually want oldest first for charts, but let's check what lightweight-charts expects.
+		// Lightweight charts expects ascending order (oldest first).
+		// So we should prepend or reverse the list.
+		// Let's append and then reverse at the end.
+
+		candles = append(candles, domain.Candle{
+			Time:   ts / 1000, // Convert ms to seconds for lightweight-charts
+			Open:   open,
+			High:   high,
+			Low:    low,
+			Close:  closePrice,
+			Volume: volume,
+		})
+	}
+
+	// Reverse candles to be chronological (Oldest -> Newest)
+	for i, j := 0, len(candles)-1; i < j; i, j = i+1, j-1 {
+		candles[i], candles[j] = candles[j], candles[i]
+	}
+
+	return candles, nil
+}

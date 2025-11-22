@@ -32,6 +32,9 @@ func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error {
 func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
 	return nil, nil
 }
+func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
+	return nil, nil
+}
 
 func TestEndToEnd_LevelDefense(t *testing.T) {
 	// Enable logs
