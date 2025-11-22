@@ -326,14 +326,38 @@
                     title: 'Base Level',
                 }));
 
-                // Calculate Tiers (Same logic as before)
-                const longTier1 = levelPrice * (1 + 0.005);
-                const longTier2 = levelPrice * (1 + 0.003);
-                const longTier3 = levelPrice * (1 + 0.0015);
+                // Parse Tiers from the nested table in cell 4
+                const tierCell = cells[4];
+                const nestedTable = tierCell.querySelector('table');
+                let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
 
-                const shortTier1 = levelPrice * (1 - 0.005);
-                const shortTier2 = levelPrice * (1 - 0.003);
-                const shortTier3 = levelPrice * (1 - 0.0015);
+                if (nestedTable) {
+                    const nestedRows = nestedTable.querySelectorAll('tr');
+                    if (nestedRows.length >= 2) {
+                        // Long Tiers (Row 0)
+                        const longCells = nestedRows[0].querySelectorAll('td');
+                        longTier1 = parseFloat(longCells[1].textContent);
+                        longTier2 = parseFloat(longCells[2].textContent);
+                        longTier3 = parseFloat(longCells[3].textContent);
+
+                        // Short Tiers (Row 1)
+                        const shortCells = nestedRows[1].querySelectorAll('td');
+                        shortTier1 = parseFloat(shortCells[1].textContent);
+                        shortTier2 = parseFloat(shortCells[2].textContent);
+                        shortTier3 = parseFloat(shortCells[3].textContent);
+                    }
+                }
+
+                // Fallback if parsing fails (shouldn't happen if table structure is correct)
+                if (!longTier1) {
+                    console.warn("Failed to parse tiers from table, using defaults");
+                    longTier1 = levelPrice * (1 + 0.005);
+                    longTier2 = levelPrice * (1 + 0.003);
+                    longTier3 = levelPrice * (1 + 0.0015);
+                    shortTier1 = levelPrice * (1 - 0.005);
+                    shortTier2 = levelPrice * (1 - 0.003);
+                    shortTier3 = levelPrice * (1 - 0.0015);
+                }
 
                 // Add Tier Lines
                 const addTierLine = (price, label, color) => {

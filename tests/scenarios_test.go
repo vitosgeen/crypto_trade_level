@@ -543,7 +543,122 @@ func TestScenario_H1_Multiplier_Reset_OnClose(t *testing.T) {
 }
 
 func TestScenario_H2_Multiplier_Double_OnProfit(t *testing.T) {
-	t.Skip("Deferred: Logic for profit doubling not yet implemented in engine")
+	h := NewTestScenarioHelper(t)
+	h.SetupLevel(10000, true)
+
+	// 1. Open Short T1
+	h.Tick(9900)
+	h.Tick(9960)
+	h.AssertLastTrade(domain.SideShort, 0.1)
+
+	// 2. Close Short (Hit Base) -> Profit (Entry 9960, Exit 10000? No, Short Entry 9960, Exit 10000 is LOSS)
+	// Wait, Short at 9960. Base is 10000.
+	// If price goes to 10000, we BUY to close.
+	// Entry: Sell 9960. Exit: Buy 10000.
+	// PnL = (9960 - 10000) * Size = -40 * Size (LOSS).
+	// So hitting base for Short is a LOSS (Stop Loss).
+
+	// To get a PROFIT on Short, price must go DOWN.
+	// But we only close on "Hit Base" (Loss) or "Cross Base" (Loss).
+	// How do we take profit?
+	// The current logic ONLY closes on Stop Loss at Base.
+	// It does NOT have Take Profit logic yet.
+	// EXCEPT: If we implement "Auto-Close at Base" for Longs?
+	// Long at 10040. Base 10000.
+	// If price goes to 10000, Long closes.
+	// Entry: Buy 10040. Exit: Sell 10000.
+	// PnL = (10000 - 10040) * Size = -40 * Size (LOSS).
+
+	// Wait, the "Stop Loss at Base" is effectively a Stop Loss for both sides?
+	// Yes.
+	// So how do we ever win?
+	// We win if we manually close? Or if we implement Take Profit?
+	// The "Profit Doubling" requirement implies we CAN win.
+	// But the current automated logic only has Stop Loss.
+	//
+	// UNLESS: We are testing the "Profit Doubling" logic itself, which relies on `ConsecutiveWins`.
+	// I can manually inject a "Win" state into the engine to verify the sizing logic?
+	// OR I can simulate a profitable close if I had a Take Profit trigger.
+	//
+	// Since I don't have TP logic yet, I will simulate a manual close or just update the state directly
+	// to verify the *sizing* logic works given a win.
+	// Actually, `LevelService` updates state on ANY close.
+	// If I close manually via API (which calls ClosePosition), does it update state?
+	// `LevelService.processLevel` handles the close logic when triggered by price.
+	// Manual close via API might not go through `processLevel`.
+	//
+	// Let's look at `LevelService.processLevel`. It calculates PnL.
+	// If I can trigger a close that is profitable...
+	// But `processLevel` only triggers Close on Stop Loss (Base).
+	//
+	// Wait, did I miss something?
+	// "Auto-close functionality: Develop the logic to automatically close an open position when the price crosses back to its base entry level."
+	// If we are Short at 9960 (Tier 1). Base is 10000.
+	// If price goes to 10000, we close. Loss.
+	//
+	// If we are Long at 10040 (Tier 1). Base is 10000.
+	// If price goes to 10000, we close. Loss.
+	//
+	// It seems the current "Defense" strategy is purely defensive (Stop Loss).
+	// It assumes we *want* to hold the position as it moves away from base?
+	// But we need to close it eventually to realize profit.
+	//
+	// Maybe I should add a "Take Profit" trigger to the test helper?
+	// Or just manually update the state to simulate a win for this test,
+	// verifying that the *next* open is doubled.
+	//
+	// Let's use `h.svc.engine.UpdateState` if accessible? No, it's private in `svc`.
+	// But I exposed `UpdateState` on `SublevelEngine`.
+	// `LevelService` has `engine` field but it's private.
+	//
+	// I can add a "Mock Profit" mechanism or just implement a basic TP trigger in `Evaluate`?
+	// No, that changes scope.
+	//
+	// Let's look at `TestScenarioHelper`. I can access `svc` but `engine` is private.
+	//
+	// Alternative:
+	// The `LevelService` calculates PnL based on `exchange.GetPosition`.
+	// I can MOCK the exchange to return a profitable position, then trigger a Close?
+	// But `processLevel` only triggers Close if price hits Base.
+	// If I am Short at 9960. Base 10000.
+	// If I mock current price as 10000 (to trigger close), PnL is Loss.
+	//
+	// What if I change the Level Price?
+	// If I move the Level Price to 9900?
+	// Then 9960 is "Above" Level.
+	//
+	// Okay, let's assume the user closes the position manually via some other means,
+	// OR we just want to test the *sizing* logic.
+	//
+	// Actually, I can use the `MockExchange` to simulate a "Win" by manipulating the Entry Price?
+	// If I am Short. Current Price 10000 (Trigger Close).
+	// If I mock Entry Price as 10100.
+	// PnL = (10100 - 10000) * Size = +100 * Size (PROFIT).
+	//
+	// YES! I can manipulate the `MockExchange`'s position data before the Close triggers.
+	// The `LevelService` fetches position from `exchange`.
+	// `MockExchange` is accessible in `TestScenarioHelper`.
+
+	// 1. Open Short T1
+	h.Tick(9900)
+	h.Tick(9960)
+	h.AssertLastTrade(domain.SideShort, 0.1)
+
+	// 2. Manipulate Mock Position to simulate a PROFITABLE entry
+	// We are Short. We will close at 10000 (Base).
+	// To be profitable, Entry must be > 10000.
+	// Let's say we entered at 10100.
+	h.mockEx.SetPosition(h.symbol, domain.SideShort, 0.1, 10100)
+
+	// 3. Trigger Close (Hit Base 10000)
+	h.Tick(10000)
+	h.AssertLastTrade(domain.SideShort, 0) // Close
+
+	// 4. Re-Open Short T1
+	// Now we expect size to be DOUBLED (0.2) because we "won" the last trade.
+	h.Tick(9900)                             // Reset to below T1
+	h.Tick(9960)                             // Cross T1 Up -> Open
+	h.AssertLastTrade(domain.SideShort, 0.2) // 2x Multiplier
 }
 
 func TestScenario_H3_Multiplier_NoGrow_When_Loss(t *testing.T) {

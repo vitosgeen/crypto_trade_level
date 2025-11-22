@@ -141,7 +141,27 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 
 		if action == ActionClose {
 			// Close Position
-			err := s.exchange.ClosePosition(ctx, level.Symbol)
+			// We need to fetch the position BEFORE closing to calculate PnL
+			// Or we can calculate it roughly: (ExitPrice - EntryPrice) * Size * Side
+			// But we don't track EntryPrice in LevelState.
+			// Let's fetch the position from Exchange.
+			pos, err := s.exchange.GetPosition(ctx, level.Symbol)
+			var realizedPnL float64
+			if err == nil && pos.Size > 0 {
+				// Calculate PnL
+				// Long: (Exit - Entry) * Size
+				// Short: (Entry - Exit) * Size
+				if pos.Side == domain.SideLong {
+					realizedPnL = (currPrice - pos.EntryPrice) * pos.Size
+				} else {
+					realizedPnL = (pos.EntryPrice - currPrice) * pos.Size
+				}
+				log.Printf("AUDIT: Closing Position. Symbol: %s. Entry: %f. Exit: %f. Size: %f. PnL: %f", level.Symbol, pos.EntryPrice, currPrice, pos.Size, realizedPnL)
+			} else {
+				log.Printf("WARNING: Could not fetch position for PnL calc before closing: %v", err)
+			}
+
+			err = s.exchange.ClosePosition(ctx, level.Symbol)
 			if err != nil {
 				log.Printf("WARNING: Failed to close position for %s (might be already closed): %v", level.Symbol, err)
 			}
@@ -153,7 +173,18 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 				closingSide = side // Fallback
 			}
 
-			// Reset State
+			// Update State with Win/Loss
+			s.engine.UpdateState(level.ID, func(ls *LevelState) {
+				if realizedPnL > 0 {
+					ls.ConsecutiveWins++
+					log.Printf("AUDIT: Win recorded for Level %s. Consecutive Wins: %d", level.ID, ls.ConsecutiveWins)
+				} else {
+					ls.ConsecutiveWins = 0
+					log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", level.ID)
+				}
+			})
+
+			// Reset State (Triggers and ActiveSide)
 			s.engine.ResetState(level.ID)
 
 			// Save Trade (Close)
