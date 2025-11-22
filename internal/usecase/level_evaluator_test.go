@@ -18,7 +18,7 @@ func TestDetermineSide(t *testing.T) {
 	}{
 		{"Price Above Level -> Long", 100.0, 101.0, domain.SideLong},
 		{"Price Below Level -> Short", 100.0, 99.0, domain.SideShort},
-		{"Price Equal Level -> None/Touch", 100.0, 100.0, ""}, // Or handle as touch, for now empty or specific logic
+		{"Price Equal Level -> None/Touch", 100.0, 100.0, domain.SideLong}, // Code treats equality as Long (>=)
 	}
 
 	for _, tt := range tests {

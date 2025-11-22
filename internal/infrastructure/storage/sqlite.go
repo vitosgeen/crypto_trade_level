@@ -160,7 +160,7 @@ func (s *SQLiteStore) SaveTrade(ctx context.Context, order *domain.Order) error 
 }
 
 func (s *SQLiteStore) ListTrades(ctx context.Context, limit int) ([]*domain.Order, error) {
-	query := `SELECT exchange, symbol, level_id, side, size, price, created_at FROM trades ORDER BY created_at DESC LIMIT ?`
+	query := `SELECT exchange, symbol, level_id, side, size, price, created_at FROM trades ORDER BY id DESC LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err

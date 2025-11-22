@@ -22,6 +22,7 @@ type LevelState struct {
 	Tier2Triggered  bool
 	Tier3Triggered  bool
 	LastTriggerTime time.Time
+	ActiveSide      domain.Side
 }
 
 type SublevelEngine struct {
@@ -52,8 +53,6 @@ func (e *SublevelEngine) ResetState(levelID string) {
 
 // Evaluate checks if price movement triggers a tier action.
 // boundaries: [Tier1, Tier2, Tier3] prices.
-// Evaluate checks if price movement triggers a tier action.
-// boundaries: [Tier1, Tier2, Tier3] prices.
 func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, prevPrice, currPrice float64, side domain.Side) (Action, float64) {
 	e.mu.Lock()
 	state, ok := e.states[level.ID]
@@ -71,28 +70,24 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	}
 
 	// Check Stop Loss at Base
+	// We use ActiveSide if available to detect crossing even if current side flipped
 	if level.StopLossAtBase {
-		// If any tier is triggered, we are in a position.
-		// If price crosses back to level price (or worse), we close.
+		checkSide := side
+		if state.ActiveSide != "" {
+			checkSide = state.ActiveSide
+		}
 
-		// Short: Entry was above level. Stop loss is if price drops below level?
-		// Wait, Short defends level from above. So we sell when price goes UP.
-		if side == domain.SideShort {
+		if checkSide == domain.SideShort {
 			// Short (Below Level). Close if Price is AT or ABOVE Level.
-			// We don't check prevPrice here to ensure we close even if we gapped over or restarted.
 			if currPrice >= level.LevelPrice {
-				if state.Tier1Triggered {
-					log.Printf("AUDIT: Stop Loss (Base) Triggered (Short). Level %s. Price %f. Base: %f", level.ID, currPrice, level.LevelPrice)
-					return ActionClose, 0
-				}
+				log.Printf("AUDIT: Stop Loss (Base) Triggered (Short). Level %s. Price %f. Base: %f", level.ID, currPrice, level.LevelPrice)
+				return ActionClose, 0
 			}
 		} else { // domain.SideLong
 			// Long (Above Level). Close if Price is AT or BELOW Level.
 			if currPrice <= level.LevelPrice {
-				if state.Tier1Triggered {
-					log.Printf("AUDIT: Stop Loss (Base) Triggered (Long). Level %s. Price %f. Base: %f", level.ID, currPrice, level.LevelPrice)
-					return ActionClose, 0
-				}
+				log.Printf("AUDIT: Stop Loss (Base) Triggered (Long). Level %s. Price %f. Base: %f", level.ID, currPrice, level.LevelPrice)
+				return ActionClose, 0
 			}
 		}
 	}
@@ -181,6 +176,7 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		if !state.Tier1Triggered && crosses(prevPrice, currPrice, tier1Price) {
 			log.Printf("AUDIT: Tier 1 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier1Price)
 			state.Tier1Triggered = true
+			state.ActiveSide = domain.SideShort
 			triggered = true
 			action = ActionOpen
 			size = level.BaseSize
@@ -210,6 +206,7 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		if !state.Tier1Triggered && crosses(prevPrice, currPrice, tier1Price) {
 			log.Printf("AUDIT: Tier 1 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier1Price)
 			state.Tier1Triggered = true
+			state.ActiveSide = domain.SideLong
 			triggered = true
 			action = ActionOpen
 			size = level.BaseSize

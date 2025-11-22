@@ -125,3 +125,31 @@ func TestSublevelEngine_StopLossAtBase(t *testing.T) {
 		t.Errorf("Expected Close on Gap, got %v", action)
 	}
 }
+
+func TestSublevelEngine_StopLossAtBase_Stateless(t *testing.T) {
+	engine := usecase.NewSublevelEngine()
+	level := &domain.Level{
+		ID:             "1",
+		LevelPrice:     10000.0,
+		BaseSize:       1.0,
+		CoolDownMs:     0,
+		StopLossAtBase: true,
+	}
+	boundaries := []float64{10050.0, 10030.0, 10015.0}
+
+	// Scenario: Bot restarts. Price is AT Base Level.
+	// No previous state.
+	// Should trigger Close.
+
+	action, _ := engine.Evaluate(level, boundaries, 10000.0, 10000.0, domain.SideLong)
+	if action != usecase.ActionClose {
+		t.Errorf("Expected Stateless Close at Base, got %v", action)
+	}
+
+	// Scenario: Bot restarts. Price is WORSE than Base Level (Gap Down).
+	engine.ResetState(level.ID)
+	action, _ = engine.Evaluate(level, boundaries, 9900.0, 9900.0, domain.SideLong)
+	if action != usecase.ActionClose {
+		t.Errorf("Expected Stateless Close below Base, got %v", action)
+	}
+}
