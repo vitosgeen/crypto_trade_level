@@ -31,3 +31,6 @@ config/config.yaml
 # IDEs
 .vscode/
 .idea/
+
+# Bot
+bot.pid

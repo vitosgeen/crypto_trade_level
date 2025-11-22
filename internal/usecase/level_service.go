@@ -46,6 +46,10 @@ func (s *LevelService) GetLatestPrice(symbol string) float64 {
 	return s.lastPrices[symbol]
 }
 
+func (s *LevelService) GetExchange() domain.Exchange {
+	return s.exchange
+}
+
 // GetPositions fetches active positions for all symbols with levels
 func (s *LevelService) GetPositions(ctx context.Context) ([]*domain.Position, error) {
 	levels, err := s.levelRepo.ListLevels(ctx)
