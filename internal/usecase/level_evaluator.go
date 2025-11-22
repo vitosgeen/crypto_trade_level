@@ -9,11 +9,11 @@ func NewLevelEvaluator() *LevelEvaluator {
 }
 
 func (e *LevelEvaluator) DetermineSide(levelPrice, currentPrice float64) domain.Side {
-	if currentPrice > levelPrice {
-		return domain.SideLong // Price is above, level is Support -> Long
+	if currentPrice >= levelPrice {
+		return domain.SideLong // Price is above or at level -> Long
 	}
 	if currentPrice < levelPrice {
-		return domain.SideShort // Price is below, level is Resistance -> Short
+		return domain.SideShort // Price is below, level is Resistance -> Short (per EXT spec)
 	}
 	return "" // Exact match
 }

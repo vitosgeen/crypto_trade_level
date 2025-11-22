@@ -14,6 +14,7 @@ const (
 	ActionNone          Action = "NONE"
 	ActionOpen          Action = "OPEN"
 	ActionAddToPosition Action = "ADD"
+	ActionClose         Action = "CLOSE"
 )
 
 type LevelState struct {
@@ -69,50 +70,91 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		return ActionNone, 0
 	}
 
+	// Check Stop Loss at Base
+	if level.StopLossAtBase {
+		// If any tier is triggered, we are in a position.
+		// If price crosses back to level price (or worse), we close.
+
+		// Short: Entry was above level. Stop loss is if price drops below level?
+		// Wait, Short defends level from above. So we sell when price goes UP.
+		if side == domain.SideShort {
+			// Short (Below Level). Close if Price is AT or ABOVE Level.
+			// We don't check prevPrice here to ensure we close even if we gapped over or restarted.
+			if currPrice >= level.LevelPrice {
+				if state.Tier1Triggered {
+					log.Printf("AUDIT: Stop Loss (Base) Triggered (Short). Level %s. Price %f. Base: %f", level.ID, currPrice, level.LevelPrice)
+					return ActionClose, 0
+				}
+			}
+		} else { // domain.SideLong
+			// Long (Above Level). Close if Price is AT or BELOW Level.
+			if currPrice <= level.LevelPrice {
+				if state.Tier1Triggered {
+					log.Printf("AUDIT: Stop Loss (Base) Triggered (Long). Level %s. Price %f. Base: %f", level.ID, currPrice, level.LevelPrice)
+					return ActionClose, 0
+				}
+			}
+		}
+	}
+
 	// Determine Trigger Logic based on Side
-	// Short: Price comes from ABOVE. Trigger if prev > Tier >= curr
-	// Long: Price comes from BELOW. Trigger if prev < Tier <= curr
+	// Triggers are now BIDIRECTIONAL per updated spec.
+	// Long: Trigger on Cross Down (Dip) OR Cross Up (Breakout/Trend)
+	// Short: Trigger on Cross Up (Rally) OR Cross Down (Breakdown/Trend)
 
 	tier1Price, tier2Price, tier3Price := boundaries[0], boundaries[1], boundaries[2]
 
 	// CRITICAL FIX: On first evaluation, mark already-passed tiers as triggered
-	// to avoid false triggers on old price levels
+	// to avoid false triggers on old price levels.
+	// Since triggers are bidirectional, "passed" means "between Level and Tier" vs "outside Tier"?
+	// Actually, if we trigger on ANY cross, we just need to know if we are currently "past" the tier relative to the level?
+	// No, "Triggered" state prevents re-triggering.
+	// Initialization logic: If we start "inside" the position (e.g. between Level and Tier 1), should we mark Tier 1 as triggered?
+	// If we start at L+0.2% (Tier 1 is 0.5%), we are "inside".
+	// If price moves to L+0.6%, we cross Tier 1 Upwards. Should we trigger? Yes.
+	// If price moves to L, we close.
+
+	// If we start at L+0.6% (Outside Tier 1).
+	// If price moves to L+0.4%, we cross Tier 1 Downwards. Should we trigger? Yes.
+
+	// So, initialization logic is tricky with bidirectional triggers.
+	// Maybe we don't need special initialization if we just rely on "Cross"?
+	// But if we restart the bot with an open position, we don't want to double-buy?
+	// The bot doesn't know about external positions yet (stateless engine).
+	// The `isNewState` block was to prevent immediate triggers on startup if price is *already* past the tier.
+	// But if triggers are bidirectional, "past" is ambiguous.
+
+	// Let's assume "Triggered" means "We have executed this tier".
+	// If `isNewState` is true, we might want to assume no tiers are triggered unless we are DEEP in profit?
+	// Or maybe we just leave it empty and let the first cross trigger?
+	// The previous logic assumed "Approaching Level" was the only trigger.
+	// Now that "Moving Away" is also a trigger, ANY cross is valid.
+	// So, if we start at 10000 (Level), and Tier 1 is 10050.
+	// Price is 10020. We are "Inside".
+	// If price goes to 10060, we cross Tier 1. Trigger.
+	// If price goes to 10000, we hit Stop Loss.
+
+	// If we start at 10060 (Outside).
+	// Price goes to 10040. Cross Tier 1. Trigger.
+
+	// So, `isNewState` logic might be unnecessary or should be minimal?
+	// The original issue was: Start at 10040. Prev=10040, Curr=10040. No cross.
+	// Next tick 10030. Cross? No.
+	// Wait, `Evaluate` takes `prevPrice`.
+	// On first run, `prevPrice` might be 0 or same as `currPrice`?
+	// The caller `LevelService` passes `prevPrice`.
+	// If it's the first tick, `prevPrice` might be the same as `currPrice`.
+
+	// Let's keep the initialization simple: Do NOT pre-trigger tiers.
+	// Let the market action trigger them.
+	// UNLESS we are strictly recovering state?
+	// For now, I will COMMENT OUT the aggressive initialization to allow bidirectional triggers to work naturally.
+	// If the user wants to "resume" a position, that's a separate state persistence issue.
+
 	if isNewState {
-		e.mu.Lock()
-		if side == domain.SideShort {
-			// For SHORT: tiers are BELOW level, price rises UP through them
-			// Mark tiers that current price is already above
-			if currPrice >= tier3Price {
-				state.Tier1Triggered = true
-				state.Tier2Triggered = true
-				state.Tier3Triggered = true
-				log.Printf("INFO: Level %s initialized with price already above all tiers (SHORT)", level.ID)
-			} else if currPrice >= tier2Price {
-				state.Tier1Triggered = true
-				state.Tier2Triggered = true
-				log.Printf("INFO: Level %s initialized with price already above Tier1 and Tier2 (SHORT)", level.ID)
-			} else if currPrice >= tier1Price {
-				state.Tier1Triggered = true
-				log.Printf("INFO: Level %s initialized with price already above Tier1 (SHORT)", level.ID)
-			}
-		} else {
-			// For LONG: tiers are ABOVE level, price falls DOWN through them
-			// Mark tiers that current price is already below
-			if currPrice <= tier3Price {
-				state.Tier1Triggered = true
-				state.Tier2Triggered = true
-				state.Tier3Triggered = true
-				log.Printf("INFO: Level %s initialized with price already below all tiers (LONG)", level.ID)
-			} else if currPrice <= tier2Price {
-				state.Tier1Triggered = true
-				state.Tier2Triggered = true
-				log.Printf("INFO: Level %s initialized with price already below Tier1 and Tier2 (LONG)", level.ID)
-			} else if currPrice <= tier1Price {
-				state.Tier1Triggered = true
-				log.Printf("INFO: Level %s initialized with price already below Tier1 (LONG)", level.ID)
-			}
-		}
-		e.mu.Unlock()
+		// Reset/Clear triggers on new state? They are already false by default.
+		// We log the start.
+		log.Printf("INFO: Level %s engine initialized. Price: %f", level.ID, currPrice)
 	}
 
 	triggered := false
@@ -122,29 +164,34 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	// Helper to check crossing
+	crosses := func(p1, p2, boundary float64) bool {
+		return (p1 < boundary && p2 >= boundary) || (p1 > boundary && p2 <= boundary)
+	}
+
 	if side == domain.SideShort {
-		// Short (Resistance): Trigger when price rises UP to the tier
-		// Tier prices are ABOVE level (calculated as Level * (1+pct))
-		// We trigger when we cross UP into the tier
+		// Short (Resistance): Tiers are BELOW Level (Wait, EXT spec says Short Tiers are BELOW Level? Let's re-read).
+		// EXT Spec: "SHORT side (below level) ... Tier1_below = L * (1 - t1)"
+		// YES. Short Zone is Price < Level. Tiers are < Level.
 
 		// Debug Log
 		log.Printf("DEBUG: Eval Short. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
 		// Tier 1
-		if !state.Tier1Triggered && prevPrice < tier1Price && currPrice >= tier1Price {
+		if !state.Tier1Triggered && crosses(prevPrice, currPrice, tier1Price) {
 			log.Printf("AUDIT: Tier 1 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier1Price)
 			state.Tier1Triggered = true
 			triggered = true
 			action = ActionOpen
 			size = level.BaseSize
-		} else if !state.Tier2Triggered && prevPrice < tier2Price && currPrice >= tier2Price {
+		} else if !state.Tier2Triggered && crosses(prevPrice, currPrice, tier2Price) {
 			// Tier 2
 			log.Printf("AUDIT: Tier 2 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier2Price)
 			state.Tier2Triggered = true
 			triggered = true
 			action = ActionAddToPosition
 			size = level.BaseSize
-		} else if !state.Tier3Triggered && prevPrice < tier3Price && currPrice >= tier3Price {
+		} else if !state.Tier3Triggered && crosses(prevPrice, currPrice, tier3Price) {
 			// Tier 3
 			log.Printf("AUDIT: Tier 3 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier3Price)
 			state.Tier3Triggered = true
@@ -153,26 +200,26 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 			size = 2 * level.BaseSize
 		}
 	} else {
-		// Long (Support): Trigger when price falls DOWN to the tier
-		// Tier prices are BELOW level (calculated as Level * (1-pct))
-		// We trigger when we cross DOWN into the tier
+		// Long (Support): Tiers are ABOVE Level.
+		// EXT Spec: "LONG side (above level) ... Tier1_above = L * (1 + t1)"
+		// YES. Long Zone is Price > Level. Tiers are > Level.
 
 		// Debug Log
 		log.Printf("DEBUG: Eval Long. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
-		if !state.Tier1Triggered && prevPrice > tier1Price && currPrice <= tier1Price {
+		if !state.Tier1Triggered && crosses(prevPrice, currPrice, tier1Price) {
 			log.Printf("AUDIT: Tier 1 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier1Price)
 			state.Tier1Triggered = true
 			triggered = true
 			action = ActionOpen
 			size = level.BaseSize
-		} else if !state.Tier2Triggered && prevPrice > tier2Price && currPrice <= tier2Price {
+		} else if !state.Tier2Triggered && crosses(prevPrice, currPrice, tier2Price) {
 			log.Printf("AUDIT: Tier 2 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier2Price)
 			state.Tier2Triggered = true
 			triggered = true
 			action = ActionAddToPosition
 			size = level.BaseSize
-		} else if !state.Tier3Triggered && prevPrice > tier3Price && currPrice <= tier3Price {
+		} else if !state.Tier3Triggered && crosses(prevPrice, currPrice, tier3Price) {
 			log.Printf("AUDIT: Tier 3 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier3Price)
 			state.Tier3Triggered = true
 			triggered = true

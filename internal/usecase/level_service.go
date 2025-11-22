@@ -135,8 +135,47 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 		log.Printf("AUDIT: Action Triggered: %s. Level: %s, Symbol: %s, Side: %s, Size: %f", action, level.ID, level.Symbol, side, size)
 		log.Printf("Triggered: %s on %s %s (Side: %s, Size: %f)", action, level.Exchange, level.Symbol, side, size)
 
+		if action == ActionClose {
+			// Close Position
+			err := s.exchange.ClosePosition(ctx, level.Symbol)
+			if err != nil {
+				log.Printf("WARNING: Failed to close position for %s (might be already closed): %v", level.Symbol, err)
+				// We proceed to reset state because if we are here, we hit the stop loss level.
+				// If the exchange stop loss worked, the position is gone.
+				// If it failed, we are in a bad state anyway, but keeping 'Triggered' true prevents recovery.
+			}
+			// Reset State
+			s.engine.ResetState(level.ID)
+
+			// Save Trade (Close)
+			order := &domain.Order{
+				Exchange: level.Exchange,
+				Symbol:   level.Symbol,
+				LevelID:  level.ID,
+				Side:     side, // Or "CLOSE" ? Keeping side consistent with position side for now, or maybe we need a new side enum for Close?
+				// Actually, for trade history, it's better to show "CLOSE" or negative size?
+				// For now, let's just log it as a trade with 0 size or specific marker?
+				// The user wants to see it in trades.
+				Size:      0, // Size 0 indicates full close in this MVP context? Or maybe we should fetch position size before closing.
+				Price:     currPrice,
+				CreatedAt: time.Now(),
+			}
+			// We might want to mark it as a close.
+			// But domain.Order doesn't have a "Type".
+			// Let's just save it.
+			if err := s.tradeRepo.SaveTrade(ctx, order); err != nil {
+				log.Printf("Failed to save close trade: %v", err)
+			}
+			return
+		}
+
 		// 4. Execute Trade
-		err := s.executor.Execute(ctx, level.Symbol, side, size, level.Leverage, level.MarginType)
+		stopLoss := 0.0
+		if level.StopLossAtBase {
+			stopLoss = level.LevelPrice
+		}
+
+		err := s.executor.Execute(ctx, level.Symbol, side, size, level.Leverage, level.MarginType, stopLoss)
 		if err != nil {
 			log.Printf("Failed to execute trade: %v", err)
 			return

@@ -136,18 +136,20 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	exchange := r.FormValue("exchange")
 	symbol := r.FormValue("symbol")
 	marginType := r.FormValue("margin_type")
+	stopLossAtBase := r.FormValue("stop_loss_at_base") == "on"
 
 	level := &domain.Level{
-		ID:         fmt.Sprintf("%d", time.Now().UnixNano()),
-		Exchange:   exchange,
-		Symbol:     symbol,
-		LevelPrice: price,
-		BaseSize:   baseSize,
-		Leverage:   leverage,
-		MarginType: marginType,
-		CoolDownMs: coolDownMs,
-		Source:     "manual-web",
-		CreatedAt:  time.Now(),
+		ID:             fmt.Sprintf("%d", time.Now().UnixNano()),
+		Exchange:       exchange,
+		Symbol:         symbol,
+		LevelPrice:     price,
+		BaseSize:       baseSize,
+		Leverage:       leverage,
+		MarginType:     marginType,
+		CoolDownMs:     coolDownMs,
+		StopLossAtBase: stopLossAtBase,
+		Source:         "manual-web",
+		CreatedAt:      time.Now(),
 	}
 
 	if err := s.levelRepo.SaveLevel(r.Context(), level); err != nil {

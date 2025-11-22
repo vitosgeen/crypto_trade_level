@@ -4,16 +4,17 @@ import "time"
 
 // Level represents a price level to defend.
 type Level struct {
-	ID          string
-	Exchange    string
-	Symbol      string
-	LevelPrice  float64
-	BaseSize    float64
-	Leverage    int
-	MarginType  string // "isolated" or "cross"
-	CoolDownMs  int64
-	Source      string
-	CreatedAt   time.Time
+	ID             string
+	Exchange       string
+	Symbol         string
+	LevelPrice     float64
+	BaseSize       float64
+	Leverage       int
+	MarginType     string // "isolated" or "cross"
+	CoolDownMs     int64
+	StopLossAtBase bool
+	Source         string
+	CreatedAt      time.Time
 }
 
 // SymbolTiers defines the scaling tiers for a specific symbol on an exchange.

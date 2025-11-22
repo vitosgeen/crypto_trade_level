@@ -55,7 +55,7 @@ func main() {
 	// --- Test LONG ---
 	fmt.Println("\n--- Testing LONG ---")
 	fmt.Printf("Placing Market Buy Order (Size: %f)...\n", size)
-	if err := adapter.MarketBuy(ctx, symbol, size, leverage, "isolated"); err != nil {
+	if err := adapter.MarketBuy(ctx, symbol, size, leverage, "isolated", 0.0); err != nil {
 		fmt.Printf("❌ Failed to buy: %v\n", err)
 		os.Exit(1)
 	}
@@ -88,7 +88,7 @@ func main() {
 	time.Sleep(2 * time.Second)
 
 	fmt.Printf("Placing Market Sell Order (Size: %f)...\n", size)
-	if err := adapter.MarketSell(ctx, symbol, size, leverage, "isolated"); err != nil {
+	if err := adapter.MarketSell(ctx, symbol, size, leverage, "isolated", 0.0); err != nil {
 		fmt.Printf("❌ Failed to sell: %v\n", err)
 		os.Exit(1)
 	}

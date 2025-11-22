@@ -6,13 +6,12 @@ import (
 	"log"
 	"os"
 
-	"github.com/joho/godotenv"
 	"github.com/vitos/crypto_trade_level/internal/infrastructure/exchange"
 )
 
 func main() {
 	// Load .env
-	godotenv.Load()
+	// godotenv.Load()
 
 	apiKey := os.Getenv("BYBIT_API_KEY")
 	apiSecret := os.Getenv("BYBIT_API_SECRET")
@@ -23,13 +22,13 @@ func main() {
 
 	client := exchange.NewBybitAdapter(apiKey, apiSecret, exchange.BybitBaseURL, exchange.BybitWSURL)
 
-	ctx := context.Background()
+	// ctx := context.Background()
 
 	// Test setting margin mode to isolated
 	fmt.Println("Testing margin mode setting...")
 
 	// This will call setMarginMode internally
-	err := client.MarketBuy(ctx, "BTCUSDT", 0.001, 10, "isolated")
+	err := client.MarketBuy(context.Background(), "BTCUSDT", 0.001, 10, "isolated", 0.0)
 	if err != nil {
 		log.Printf("Error: %v", err)
 	} else {

@@ -141,7 +141,7 @@ func (b *BybitAdapter) GetCurrentPrice(ctx context.Context, symbol string) (floa
 	return strconv.ParseFloat(result.Result.List[0].LastPrice, 64)
 }
 
-func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side string, size float64, leverage int, marginType string) error {
+func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side string, size float64, leverage int, marginType string, stopLoss float64) error {
 	// 1. Set Margin Mode (isolated/cross)
 	b.setMarginMode(ctx, symbol, marginType)
 
@@ -156,6 +156,11 @@ func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side strin
 		"orderType":   "Market",
 		"qty":         fmt.Sprintf("%f", size),
 		"timeInForce": "GTC",
+	}
+
+	// Add Stop Loss if provided
+	if stopLoss > 0 {
+		payload["stopLoss"] = fmt.Sprintf("%f", stopLoss)
 	}
 
 	resp, err := b.sendRequest(ctx, "POST", "/v5/order/create", payload)
@@ -215,12 +220,12 @@ func (b *BybitAdapter) setMarginMode(ctx context.Context, symbol string, marginM
 	}
 }
 
-func (b *BybitAdapter) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string) error {
-	return b.placeOrder(ctx, symbol, "Buy", size, leverage, marginType)
+func (b *BybitAdapter) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+	return b.placeOrder(ctx, symbol, "Buy", size, leverage, marginType, stopLoss)
 }
 
-func (b *BybitAdapter) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string) error {
-	return b.placeOrder(ctx, symbol, "Sell", size, leverage, marginType)
+func (b *BybitAdapter) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+	return b.placeOrder(ctx, symbol, "Sell", size, leverage, marginType, stopLoss)
 }
 
 func (b *BybitAdapter) ClosePosition(ctx context.Context, symbol string) error {

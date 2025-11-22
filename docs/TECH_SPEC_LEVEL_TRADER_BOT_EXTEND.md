@@ -752,3 +752,36 @@ Auto-discovery of levels (orderbook heatmaps, liquidation clusters, swing highs/
 Parameter optimizer for tiers and BaseSize.
 
 Rich web dashboard with charts and analytics.
+
+
+## TODO
+
+Position Management:
+Auto-close position when price crosses back to the base level
+Take-profit / stop-loss functionality
+Position size scaling based on PnL
+
+Level Management:
+Edit existing levels (change tiers, leverage, etc.)
+Pause/resume levels without deleting
+Level templates for quick setup
+
+Monitoring & Alerts:
+Telegram/Discord notifications when trades trigger
+Email alerts for important events
+Sound alerts in the web UI
+
+Analytics & Reporting:
+Trade history with P&L analysis
+Win rate statistics per level
+Performance charts
+
+Risk Management:
+Maximum position size limits
+Daily loss limits
+Auto-pause trading on drawdown
+
+UI Improvements:
+Dark mode toggle
+Mobile-responsive design
+Real-time PnL updates

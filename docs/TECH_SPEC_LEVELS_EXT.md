@@ -25,6 +25,8 @@ Tier3_below = L * (1 - t3)
 
 ## 3. Trigger Direction
 - **LONG triggers only when price moves DOWN from the top toward L**
+- **LONG triggers only when price moves UP from the base level L**
+- **SHORT triggers only when price moves DOWN from the base level L**
 - **SHORT triggers only when price moves UP from the bottom toward L**
 
 ## 4. Trigger Sequence
@@ -47,3 +49,4 @@ Total exposure after Tier3 = **4 × BaseSize**.
 When price crosses L:
 - Full position CLOSE  
 - Reset Tier1/2/3 state
+- Or close position by stop loss if StopLossAtBase is enabled
