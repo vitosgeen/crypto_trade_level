@@ -183,6 +183,11 @@
                         borderVisible: false,
                         wickUpColor: '#26a69a',
                         wickDownColor: '#ef5350',
+                        priceFormat: {
+                            type: 'price',
+                            precision: 6,
+                            minMove: 0.000001,
+                        },
                     });
 
                     console.log("Chart initialized. Series:", candleSeries);
