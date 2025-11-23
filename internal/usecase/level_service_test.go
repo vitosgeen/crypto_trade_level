@@ -68,6 +68,9 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx)
 	ctx := context.Background()
 
+	// Populate Cache
+	service.UpdateCache(ctx)
+
 	// 1. Trigger Open (Tier 1)
 	// Prev: 10000 (Init), Curr: 10060
 	// We need to feed ticks.
