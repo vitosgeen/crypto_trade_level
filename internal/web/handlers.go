@@ -30,6 +30,13 @@ type LevelView struct {
 	ShortTiers   []float64
 }
 
+func (s *Server) handleLanding(w http.ResponseWriter, r *http.Request) {
+	if err := templates.ExecuteTemplate(w, "landing.html", nil); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", 500)
+	}
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// Fetch initial data
 	levels, _ := s.levelRepo.ListLevels(r.Context())
