@@ -19,6 +19,8 @@ vendor/
 go.work
 
 # Project specific
+bot
+bot.pid
 bot.db
 bot.log
 *.db
