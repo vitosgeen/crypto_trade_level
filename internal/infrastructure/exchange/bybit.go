@@ -26,15 +26,16 @@ const (
 )
 
 type BybitAdapter struct {
-	apiKey    string
-	apiSecret string
-	baseURL   string
-	wsURL     string
-	client    *http.Client
-	wsConn    *websocket.Conn
-	wsDone    chan struct{}
-	callbacks []func(symbol string, price float64)
-	mu        sync.Mutex
+	apiKey         string
+	apiSecret      string
+	baseURL        string
+	wsURL          string
+	client         *http.Client
+	wsConn         *websocket.Conn
+	wsDone         chan struct{}
+	callbacks      []func(symbol string, price float64)
+	tradeCallbacks []func(symbol string, side string, size float64, price float64)
+	mu             sync.Mutex
 }
 
 func NewBybitAdapter(apiKey, apiSecret, baseURL, wsURL string) *BybitAdapter {
@@ -340,6 +341,12 @@ func (b *BybitAdapter) OnPriceUpdate(callback func(symbol string, price float64)
 	b.callbacks = append(b.callbacks, callback)
 }
 
+func (b *BybitAdapter) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tradeCallbacks = append(b.tradeCallbacks, callback)
+}
+
 func (b *BybitAdapter) ConnectWS(symbols []string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -379,6 +386,12 @@ func (b *BybitAdapter) subscribe(symbols []string) error {
 	for i, s := range symbols {
 		args[i] = "orderbook.1." + s
 	}
+	// Also subscribe to publicTrade
+	tradeArgs := make([]interface{}, len(symbols))
+	for i, s := range symbols {
+		tradeArgs[i] = "publicTrade." + s
+	}
+	args = append(args, tradeArgs...)
 
 	subMsg := map[string]interface{}{
 		"op":   "subscribe",
@@ -468,6 +481,40 @@ func (b *BybitAdapter) readLoop() {
 
 			for _, cb := range callbacks {
 				cb(symbol, price)
+			}
+		} else if strings.HasPrefix(topic, "publicTrade.") {
+			data, ok := event["data"].([]interface{})
+			if !ok {
+				continue
+			}
+			symbol := strings.TrimPrefix(topic, "publicTrade.")
+
+			for _, item := range data {
+				trade, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				// Parse Trade
+				side, _ := trade["S"].(string)
+				sizeStr, _ := trade["v"].(string)
+				priceStr, _ := trade["p"].(string)
+
+				size, _ := strconv.ParseFloat(sizeStr, 64)
+				price, _ := strconv.ParseFloat(priceStr, 64)
+
+				b.mu.Lock()
+				// We need a new callback type for trades or reuse existing?
+				// For now, let's just log or add a specific trade callback handler later.
+				// Actually, MarketService needs this.
+				// Let's add OnTradeUpdate to BybitAdapter.
+				tradeCallbacks := make([]func(string, string, float64, float64), len(b.tradeCallbacks))
+				copy(tradeCallbacks, b.tradeCallbacks)
+				b.mu.Unlock()
+
+				for _, cb := range tradeCallbacks {
+					cb(symbol, side, size, price)
+				}
 			}
 		}
 	}

@@ -38,8 +38,35 @@ func (m *MockTradeRepo) ListTrades(ctx context.Context, limit int) ([]*domain.Or
 	return nil, nil
 }
 
+type MockExchange struct {
+	BuyCalled  bool
+	SellCalled bool
+}
+
+func (m *MockExchange) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
+	return 0, nil
+}
+func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+	m.BuyCalled = true
+	return nil
+}
+func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+	m.SellCalled = true
+	return nil
+}
+func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error {
+	return nil
+}
+func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
+	return nil, nil
+}
+func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
+	return nil, nil
+}
 func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return nil, nil
+}
+func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 }
 
 func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
@@ -133,4 +160,6 @@ func (m *MockExchangeForService) GetCandles(ctx context.Context, symbol, interva
 }
 func (m *MockExchangeForService) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
 	return nil, nil
+}
+func (m *MockExchangeForService) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 }

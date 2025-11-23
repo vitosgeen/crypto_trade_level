@@ -10,21 +10,109 @@ import (
 )
 
 type CachedLiquidity struct {
-	Data   []LiquidityCluster
-	Expiry time.Time
+	Data     []LiquidityCluster
+	TotalBid float64
+	TotalAsk float64
+	Expiry   time.Time
+}
+
+type Trade struct {
+	Symbol string
+	Side   string
+	Size   float64
+	Price  float64
+	Time   time.Time
 }
 
 type MarketService struct {
 	exchange domain.Exchange
 	cache    map[string]CachedLiquidity
+	trades   map[string][]Trade // Symbol -> Trades
 	mu       sync.Mutex
 }
 
 func NewMarketService(exchange domain.Exchange) *MarketService {
-	return &MarketService{
+	s := &MarketService{
 		exchange: exchange,
 		cache:    make(map[string]CachedLiquidity),
+		trades:   make(map[string][]Trade),
 	}
+
+	// Subscribe to trades
+	exchange.OnTradeUpdate(s.handleTrade)
+
+	return s
+}
+
+func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	// Add new trade
+	s.trades[symbol] = append(s.trades[symbol], Trade{
+		Symbol: symbol,
+		Side:   side,
+		Size:   size,
+		Price:  price,
+		Time:   now,
+	})
+
+	// Prune old trades (> 60s)
+	cutoff := now.Add(-60 * time.Second)
+	validTrades := s.trades[symbol][:0]
+	for _, t := range s.trades[symbol] {
+		if t.Time.After(cutoff) {
+			validTrades = append(validTrades, t)
+		}
+	}
+	s.trades[symbol] = validTrades
+}
+
+type MarketStats struct {
+	SpeedBuy  float64 `json:"speed_buy"`
+	SpeedSell float64 `json:"speed_sell"`
+	DepthBid  float64 `json:"depth_bid"`
+	DepthAsk  float64 `json:"depth_ask"`
+}
+
+func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*MarketStats, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 1. Calculate Speed (from trades)
+	var speedBuy, speedSell float64
+	if trades, ok := s.trades[symbol]; ok {
+		now := time.Now()
+		cutoff := now.Add(-60 * time.Second)
+		// Prune again just in case (lazy pruning)
+		validTrades := trades[:0]
+		for _, t := range trades {
+			if t.Time.After(cutoff) {
+				validTrades = append(validTrades, t)
+				if t.Side == "Buy" {
+					speedBuy += t.Size
+				} else {
+					speedSell += t.Size
+				}
+			}
+		}
+		s.trades[symbol] = validTrades
+	}
+
+	// 2. Get Depth (from cache)
+	var depthBid, depthAsk float64
+	if cached, ok := s.cache[symbol]; ok {
+		depthBid = cached.TotalBid
+		depthAsk = cached.TotalAsk
+	}
+
+	return &MarketStats{
+		SpeedBuy:  speedBuy,
+		SpeedSell: speedSell,
+		DepthBid:  depthBid,
+		DepthAsk:  depthAsk,
+	}, nil
 }
 
 type LiquidityCluster struct {
@@ -63,6 +151,15 @@ func (s *MarketService) GetLiquidityClusters(ctx context.Context, symbol string)
 
 	clusters := make([]LiquidityCluster, 0)
 
+	// Calculate Total Volume
+	var totalBid, totalAsk float64
+	for _, e := range linearOB.Bids {
+		totalBid += e.Size
+	}
+	for _, e := range linearOB.Asks {
+		totalAsk += e.Size
+	}
+
 	// Process Bids
 	clusters = append(clusters, s.processSide(linearOB.Bids, spotOB.Bids, "bid")...)
 
@@ -72,8 +169,10 @@ func (s *MarketService) GetLiquidityClusters(ctx context.Context, symbol string)
 	// Update Cache
 	s.mu.Lock()
 	s.cache[symbol] = CachedLiquidity{
-		Data:   clusters,
-		Expiry: time.Now().Add(10 * time.Second),
+		Data:     clusters,
+		TotalBid: totalBid,
+		TotalAsk: totalAsk,
+		Expiry:   time.Now().Add(10 * time.Second),
 	}
 	s.mu.Unlock()
 

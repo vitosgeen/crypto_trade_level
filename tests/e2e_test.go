@@ -56,6 +56,9 @@ func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category
 	return nil, nil
 }
 
+func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
+}
+
 func TestEndToEnd_LevelDefense(t *testing.T) {
 	// Enable logs
 	// log.SetOutput(os.Stdout) // Default is stderr which go test shows on failure

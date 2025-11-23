@@ -11,6 +11,7 @@ type Exchange interface {
 	GetPosition(ctx context.Context, symbol string) (*Position, error)
 	GetCandles(ctx context.Context, symbol, interval string, limit int) ([]Candle, error)
 	GetOrderBook(ctx context.Context, symbol string, category string) (*OrderBook, error)
+	OnTradeUpdate(callback func(symbol string, side string, size float64, price float64))
 }
 
 type Candle struct {

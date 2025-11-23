@@ -270,3 +270,20 @@ func (s *Server) handleLiquidity(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(clusters)
 }
+
+func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		symbol = "BTCUSDT"
+	}
+
+	stats, err := s.marketService.GetMarketStats(r.Context(), symbol)
+	if err != nil {
+		s.logger.Error("Failed to get market stats", zap.Error(err))
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}

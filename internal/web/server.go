@@ -73,6 +73,9 @@ func (s *Server) routes() {
 
 	// Candles
 	s.router.HandleFunc("GET /api/candles", s.handleGetCandles)
+
+	// Market Stats
+	s.router.HandleFunc("GET /api/market-stats", s.handleMarketStats)
 }
 
 func (s *Server) Start() error {

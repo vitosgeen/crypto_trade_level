@@ -67,6 +67,73 @@
         .delete-btn:hover {
             background: #a71d2a;
         }
+
+        /* Gauge Styles */
+        .gauge-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .gauge {
+            position: relative;
+            width: 200px;
+            height: 100px;
+            overflow: hidden;
+        }
+
+        .gauge-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: conic-gradient(from 270deg, #dc3545 0deg 90deg, #28a745 90deg 180deg, transparent 180deg);
+            /* Mask bottom half */
+            clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
+        }
+
+        .gauge-needle {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 4px;
+            height: 90px;
+            background: #333;
+            transform-origin: bottom center;
+            transform: rotate(-90deg);
+            /* -90=Left, 90=Right */
+            transition: transform 0.5s cubic-bezier(0.4, 0.0, 0.2, 1);
+            z-index: 2;
+            border-radius: 2px;
+        }
+
+        .gauge-center {
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            background: #333;
+            border-radius: 50%;
+            transform: translateX(-50%);
+            z-index: 3;
+        }
+
+        .gauge-labels {
+            display: flex;
+            justify-content: space-between;
+            width: 200px;
+            margin-top: 5px;
+            font-weight: bold;
+        }
+
+        .gauge-value {
+            margin-top: 5px;
+            font-family: monospace;
+            font-size: 1.1em;
+        }
     </style>
 </head>
 
@@ -133,6 +200,41 @@
                 <span style="color: #dc3545;">█</span> SHORT Zone (below level) |
                 <span style="color: #000;">━</span> Base Level |
                 <span style="color: #666;">- - -</span> Tiers
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Market Speed & Depth</h2>
+            <div style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 20px;">
+                <!-- Gauge 1: Trade Speed -->
+                <div class="gauge-container">
+                    <h3 style="text-align: center; margin-bottom: 10px;">Trade Volume (60s)</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"></div>
+                        <div class="gauge-needle" id="speed-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span style="color: #dc3545;">Sell</span>
+                        <span style="color: #28a745;">Buy</span>
+                    </div>
+                    <div class="gauge-value" id="speed-value">0 / 0</div>
+                </div>
+
+                <!-- Gauge 2: Order Book Depth -->
+                <div class="gauge-container">
+                    <h3 style="text-align: center; margin-bottom: 10px;">Order Book Depth</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"></div>
+                        <div class="gauge-needle" id="depth-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span style="color: #dc3545;">Ask</span>
+                        <span style="color: #28a745;">Bid</span>
+                    </div>
+                    <div class="gauge-value" id="depth-value">0 / 0</div>
+                </div>
             </div>
         </div>
 
@@ -540,6 +642,64 @@
 
             // Call once on init
             setTimeout(updateTierTips, 100);
+
+            // Market Stats Logic
+            async function updateMarketStats() {
+                const selector = document.getElementById('level-selector');
+                // Use selected level symbol or default
+                let symbol = "BTCUSDT";
+                if (selector && selector.value) {
+                    // value is symbol-price, extract symbol
+                    const parts = selector.value.split('-');
+                    if (parts.length > 0) symbol = parts[0];
+                }
+
+                try {
+                    const resp = await fetch(`/api/market-stats?symbol=${symbol}`);
+                    const stats = await resp.json();
+
+                    // Update Speed Gauge
+                    // Ratio: Buy / (Buy + Sell). 0 = Full Sell (-90deg), 1 = Full Buy (90deg)
+                    const totalSpeed = stats.speed_buy + stats.speed_sell;
+                    let speedRatio = 0.5;
+                    if (totalSpeed > 0) {
+                        speedRatio = stats.speed_buy / totalSpeed;
+                    }
+                    // Map 0..1 to -90..90
+                    const speedDeg = (speedRatio * 180) - 90;
+                    const speedNeedle = document.getElementById('speed-needle');
+                    if (speedNeedle) speedNeedle.style.transform = `rotate(${speedDeg}deg)`;
+
+                    const speedValue = document.getElementById('speed-value');
+                    if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(2)} / ${stats.speed_buy.toFixed(2)}`;
+
+
+                    // Update Depth Gauge
+                    // Ratio: Bid / (Bid + Ask). 0 = Full Ask (-90deg), 1 = Full Bid (90deg)
+                    // Wait, usually Left=Ask (Sell pressure), Right=Bid (Buy pressure).
+                    // If Bid is high, price goes UP (Right). If Ask is high, price goes DOWN (Left).
+                    // So Bid Ratio -> Right.
+                    const totalDepth = stats.depth_bid + stats.depth_ask;
+                    let depthRatio = 0.5;
+                    if (totalDepth > 0) {
+                        depthRatio = stats.depth_bid / totalDepth;
+                    }
+                    const depthDeg = (depthRatio * 180) - 90;
+                    const depthNeedle = document.getElementById('depth-needle');
+                    if (depthNeedle) depthNeedle.style.transform = `rotate(${depthDeg}deg)`;
+
+                    const depthValue = document.getElementById('depth-value');
+                    if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)} / ${stats.depth_bid.toFixed(2)}`;
+
+                } catch (e) {
+                    console.error("Failed to fetch market stats", e);
+                }
+            }
+
+            // Update stats every 1s
+            setInterval(updateMarketStats, 1000);
+            // Also update when level changes
+            document.getElementById('level-selector').addEventListener('change', updateMarketStats);
         </script>
 
 
