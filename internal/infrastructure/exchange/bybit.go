@@ -533,3 +533,64 @@ func (b *BybitAdapter) GetCandles(ctx context.Context, symbol, interval string, 
 
 	return candles, nil
 }
+
+func (b *BybitAdapter) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
+	// category: "linear" (futures) or "spot"
+	if category == "" {
+		category = "linear"
+	}
+
+	limit := 50
+	if category == "linear" {
+		limit = 500
+	}
+
+	path := fmt.Sprintf("/v5/market/orderbook?category=%s&symbol=%s&limit=%d", category, symbol, limit)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int `json:"retCode"`
+		Result  struct {
+			S string     `json:"s"`
+			B [][]string `json:"b"`
+			A [][]string `json:"a"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit orderbook error: %d", result.RetCode)
+	}
+
+	ob := &domain.OrderBook{
+		Symbol: result.Result.S,
+		Bids:   make([]domain.OrderBookEntry, 0, len(result.Result.B)),
+		Asks:   make([]domain.OrderBookEntry, 0, len(result.Result.A)),
+	}
+
+	for _, bid := range result.Result.B {
+		if len(bid) < 2 {
+			continue
+		}
+		price, _ := strconv.ParseFloat(bid[0], 64)
+		size, _ := strconv.ParseFloat(bid[1], 64)
+		ob.Bids = append(ob.Bids, domain.OrderBookEntry{Price: price, Size: size})
+	}
+
+	for _, ask := range result.Result.A {
+		if len(ask) < 2 {
+			continue
+		}
+		price, _ := strconv.ParseFloat(ask[0], 64)
+		size, _ := strconv.ParseFloat(ask[1], 64)
+		ob.Asks = append(ob.Asks, domain.OrderBookEntry{Price: price, Size: size})
+	}
+
+	return ob, nil
+}

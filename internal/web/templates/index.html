@@ -146,6 +146,7 @@
         <script>
             let chart = null;
             let candleSeries = null;
+            let liquiditySeries = null; // New series for background lines
             let selectedLevelId = null;
             let currentPriceLines = [];
 
@@ -187,6 +188,17 @@
                         },
                     });
 
+                    // 1. Create Liquidity Series FIRST (so it renders behind)
+                    // We use a LineSeries but make it invisible
+                    liquiditySeries = chart.addLineSeries({
+                        color: 'transparent',
+                        lineWidth: 0,
+                        crosshairMarkerVisible: false,
+                        lastValueVisible: false,
+                        priceLineVisible: false,
+                    });
+
+                    // 2. Create Candle Series SECOND (so it renders on top)
                     candleSeries = chart.addCandlestickSeries({
                         upColor: '#26a69a',
                         downColor: '#ef5350',
@@ -212,6 +224,7 @@
                     console.error("Error initializing chart:", e);
                     chart = null;
                     candleSeries = null;
+                    liquiditySeries = null;
                 }
             }
 
@@ -230,8 +243,8 @@
                     }
                 }
 
-                if (!candleSeries) {
-                    console.error("candleSeries is null, re-initializing...");
+                if (!candleSeries || !liquiditySeries) {
+                    console.error("Series is null, re-initializing...");
                     // Try to recover?
                     initChart();
                     if (!candleSeries) return;
@@ -316,25 +329,29 @@
                         }
 
                         candleSeries.setData(uniqueCandles);
+
+                        // Sync liquiditySeries with same data (using close price)
+                        // This ensures it shares the same scale and range
+                        const lineData = uniqueCandles.map(c => ({ time: c.time, value: c.close }));
+                        liquiditySeries.setData(lineData);
                     }
                 } catch (e) {
                     console.error("Failed to fetch candles", e);
                 }
 
                 // Update Price Lines (Level and Tiers)
-                // Clear old lines
-                currentPriceLines.forEach(line => candleSeries.removePriceLine(line));
-                currentPriceLines = [];
+                // We will track active lines to avoid clearing/re-adding if not needed.
+                // However, LightweightCharts doesn't support updating PriceLine properties easily.
+                // But for Liquidity lines, we can diff the data.
+                // For Level/Tiers, they change rarely (only if user edits).
 
-                // Base Level
-                currentPriceLines.push(candleSeries.createPriceLine({
-                    price: levelPrice,
-                    color: '#000000',
-                    lineWidth: 2,
-                    lineStyle: LightweightCharts.LineStyle.Solid,
-                    axisLabelVisible: true,
-                    title: 'Base Level',
-                }));
+                // Strategy:
+                // 1. Level/Tiers: Clear and re-add ONLY if level details changed (price/tiers).
+                // 2. Liquidity: Fetch, diff with current. If different, clear and re-add ONLY liquidity lines.
+
+                // For simplicity in this MVP, let's separate the arrays.
+                // currentLevelLines (Base + Tiers)
+                // currentLiquidityLines (Order Book)
 
                 // Parse Tiers from the nested table in cell 4
                 const tierCell = cells[4];
@@ -369,25 +386,103 @@
                     shortTier3 = levelPrice * (1 - 0.0015);
                 }
 
-                // Add Tier Lines
-                const addTierLine = (price, label, color) => {
-                    currentPriceLines.push(candleSeries.createPriceLine({
-                        price: price,
-                        color: color,
-                        lineWidth: 1,
-                        lineStyle: LightweightCharts.LineStyle.Dashed,
-                        axisLabelVisible: true,
-                        title: label,
-                    }));
+                // Check if level details changed
+                const levelDetails = {
+                    price: levelPrice,
+                    long: [longTier1, longTier2, longTier3],
+                    short: [shortTier1, shortTier2, shortTier3]
                 };
+                const levelDetailsJson = JSON.stringify(levelDetails);
 
-                addTierLine(longTier1, 'L-T1', '#28a745');
-                addTierLine(longTier2, 'L-T2', '#28a745');
-                addTierLine(longTier3, 'L-T3', '#28a745');
+                if (window.lastLevelDetails !== levelDetailsJson) {
+                    // Clear old Level/Tier lines
+                    if (window.currentLevelLines) {
+                        window.currentLevelLines.forEach(line => candleSeries.removePriceLine(line));
+                    }
+                    window.currentLevelLines = [];
 
-                addTierLine(shortTier1, 'S-T1', '#dc3545');
-                addTierLine(shortTier2, 'S-T2', '#dc3545');
-                addTierLine(shortTier3, 'S-T3', '#dc3545');
+                    // Add Base Level
+                    window.currentLevelLines.push(candleSeries.createPriceLine({
+                        price: levelPrice,
+                        color: '#000000',
+                        lineWidth: 2,
+                        lineStyle: LightweightCharts.LineStyle.Solid,
+                        axisLabelVisible: true,
+                        title: 'Base Level',
+                    }));
+
+                    // Add Tier Lines
+                    const addTierLine = (price, label, color) => {
+                        window.currentLevelLines.push(candleSeries.createPriceLine({
+                            price: price,
+                            color: color,
+                            lineWidth: 1,
+                            lineStyle: LightweightCharts.LineStyle.Dashed,
+                            axisLabelVisible: true,
+                            title: label,
+                        }));
+                    };
+
+                    addTierLine(longTier1, 'L-T1', '#28a745');
+                    addTierLine(longTier2, 'L-T2', '#28a745');
+                    addTierLine(longTier3, 'L-T3', '#28a745');
+
+                    addTierLine(shortTier1, 'S-T1', '#dc3545');
+                    addTierLine(shortTier2, 'S-T2', '#dc3545');
+                    addTierLine(shortTier3, 'S-T3', '#dc3545');
+
+                    window.lastLevelDetails = levelDetailsJson;
+                }
+
+                // Fetch and Render Liquidity Clusters
+                try {
+                    const liqResp = await fetch(`/api/liquidity?symbol=${symbol}`);
+                    const clusters = await liqResp.json();
+                    const clustersJson = JSON.stringify(clusters);
+
+                    if (window.lastLiquidityJson !== clustersJson) {
+                        // Clear old Liquidity lines from LIQUIDITY SERIES
+                        if (window.currentLiquidityLines) {
+                            window.currentLiquidityLines.forEach(line => liquiditySeries.removePriceLine(line));
+                        }
+                        window.currentLiquidityLines = [];
+
+                        if (clusters && clusters.length > 0) {
+                            // Find max volume for scaling
+                            const maxVol = Math.max(...clusters.map(c => c.volume));
+
+                            clusters.forEach(c => {
+                                // Intensity Clamping: clamp(size/max_size, 0..1)
+                                let opacity = 0.0;
+                                if (maxVol > 0) {
+                                    opacity = c.volume / maxVol;
+                                    if (opacity > 1.0) opacity = 1.0;
+                                    if (opacity < 0.0) opacity = 0.0;
+                                }
+
+                                // Ensure minimum visibility for anything returned by backend
+                                if (opacity < 0.1) opacity = 0.1;
+
+                                const color = c.type === 'bid'
+                                    ? `rgba(0, 255, 0, ${opacity.toFixed(2)})`
+                                    : `rgba(255, 105, 180, ${opacity.toFixed(2)})`; // Pink for Asks
+
+                                // Add to LIQUIDITY SERIES (Background)
+                                window.currentLiquidityLines.push(liquiditySeries.createPriceLine({
+                                    price: c.price,
+                                    color: color,
+                                    lineWidth: 2, // Fixed width
+                                    lineStyle: LightweightCharts.LineStyle.Solid,
+                                    axisLabelVisible: false,
+                                    title: '',
+                                }));
+                            });
+                        }
+                        window.lastLiquidityJson = clustersJson;
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch liquidity", e);
+                }
             }
 
             // Update chart when levels table updates

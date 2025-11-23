@@ -131,3 +131,6 @@ func (m *MockExchangeForService) GetPosition(ctx context.Context, symbol string)
 func (m *MockExchangeForService) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return nil, nil
 }
+func (m *MockExchangeForService) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
+	return nil, nil
+}

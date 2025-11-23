@@ -35,6 +35,10 @@ func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (*domain.
 	return nil, nil
 }
 
+func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
+	return nil, nil
+}
+
 func TestTradeExecutor_Execute(t *testing.T) {
 	mockEx := &MockExchange{}
 	executor := usecase.NewTradeExecutor(mockEx)

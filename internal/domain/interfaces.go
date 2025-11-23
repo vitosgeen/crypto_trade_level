@@ -10,6 +10,7 @@ type Exchange interface {
 	ClosePosition(ctx context.Context, symbol string) error
 	GetPosition(ctx context.Context, symbol string) (*Position, error)
 	GetCandles(ctx context.Context, symbol, interval string, limit int) ([]Candle, error)
+	GetOrderBook(ctx context.Context, symbol string, category string) (*OrderBook, error)
 }
 
 type Candle struct {
@@ -19,6 +20,17 @@ type Candle struct {
 	Low    float64 `json:"low"`
 	Close  float64 `json:"close"`
 	Volume float64 `json:"volume"`
+}
+
+type OrderBookEntry struct {
+	Price float64 `json:"price"`
+	Size  float64 `json:"size"`
+}
+
+type OrderBook struct {
+	Symbol string           `json:"symbol"`
+	Bids   []OrderBookEntry `json:"bids"`
+	Asks   []OrderBookEntry `json:"asks"`
 }
 
 // LevelRepository defines storage operations for levels and tiers.

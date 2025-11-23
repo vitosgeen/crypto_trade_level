@@ -77,6 +77,11 @@ func (h *TestScenarioHelper) SetupLevel(price float64, stopLossAtBase bool) {
 	if err := h.store.SaveSymbolTiers(h.ctx, tiers); err != nil {
 		h.t.Fatalf("Failed to save tiers: %v", err)
 	}
+
+	// Update Cache
+	if err := h.svc.UpdateCache(h.ctx); err != nil {
+		h.t.Fatalf("Failed to update cache: %v", err)
+	}
 }
 
 func (h *TestScenarioHelper) Tick(price float64) {

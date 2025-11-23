@@ -160,7 +160,9 @@ func main() {
 	if port == 0 {
 		port = 8080 // Default
 	}
-	server := web.NewServer(port, store, store, svc, log)
+
+	marketService := usecase.NewMarketService(bybitAdapter)
+	server := web.NewServer(port, store, store, svc, marketService, log)
 
 	// 8. Start Server
 	go func() {

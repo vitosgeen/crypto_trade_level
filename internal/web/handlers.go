@@ -253,3 +253,20 @@ func (s *Server) handleGetCandles(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(candles)
 }
+
+func (s *Server) handleLiquidity(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		symbol = "BTCUSDT"
+	}
+
+	clusters, err := s.marketService.GetLiquidityClusters(r.Context(), symbol)
+	if err != nil {
+		s.logger.Error("Failed to get liquidity clusters", zap.Error(err))
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(clusters)
+}

@@ -52,6 +52,10 @@ func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, 
 	return nil, nil
 }
 
+func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
+	return nil, nil
+}
+
 func TestEndToEnd_LevelDefense(t *testing.T) {
 	// Enable logs
 	// log.SetOutput(os.Stdout) // Default is stderr which go test shows on failure
@@ -97,6 +101,11 @@ func TestEndToEnd_LevelDefense(t *testing.T) {
 	}
 	if err := store.SaveSymbolTiers(ctx, tiers); err != nil {
 		t.Fatalf("Failed to save tiers: %v", err)
+	}
+
+	// Update Cache
+	if err := svc.UpdateCache(ctx); err != nil {
+		t.Fatalf("Failed to update cache: %v", err)
 	}
 
 	// Verify Tiers saved
