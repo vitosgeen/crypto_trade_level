@@ -42,8 +42,11 @@ func NewServer(
 }
 
 func (s *Server) routes() {
+	// Landing Page
+	s.router.HandleFunc("GET /", s.handleLanding)
+
 	// Dashboard
-	s.router.HandleFunc("GET /", s.handleDashboard)
+	s.router.HandleFunc("GET /dashboard", s.handleDashboard)
 
 	// Levels
 	s.router.HandleFunc("GET /levels", s.handleLevelsTable)
