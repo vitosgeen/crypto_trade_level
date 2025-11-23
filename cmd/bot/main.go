@@ -81,6 +81,11 @@ func main() {
 	// 5. Init Service
 	svc := usecase.NewLevelService(store, store, bybitAdapter)
 
+	// Init Cache
+	if err := svc.UpdateCache(context.Background()); err != nil {
+		log.Error("Failed to init cache", zap.Error(err))
+	}
+
 	// 9. Wait for Shutdown (moved up to allow goroutines to use 'stop')
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -102,6 +107,12 @@ func main() {
 		for {
 			// Initial run + Ticker
 			ctx := context.Background()
+
+			// Update Cache
+			if err := svc.UpdateCache(ctx); err != nil {
+				log.Error("Failed to update cache", zap.Error(err))
+			}
+
 			levels, err := store.ListLevels(ctx)
 			if err != nil {
 				log.Error("Failed to list levels", zap.Error(err))

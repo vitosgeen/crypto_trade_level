@@ -23,6 +23,7 @@ type LevelState struct {
 	Tier3Triggered  bool
 	LastTriggerTime time.Time
 	ActiveSide      domain.Side
+	ConsecutiveWins int // Tracks consecutive profitable closes
 }
 
 type SublevelEngine struct {
@@ -45,10 +46,30 @@ func (e *SublevelEngine) GetState(levelID string) LevelState {
 	return LevelState{}
 }
 
+// UpdateState allows external services to update the state (e.g. recording a win/loss)
+func (e *SublevelEngine) UpdateState(levelID string, updateFn func(*LevelState)) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if s, ok := e.states[levelID]; ok {
+		updateFn(s)
+	}
+}
+
 func (e *SublevelEngine) ResetState(levelID string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	delete(e.states, levelID)
+	// We do NOT delete the state entirely, because we need to persist ConsecutiveWins.
+	// Instead, we reset the triggers and active side.
+	if s, ok := e.states[levelID]; ok {
+		s.Tier1Triggered = false
+		s.Tier2Triggered = false
+		s.Tier3Triggered = false
+		s.ActiveSide = ""
+		// ConsecutiveWins is preserved
+	} else {
+		// If state doesn't exist, no need to do anything (or create empty?)
+		delete(e.states, levelID)
+	}
 }
 
 // Evaluate checks if price movement triggers a tier action.
@@ -164,8 +185,16 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		return (p1 < boundary && p2 >= boundary) || (p1 > boundary && p2 <= boundary)
 	}
 
+	// Calculate Multiplier based on Consecutive Wins
+	multiplier := 1.0
+	if state.ConsecutiveWins > 0 {
+		multiplier = 2.0
+		// Cap at 2x for now as per "Profit Doubling" spec (implied single step up)
+		// Or should it be 2^wins? Spec says "from 1x to 2x". Let's stick to 2x max for safety.
+	}
+
 	if side == domain.SideShort {
-		// Short (Resistance): Tiers are BELOW Level (Wait, EXT spec says Short Tiers are BELOW Level? Let's re-read).
+		// Short (Resistance): Tiers are BELOW Level
 		// EXT Spec: "SHORT side (below level) ... Tier1_below = L * (1 - t1)"
 		// YES. Short Zone is Price < Level. Tiers are < Level.
 
@@ -174,19 +203,19 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 
 		// Tier 1
 		if !state.Tier1Triggered && crosses(prevPrice, currPrice, tier1Price) {
-			log.Printf("AUDIT: Tier 1 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier1Price)
+			log.Printf("AUDIT: Tier 1 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f. Wins: %d. Mult: %f", level.ID, prevPrice, currPrice, tier1Price, state.ConsecutiveWins, multiplier)
 			state.Tier1Triggered = true
 			state.ActiveSide = domain.SideShort
 			triggered = true
 			action = ActionOpen
-			size = level.BaseSize
+			size = level.BaseSize * multiplier
 		} else if !state.Tier2Triggered && crosses(prevPrice, currPrice, tier2Price) {
 			// Tier 2
 			log.Printf("AUDIT: Tier 2 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier2Price)
 			state.Tier2Triggered = true
 			triggered = true
 			action = ActionAddToPosition
-			size = level.BaseSize
+			size = level.BaseSize // Additions are usually base size? Or scaled? Spec implies initial entry scaling. Keeping additions flat for now to manage risk.
 		} else if !state.Tier3Triggered && crosses(prevPrice, currPrice, tier3Price) {
 			// Tier 3
 			log.Printf("AUDIT: Tier 3 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier3Price)
@@ -204,12 +233,12 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		log.Printf("DEBUG: Eval Long. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
 		if !state.Tier1Triggered && crosses(prevPrice, currPrice, tier1Price) {
-			log.Printf("AUDIT: Tier 1 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier1Price)
+			log.Printf("AUDIT: Tier 1 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f. Wins: %d. Mult: %f", level.ID, prevPrice, currPrice, tier1Price, state.ConsecutiveWins, multiplier)
 			state.Tier1Triggered = true
 			state.ActiveSide = domain.SideLong
 			triggered = true
 			action = ActionOpen
-			size = level.BaseSize
+			size = level.BaseSize * multiplier
 		} else if !state.Tier2Triggered && crosses(prevPrice, currPrice, tier2Price) {
 			log.Printf("AUDIT: Tier 2 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier2Price)
 			state.Tier2Triggered = true

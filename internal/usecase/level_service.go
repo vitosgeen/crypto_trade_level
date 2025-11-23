@@ -21,6 +21,10 @@ type LevelService struct {
 
 	mu         sync.RWMutex
 	lastPrices map[string]float64 // symbol -> price
+
+	// Cache
+	levelsCache map[string][]*domain.Level     // symbol -> levels
+	tiersCache  map[string]*domain.SymbolTiers // symbol -> tiers
 }
 
 func NewLevelService(
@@ -29,13 +33,15 @@ func NewLevelService(
 	exchange domain.Exchange,
 ) *LevelService {
 	return &LevelService{
-		levelRepo:  levelRepo,
-		tradeRepo:  tradeRepo,
-		exchange:   exchange,
-		evaluator:  NewLevelEvaluator(),
-		engine:     NewSublevelEngine(),
-		executor:   NewTradeExecutor(exchange),
-		lastPrices: make(map[string]float64),
+		levelRepo:   levelRepo,
+		tradeRepo:   tradeRepo,
+		exchange:    exchange,
+		evaluator:   NewLevelEvaluator(),
+		engine:      NewSublevelEngine(),
+		executor:    NewTradeExecutor(exchange),
+		lastPrices:  make(map[string]float64),
+		levelsCache: make(map[string][]*domain.Level),
+		tiersCache:  make(map[string]*domain.SymbolTiers),
 	}
 }
 
@@ -77,12 +83,64 @@ func (s *LevelService) GetPositions(ctx context.Context) ([]*domain.Position, er
 	return positions, nil
 }
 
+// UpdateCache refreshes the in-memory cache of levels and tiers
+func (s *LevelService) UpdateCache(ctx context.Context) error {
+	levels, err := s.levelRepo.ListLevels(ctx)
+	if err != nil {
+		return err
+	}
+
+	newLevelsCache := make(map[string][]*domain.Level)
+	uniqueSymbols := make(map[string]bool)
+
+	for _, l := range levels {
+		newLevelsCache[l.Symbol] = append(newLevelsCache[l.Symbol], l)
+		uniqueSymbols[l.Symbol] = true
+	}
+
+	newTiersCache := make(map[string]*domain.SymbolTiers)
+	for symbol := range uniqueSymbols {
+		// Assuming exchange name is consistent or we need to handle multiple exchanges per symbol?
+		// For now, let's pick the exchange from the first level of that symbol or just iterate.
+		// The current architecture seems to assume one exchange per symbol or handled by the caller.
+		// Let's look at how ProcessTick worked: it filtered by exchangeName.
+		// Here we just cache by symbol. The tiers are per (exchange, symbol).
+		// We might need a composite key or just cache by symbol if unique enough.
+		// Let's use "bybit" as default or extract from levels.
+		// Ideally, we should iterate unique (exchange, symbol) pairs.
+
+		// Find exchange for this symbol
+		var exchangeName string
+		if len(newLevelsCache[symbol]) > 0 {
+			exchangeName = newLevelsCache[symbol][0].Exchange
+		}
+
+		tiers, err := s.levelRepo.GetSymbolTiers(ctx, exchangeName, symbol)
+		if err != nil {
+			log.Printf("Warning: Failed to fetch tiers for %s: %v", symbol, err)
+			continue
+		}
+		newTiersCache[symbol] = tiers
+	}
+
+	s.mu.Lock()
+	s.levelsCache = newLevelsCache
+	s.tiersCache = newTiersCache
+	s.mu.Unlock()
+
+	return nil
+}
+
 // ProcessTick should be called when a new price arrives (e.g. from WebSocket).
 func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol string, price float64) error {
 	fmt.Printf("Tick: %s %f\n", symbol, price) // Simple print for debugging
 	s.mu.Lock()
 	prevPrice, ok := s.lastPrices[symbol]
 	s.lastPrices[symbol] = price
+
+	// Read from cache while locked
+	levels := s.levelsCache[symbol]
+	tiers := s.tiersCache[symbol]
 	s.mu.Unlock()
 
 	if !ok {
@@ -90,18 +148,14 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		return nil
 	}
 
-	// Fetch levels for this symbol
-	// In a real app, we might cache these in memory and refresh periodically
-	levels, err := s.levelRepo.ListLevels(ctx)
-	if err != nil {
-		return err
+	if len(levels) == 0 {
+		return nil
 	}
 
-	// Filter for this symbol/exchange
-	// Optimization: Cache levels by symbol
+	// Filter for this exchange
 	var relevantLevels []*domain.Level
 	for _, l := range levels {
-		if l.Symbol == symbol && l.Exchange == exchangeName {
+		if l.Exchange == exchangeName {
 			relevantLevels = append(relevantLevels, l)
 		}
 	}
@@ -110,8 +164,7 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		return nil
 	}
 
-	tiers, err := s.levelRepo.GetSymbolTiers(ctx, exchangeName, symbol)
-	if err != nil {
+	if tiers == nil {
 		return nil // No tiers, can't trade
 	}
 
@@ -141,7 +194,27 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 
 		if action == ActionClose {
 			// Close Position
-			err := s.exchange.ClosePosition(ctx, level.Symbol)
+			// We need to fetch the position BEFORE closing to calculate PnL
+			// Or we can calculate it roughly: (ExitPrice - EntryPrice) * Size * Side
+			// But we don't track EntryPrice in LevelState.
+			// Let's fetch the position from Exchange.
+			pos, err := s.exchange.GetPosition(ctx, level.Symbol)
+			var realizedPnL float64
+			if err == nil && pos.Size > 0 {
+				// Calculate PnL
+				// Long: (Exit - Entry) * Size
+				// Short: (Entry - Exit) * Size
+				if pos.Side == domain.SideLong {
+					realizedPnL = (currPrice - pos.EntryPrice) * pos.Size
+				} else {
+					realizedPnL = (pos.EntryPrice - currPrice) * pos.Size
+				}
+				log.Printf("AUDIT: Closing Position. Symbol: %s. Entry: %f. Exit: %f. Size: %f. PnL: %f", level.Symbol, pos.EntryPrice, currPrice, pos.Size, realizedPnL)
+			} else {
+				log.Printf("WARNING: Could not fetch position for PnL calc before closing: %v", err)
+			}
+
+			err = s.exchange.ClosePosition(ctx, level.Symbol)
 			if err != nil {
 				log.Printf("WARNING: Failed to close position for %s (might be already closed): %v", level.Symbol, err)
 			}
@@ -153,7 +226,18 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 				closingSide = side // Fallback
 			}
 
-			// Reset State
+			// Update State with Win/Loss
+			s.engine.UpdateState(level.ID, func(ls *LevelState) {
+				if realizedPnL > 0 {
+					ls.ConsecutiveWins++
+					log.Printf("AUDIT: Win recorded for Level %s. Consecutive Wins: %d", level.ID, ls.ConsecutiveWins)
+				} else {
+					ls.ConsecutiveWins = 0
+					log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", level.ID)
+				}
+			})
+
+			// Reset State (Triggers and ActiveSide)
 			s.engine.ResetState(level.ID)
 
 			// Save Trade (Close)

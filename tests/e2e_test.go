@@ -15,6 +15,16 @@ type MockExchange struct {
 	Price      float64
 	BuyCalled  bool
 	SellCalled bool
+	Position   *domain.Position
+}
+
+func (m *MockExchange) SetPosition(symbol string, side domain.Side, size, entryPrice float64) {
+	m.Position = &domain.Position{
+		Symbol:     symbol,
+		Side:       side,
+		Size:       size,
+		EntryPrice: entryPrice,
+	}
 }
 
 func (m *MockExchange) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
@@ -28,9 +38,15 @@ func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float
 	m.SellCalled = true
 	return nil
 }
-func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error { return nil }
+func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error {
+	m.Position = nil // Simulate close
+	return nil
+}
 func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
-	return nil, nil
+	if m.Position != nil && m.Position.Symbol == symbol {
+		return m.Position, nil
+	}
+	return &domain.Position{Symbol: symbol, Size: 0}, nil
 }
 func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return nil, nil
