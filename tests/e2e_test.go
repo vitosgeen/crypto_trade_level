@@ -77,7 +77,8 @@ func TestEndToEnd_LevelDefense(t *testing.T) {
 	mockEx := &MockExchange{Price: 51000.0}
 
 	// 3. Setup Service
-	svc := usecase.NewLevelService(store, store, mockEx)
+	marketService := usecase.NewMarketService(mockEx)
+	svc := usecase.NewLevelService(store, store, mockEx, marketService)
 
 	// 4. Create Level & Tiers
 	ctx := context.Background()

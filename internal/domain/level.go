@@ -13,6 +13,7 @@ type Level struct {
 	MarginType     string // "isolated" or "cross"
 	CoolDownMs     int64
 	StopLossAtBase bool
+	StopLossMode   string // "exchange" or "app"
 	Source         string
 	CreatedAt      time.Time
 }

@@ -79,7 +79,8 @@ func main() {
 	bybitAdapter := exchange.NewBybitAdapter(bybitCfg.APIKey, bybitCfg.APISecret, bybitCfg.RESTEndpoint, bybitCfg.WSEndpoint)
 
 	// 5. Init Service
-	svc := usecase.NewLevelService(store, store, bybitAdapter)
+	marketService := usecase.NewMarketService(bybitAdapter)
+	svc := usecase.NewLevelService(store, store, bybitAdapter, marketService)
 
 	// Init Cache
 	if err := svc.UpdateCache(context.Background()); err != nil {
@@ -161,7 +162,6 @@ func main() {
 		port = 8080 // Default
 	}
 
-	marketService := usecase.NewMarketService(bybitAdapter)
 	server := web.NewServer(port, store, store, svc, marketService, log)
 
 	// 8. Start Server

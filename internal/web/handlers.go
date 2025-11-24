@@ -145,6 +145,10 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	symbol := r.FormValue("symbol")
 	marginType := r.FormValue("margin_type")
 	stopLossAtBase := r.FormValue("stop_loss_at_base") == "on"
+	stopLossMode := r.FormValue("stop_loss_mode")
+	if stopLossMode == "" {
+		stopLossMode = "exchange"
+	}
 
 	level := &domain.Level{
 		ID:             fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -156,6 +160,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		MarginType:     marginType,
 		CoolDownMs:     coolDownMs,
 		StopLossAtBase: stopLossAtBase,
+		StopLossMode:   stopLossMode,
 		Source:         "manual-web",
 		CreatedAt:      time.Now(),
 	}

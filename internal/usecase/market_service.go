@@ -101,9 +101,9 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 			if t.Time.After(cutoff) {
 				validTrades = append(validTrades, t)
 				if t.Side == "Buy" {
-					speedBuy += t.Size
+					speedBuy += t.Size * t.Price
 				} else {
-					speedSell += t.Size
+					speedSell += t.Size * t.Price
 				}
 			}
 		}
@@ -378,4 +378,41 @@ func (s *MarketService) processSide(linear, spot []domain.OrderBookEntry, side s
 	}
 
 	return peaks
+}
+
+// GetTradeSentiment returns a score from -1.0 (Strong Sell) to 1.0 (Strong Buy)
+// based on the last 60 seconds of trade volume.
+func (s *MarketService) GetTradeSentiment(ctx context.Context, symbol string) (float64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	trades, ok := s.trades[symbol]
+	if !ok || len(trades) == 0 {
+		return 0, nil
+	}
+
+	now := s.timeNow()
+	cutoff := now.Add(-60 * time.Second)
+
+	var buyVol, sellVol float64
+	for _, t := range trades {
+		if t.Time.After(cutoff) {
+			if t.Side == "Buy" {
+				buyVol += t.Size * t.Price
+			} else {
+				sellVol += t.Size * t.Price
+			}
+		}
+	}
+
+	totalVol := buyVol + sellVol
+	if totalVol == 0 {
+		return 0, nil
+	}
+
+	return (buyVol - sellVol) / totalVol, nil
+}
+
+func (s *MarketService) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
+	return s.exchange.GetCandles(ctx, symbol, interval, limit)
 }

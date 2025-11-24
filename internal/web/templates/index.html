@@ -173,589 +173,633 @@
                         <div id="tip-tier3" style="font-size: 0.8em; color: #666; margin-top: 2px;"></div>
                     </div>
                 </div>
-                <div style="margin-top: 10px;">
-                    <input type="checkbox" id="stop_loss_at_base" name="stop_loss_at_base">
-                    <label for="stop_loss_at_base">Stop Loss at Base</label>
+                <div class="mb-4">
+                    <label class="flex items-center space-x-2">
+                        <input type="checkbox" name="stop_loss_at_base" class="form-checkbox text-blue-500">
+                        <span class="text-gray-300">Stop Loss at Base</span>
+                    </label>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-gray-400 text-sm mb-2">Stop Loss Mode</label>
+                    <select name="stop_loss_mode"
+                        class="w-full bg-gray-700 text-white p-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none">
+                        <option value="exchange">Exchange (Order)</option>
+                        <option value="app">App (Programmatic)</option>
+                    </select>
                 </div>
                 <button type="submit" style="margin-top: 10px;">Add Level</button>
             </form>
         </div>
 
         <div class="card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h2 style="margin: 0;">Level Visualization</h2>
-                <div style="display: flex; align-items: center;">
-                    <label for="level-selector" style="margin-right: 10px; font-weight: bold;">Select Level:</label>
-                    <select id="level-selector" onchange="changeLevel()"
-                        style="padding: 5px; border-radius: 4px; border: 1px solid #ccc;">
-                        <option value="">Loading levels...</option>
-                    </select>
+            <span style="color: #000;">━</span> Base Level |
+            <span style="color: #666;">- - -</span> Tiers
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Market Speed & Depth</h2>
+        <div style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 20px;">
+            <!-- Gauge 1: Trade Speed -->
+            <div class="gauge-container">
+                <h3 style="text-align: center; margin-bottom: 10px;">Trade Volume (60s)</h3>
+                <div class="gauge">
+                    <div class="gauge-bg"></div>
+                    <div class="gauge-needle" id="speed-needle"></div>
+                    <div class="gauge-center"></div>
                 </div>
+                <div class="gauge-labels">
+                    <span style="color: #dc3545;">Sell</span>
+                    <span style="color: #28a745;">Buy</span>
+                </div>
+                <div class="gauge-value" id="speed-value">0 / 0</div>
             </div>
-            <div style="position: relative; height: 400px;">
-                <div id="levelChart" style="width: 100%; height: 100%;"></div>
+
+            <!-- Gauge 2: Order Book Depth -->
+            <div class="gauge-container">
+                <h3 style="text-align: center; margin-bottom: 10px;">Order Book Depth</h3>
+                <div class="gauge">
+                    <div class="gauge-bg"></div>
+                    <div class="gauge-needle" id="depth-needle"></div>
+                    <div class="gauge-center"></div>
+                </div>
+                <div class="gauge-labels">
+                    <span style="color: #dc3545;">Ask</span>
+                    <span style="color: #28a745;">Bid</span>
+                </div>
+                <div class="gauge-value" id="depth-value">0 / 0</div>
             </div>
-            <div id="chart-legend" style="margin-top: 10px; font-size: 12px; color: #666;">
-                <span style="color: #28a745;">█</span> LONG Zone (above level) |
-                <span style="color: #dc3545;">█</span> SHORT Zone (below level) |
-                <span style="color: #000;">━</span> Base Level |
-                <span style="color: #666;">- - -</span> Tiers
+
+            <!-- Gauge 3: Divergence -->
+            <div class="gauge-container">
+                <h3 style="text-align: center; margin-bottom: 10px;">Sentiment Divergence</h3>
+                <div class="gauge">
+                    <div class="gauge-bg"
+                        style="background: conic-gradient(from 270deg, #ffc107 0deg 90deg, #007bff 90deg 180deg, transparent 180deg);">
+                    </div>
+                    <div class="gauge-needle" id="div-needle"></div>
+                    <div class="gauge-center"></div>
+                </div>
+                <div class="gauge-labels">
+                    <span style="color: #ffc107;">Bearish Div</span>
+                    <span style="color: #007bff;">Bullish Div</span>
+                </div>
+                <div class="gauge-value" id="div-value">0.00</div>
             </div>
         </div>
+    </div>
 
-        <div class="card">
-            <h2>Market Speed & Depth</h2>
-            <div style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 20px;">
-                <!-- Gauge 1: Trade Speed -->
-                <div class="gauge-container">
-                    <h3 style="text-align: center; margin-bottom: 10px;">Trade Volume (60s)</h3>
-                    <div class="gauge">
-                        <div class="gauge-bg"></div>
-                        <div class="gauge-needle" id="speed-needle"></div>
-                        <div class="gauge-center"></div>
-                    </div>
-                    <div class="gauge-labels">
-                        <span style="color: #dc3545;">Sell</span>
-                        <span style="color: #28a745;">Buy</span>
-                    </div>
-                    <div class="gauge-value" id="speed-value">0 / 0</div>
-                </div>
-
-                <!-- Gauge 2: Order Book Depth -->
-                <div class="gauge-container">
-                    <h3 style="text-align: center; margin-bottom: 10px;">Order Book Depth</h3>
-                    <div class="gauge">
-                        <div class="gauge-bg"></div>
-                        <div class="gauge-needle" id="depth-needle"></div>
-                        <div class="gauge-center"></div>
-                    </div>
-                    <div class="gauge-labels">
-                        <span style="color: #dc3545;">Ask</span>
-                        <span style="color: #28a745;">Bid</span>
-                    </div>
-                    <div class="gauge-value" id="depth-value">0 / 0</div>
-                </div>
-
-                <!-- Gauge 3: Divergence -->
-                <div class="gauge-container">
-                    <h3 style="text-align: center; margin-bottom: 10px;">Sentiment Divergence</h3>
-                    <div class="gauge">
-                        <div class="gauge-bg"
-                            style="background: conic-gradient(from 270deg, #ffc107 0deg 90deg, #007bff 90deg 180deg, transparent 180deg);">
-                        </div>
-                        <div class="gauge-needle" id="div-needle"></div>
-                        <div class="gauge-center"></div>
-                    </div>
-                    <div class="gauge-labels">
-                        <span style="color: #ffc107;">Bearish Div</span>
-                        <span style="color: #007bff;">Bullish Div</span>
-                    </div>
-                    <div class="gauge-value" id="div-value">0.00</div>
-                </div>
-            </div>
+    <div class="card">
+        <h2>Select Level</h2>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <label for="level-selector">Level:</label>
+            <select id="level-selector" onchange="changeLevel()"
+                style="padding: 8px; border-radius: 4px; border: 1px solid #ddd; min-width: 200px;">
+                <option value="" selected disabled>Select a level...</option>
+                {{range .Levels}}
+                <option value="{{.ID}}">{{.Exchange}} - {{.Symbol}} - {{.LevelPrice}}</option>
+                {{end}}
+            </select>
         </div>
+    </div>
 
-        <div class="card">
-            <h2>Active Levels</h2>
-            <div id="levels-table" hx-get="/levels" hx-trigger="every 2s">
-                {{ template "levels_table" .Levels }}
-            </div>
+    <div class="card" id="chart-card">
+        <h2>Price Chart</h2>
+        <div id="levelChart" style="width: 100%; height: 400px;"></div>
+    </div>
+
+    <div class="card">
+        <h2>Active Levels</h2>
+        <div id="levels-table" hx-get="/levels" hx-trigger="every 2s">
+            {{ template "levels_table" .Levels }}
         </div>
+    </div>
 
-        <script>
-            let chart = null;
-            let candleSeries = null;
-            let liquiditySeries = null; // New series for background lines
-            let selectedLevelId = null;
-            let currentPriceLines = [];
+    <script>
+        let chart = null;
+        let candleSeries = null;
+        let liquiditySeries = null; // New series for background lines
+        let selectedLevelId = null;
+        let currentPriceLines = [];
 
-            function initChart() {
-                console.log("Initializing Chart...");
-                const chartContainer = document.getElementById('levelChart');
-                if (!chartContainer) {
-                    console.error("Chart container not found!");
-                    return;
-                }
-
-                // Clear previous content
-                chartContainer.innerHTML = '';
-
-                if (typeof LightweightCharts === 'undefined') {
-                    console.error("LightweightCharts library not loaded!");
-                    return;
-                }
-
-                try {
-                    chart = LightweightCharts.createChart(chartContainer, {
-                        width: chartContainer.clientWidth || 800, // Fallback width
-                        height: 400,
-                        layout: {
-                            background: { type: 'solid', color: 'white' },
-                            textColor: 'black',
-                        },
-                        grid: {
-                            vertLines: { color: '#eee' },
-                            horzLines: { color: '#eee' },
-                        },
-                        rightPriceScale: {
-                            borderColor: '#d1d4dc',
-                        },
-                        timeScale: {
-                            borderColor: '#d1d4dc',
-                            timeVisible: true,
-                            secondsVisible: false,
-                        },
-                    });
-
-                    // 1. Create Liquidity Series FIRST (so it renders behind)
-                    // We use a LineSeries but make it invisible
-                    liquiditySeries = chart.addLineSeries({
-                        color: 'transparent',
-                        lineWidth: 0,
-                        crosshairMarkerVisible: false,
-                        lastValueVisible: false,
-                        priceLineVisible: false,
-                        priceFormat: {
-                            type: 'price',
-                            precision: 6,
-                            minMove: 0.000001,
-                        },
-                    });
-
-                    // 2. Create Candle Series SECOND (so it renders on top)
-                    candleSeries = chart.addCandlestickSeries({
-                        upColor: '#26a69a',
-                        downColor: '#ef5350',
-                        borderVisible: false,
-                        wickUpColor: '#26a69a',
-                        wickDownColor: '#ef5350',
-                        priceFormat: {
-                            type: 'price',
-                            precision: 6,
-                            minMove: 0.000001,
-                        },
-                    });
-
-                    console.log("Chart initialized. Series:", candleSeries);
-
-                    // Handle resize
-                    window.addEventListener('resize', () => {
-                        if (chart && chartContainer) {
-                            chart.applyOptions({ width: chartContainer.clientWidth });
-                        }
-                    });
-                } catch (e) {
-                    console.error("Error initializing chart:", e);
-                    chart = null;
-                    candleSeries = null;
-                    liquiditySeries = null;
-                }
+        function initChart() {
+            console.log("Initializing Chart...");
+            const chartContainer = document.getElementById('levelChart');
+            if (!chartContainer) {
+                console.error("Chart container not found!");
+                return;
             }
 
-            function changeLevel() {
-                const selector = document.getElementById('level-selector');
-                selectedLevelId = selector.value;
-                updateChart();
+            // Clear previous content
+            chartContainer.innerHTML = '';
+
+            if (typeof LightweightCharts === 'undefined') {
+                console.error("LightweightCharts library not loaded!");
+                return;
             }
 
-            async function updateChart() {
+            try {
+                chart = LightweightCharts.createChart(chartContainer, {
+                    width: chartContainer.clientWidth || 800, // Fallback width
+                    height: 400,
+                    layout: {
+                        background: { type: 'solid', color: 'white' },
+                        textColor: 'black',
+                    },
+                    grid: {
+                        vertLines: { color: '#eee' },
+                        horzLines: { color: '#eee' },
+                    },
+                    rightPriceScale: {
+                        borderColor: '#d1d4dc',
+                    },
+                    timeScale: {
+                        borderColor: '#d1d4dc',
+                        timeVisible: true,
+                        secondsVisible: false,
+                    },
+                });
+
+                // 1. Create Liquidity Series FIRST (so it renders behind)
+                // We use a LineSeries but make it invisible
+                liquiditySeries = chart.addLineSeries({
+                    color: 'transparent',
+                    lineWidth: 0,
+                    crosshairMarkerVisible: false,
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                    priceFormat: {
+                        type: 'price',
+                        precision: 6,
+                        minMove: 0.000001,
+                    },
+                });
+
+                // 2. Create Candle Series SECOND (so it renders on top)
+                candleSeries = chart.addCandlestickSeries({
+                    upColor: '#26a69a',
+                    downColor: '#ef5350',
+                    borderVisible: false,
+                    wickUpColor: '#26a69a',
+                    wickDownColor: '#ef5350',
+                    priceFormat: {
+                        type: 'price',
+                        precision: 6,
+                        minMove: 0.000001,
+                    },
+                });
+
+                console.log("Chart initialized. Series:", candleSeries);
+
+                // Handle resize
+                window.addEventListener('resize', () => {
+                    if (chart && chartContainer) {
+                        chart.applyOptions({ width: chartContainer.clientWidth });
+                    }
+                });
+            } catch (e) {
+                console.error("Error initializing chart:", e);
+                chart = null;
+                candleSeries = null;
+                liquiditySeries = null;
+            }
+        }
+
+        function changeLevel() {
+            const selector = document.getElementById('level-selector');
+            selectedLevelId = selector.value;
+            updateChart();
+        }
+
+        async function updateChart() {
+            if (!chart) {
+                initChart();
                 if (!chart) {
-                    initChart();
-                    if (!chart) {
-                        console.warn("Chart init failed, skipping update");
-                        return;
-                    }
+                    console.warn("Chart init failed, skipping update");
+                    return;
                 }
+            }
 
-                if (!candleSeries || !liquiditySeries) {
-                    console.error("Series is null, re-initializing...");
-                    // Try to recover?
-                    initChart();
-                    if (!candleSeries) return;
+            if (!candleSeries || !liquiditySeries) {
+                console.error("Series is null, re-initializing...");
+                // Try to recover?
+                initChart();
+                if (!candleSeries) return;
+            }
+
+            // Get data from the levels table to find selected level details
+            const table = document.querySelector('#levels-table table');
+            if (!table) return;
+
+            const rows = table.querySelectorAll('tbody tr');
+            if (rows.length === 0) return;
+
+            // Populate selector logic (same as before)
+            const selector = document.getElementById('level-selector');
+            if (!selector) {
+                if (typeof updateChartRetryCount !== 'undefined' && updateChartRetryCount < 5) {
+                    updateChartRetryCount++;
+                    console.warn(`Level selector not found, retrying (${updateChartRetryCount}/5)...`);
+                    setTimeout(updateChart, 500);
+                } else {
+                    console.error("Level selector not found after retries");
                 }
+                return;
+            }
+            if (typeof updateChartRetryCount !== 'undefined') updateChartRetryCount = 0;
 
-                // Get data from the levels table to find selected level details
-                const table = document.querySelector('#levels-table table');
-                if (!table) return;
+            const currentOptions = Array.from(selector.options).map(o => o.value);
+            const availableLevels = [];
+            const activeIds = [];
 
-                const rows = table.querySelectorAll('tbody tr');
-                if (rows.length === 0) return;
-
-                // Populate selector logic (same as before)
-                const selector = document.getElementById('level-selector');
-                const currentOptions = Array.from(selector.options).map(o => o.value);
-                const availableLevels = [];
-                const activeIds = [];
-
-                rows.forEach((row) => {
-                    const cells = row.querySelectorAll('td');
-                    const symbol = cells[1].textContent.trim();
-                    const levelPrice = parseFloat(cells[2].textContent);
-                    const id = `${symbol}-${levelPrice}`;
-                    activeIds.push(id);
-                    availableLevels.push({ id, text: `${symbol} @ ${levelPrice}` });
-
-                    if (!currentOptions.includes(id)) {
-                        const option = document.createElement('option');
-                        option.value = id;
-                        option.text = `${symbol} @ ${levelPrice}`;
-                        selector.appendChild(option);
-                    }
-                });
-
-                // Cleanup options
-                Array.from(selector.options).forEach(option => {
-                    if (option.value && !activeIds.includes(option.value)) {
-                        selector.removeChild(option);
-                    }
-                });
-
-                // Default selection
-                if ((!selectedLevelId || !activeIds.includes(selectedLevelId)) && availableLevels.length > 0) {
-                    selectedLevelId = availableLevels[0].id;
-                    selector.value = selectedLevelId;
-                }
-
-                // Find target row
-                let targetRow = null;
-                rows.forEach(row => {
-                    const cells = row.querySelectorAll('td');
-                    const symbol = cells[1].textContent.trim();
-                    const levelPrice = parseFloat(cells[2].textContent);
-                    const id = `${symbol}-${levelPrice}`;
-                    if (id === selectedLevelId) {
-                        targetRow = row;
-                    }
-                });
-
-                if (!targetRow) return;
-
-                const cells = targetRow.querySelectorAll('td');
+            rows.forEach((row) => {
+                const cells = row.querySelectorAll('td');
                 const symbol = cells[1].textContent.trim();
                 const levelPrice = parseFloat(cells[2].textContent);
+                const id = `${symbol}-${levelPrice}`;
+                activeIds.push(id);
+                availableLevels.push({ id, text: `${symbol} @ ${levelPrice}` });
 
-                // Fetch Candles
-                try {
-                    const response = await fetch(`/api/candles?symbol=${symbol}&interval=15&limit=200`);
-                    const candles = await response.json();
-                    if (candles && candles.length > 0) {
-                        // Ensure candles are sorted by time (ascending)
-                        candles.sort((a, b) => a.time - b.time);
-
-                        // Deduplicate candles by time
-                        const uniqueCandles = [];
-                        const seenTimes = new Set();
-                        for (const c of candles) {
-                            if (!seenTimes.has(c.time)) {
-                                seenTimes.add(c.time);
-                                uniqueCandles.push(c);
-                            }
-                        }
-
-                        candleSeries.setData(uniqueCandles);
-
-                        // Sync liquiditySeries with same data (using close price)
-                        // This ensures it shares the same scale and range
-                        const lineData = uniqueCandles.map(c => ({ time: c.time, value: c.close }));
-                        liquiditySeries.setData(lineData);
-                    }
-                } catch (e) {
-                    console.error("Failed to fetch candles", e);
-                }
-
-                // Update Price Lines (Level and Tiers)
-                // We will track active lines to avoid clearing/re-adding if not needed.
-                // However, LightweightCharts doesn't support updating PriceLine properties easily.
-                // But for Liquidity lines, we can diff the data.
-                // For Level/Tiers, they change rarely (only if user edits).
-
-                // Strategy:
-                // 1. Level/Tiers: Clear and re-add ONLY if level details changed (price/tiers).
-                // 2. Liquidity: Fetch, diff with current. If different, clear and re-add ONLY liquidity lines.
-
-                // For simplicity in this MVP, let's separate the arrays.
-                // currentLevelLines (Base + Tiers)
-                // currentLiquidityLines (Order Book)
-
-                // Parse Tiers from the nested table in cell 4
-                const tierCell = cells[4];
-                const nestedTable = tierCell.querySelector('table');
-                let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
-
-                if (nestedTable) {
-                    const nestedRows = nestedTable.querySelectorAll('tr');
-                    if (nestedRows.length >= 2) {
-                        // Long Tiers (Row 0)
-                        const longCells = nestedRows[0].querySelectorAll('td');
-                        longTier1 = parseFloat(longCells[1].textContent);
-                        longTier2 = parseFloat(longCells[2].textContent);
-                        longTier3 = parseFloat(longCells[3].textContent);
-
-                        // Short Tiers (Row 1)
-                        const shortCells = nestedRows[1].querySelectorAll('td');
-                        shortTier1 = parseFloat(shortCells[1].textContent);
-                        shortTier2 = parseFloat(shortCells[2].textContent);
-                        shortTier3 = parseFloat(shortCells[3].textContent);
-                    }
-                }
-
-                // Fallback if parsing fails (shouldn't happen if table structure is correct)
-                if (!longTier1) {
-                    console.warn("Failed to parse tiers from table, using defaults");
-                    longTier1 = levelPrice * (1 + 0.005);
-                    longTier2 = levelPrice * (1 + 0.003);
-                    longTier3 = levelPrice * (1 + 0.0015);
-                    shortTier1 = levelPrice * (1 - 0.005);
-                    shortTier2 = levelPrice * (1 - 0.003);
-                    shortTier3 = levelPrice * (1 - 0.0015);
-                }
-
-                // Check if level details changed
-                const levelDetails = {
-                    price: levelPrice,
-                    long: [longTier1, longTier2, longTier3],
-                    short: [shortTier1, shortTier2, shortTier3]
-                };
-                const levelDetailsJson = JSON.stringify(levelDetails);
-
-                if (window.lastLevelDetails !== levelDetailsJson) {
-                    // Clear old Level/Tier lines
-                    if (window.currentLevelLines) {
-                        window.currentLevelLines.forEach(line => candleSeries.removePriceLine(line));
-                    }
-                    window.currentLevelLines = [];
-
-                    // Add Base Level
-                    window.currentLevelLines.push(candleSeries.createPriceLine({
-                        price: levelPrice,
-                        color: '#000000',
-                        lineWidth: 2,
-                        lineStyle: LightweightCharts.LineStyle.Solid,
-                        axisLabelVisible: true,
-                        title: 'Base Level',
-                    }));
-
-                    // Add Tier Lines
-                    const addTierLine = (price, label, color) => {
-                        window.currentLevelLines.push(candleSeries.createPriceLine({
-                            price: price,
-                            color: color,
-                            lineWidth: 1,
-                            lineStyle: LightweightCharts.LineStyle.Dashed,
-                            axisLabelVisible: true,
-                            title: label,
-                        }));
-                    };
-
-                    addTierLine(longTier1, 'L-T1', '#28a745');
-                    addTierLine(longTier2, 'L-T2', '#28a745');
-                    addTierLine(longTier3, 'L-T3', '#28a745');
-
-                    addTierLine(shortTier1, 'S-T1', '#dc3545');
-                    addTierLine(shortTier2, 'S-T2', '#dc3545');
-                    addTierLine(shortTier3, 'S-T3', '#dc3545');
-
-                    window.lastLevelDetails = levelDetailsJson;
-                }
-
-                // Fetch and Render Liquidity Clusters
-                try {
-                    const liqResp = await fetch(`/api/liquidity?symbol=${symbol}`);
-                    const clusters = await liqResp.json();
-                    const clustersJson = JSON.stringify(clusters);
-
-                    if (window.lastLiquidityJson !== clustersJson) {
-                        // Clear old Liquidity lines from LIQUIDITY SERIES
-                        if (window.currentLiquidityLines) {
-                            window.currentLiquidityLines.forEach(line => liquiditySeries.removePriceLine(line));
-                        }
-                        window.currentLiquidityLines = [];
-
-                        if (clusters && clusters.length > 0) {
-                            // Find max volume for scaling
-                            const maxVol = Math.max(...clusters.map(c => c.volume));
-
-                            clusters.forEach(c => {
-                                // Intensity Clamping: clamp(size/max_size, 0..1)
-                                let opacity = 0.0;
-                                if (maxVol > 0) {
-                                    opacity = c.volume / maxVol;
-                                    if (opacity > 1.0) opacity = 1.0;
-                                    if (opacity < 0.0) opacity = 0.0;
-                                }
-
-                                // Ensure minimum visibility for anything returned by backend
-                                if (opacity < 0.1) opacity = 0.1;
-
-                                const color = c.type === 'bid'
-                                    ? `rgba(0, 255, 0, ${opacity.toFixed(2)})`
-                                    : `rgba(255, 105, 180, ${opacity.toFixed(2)})`; // Pink for Asks
-
-                                // Add to LIQUIDITY SERIES (Background)
-                                window.currentLiquidityLines.push(liquiditySeries.createPriceLine({
-                                    price: c.price,
-                                    color: color,
-                                    lineWidth: 2, // Fixed width
-                                    lineStyle: LightweightCharts.LineStyle.Solid,
-                                    axisLabelVisible: false,
-                                    title: '',
-                                }));
-                            });
-                        }
-                        window.lastLiquidityJson = clustersJson;
-                    }
-                } catch (e) {
-                    console.error("Failed to fetch liquidity", e);
-                }
-            }
-
-            // Update chart when levels table updates
-            document.body.addEventListener('htmx:afterSwap', function (event) {
-                if (event.detail.target.id === 'levels-table') {
-                    updateChart();
+                if (!currentOptions.includes(id)) {
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.text = `${symbol} @ ${levelPrice}`;
+                    selector.appendChild(option);
                 }
             });
 
-            // Initial render
-            setTimeout(updateChart, 500);
+            // Cleanup options
+            Array.from(selector.options).forEach(option => {
+                if (option.value && !activeIds.includes(option.value)) {
+                    selector.removeChild(option);
+                }
+            });
 
-            // Tier Tips Logic
-            function updateTierTips() {
-                const priceInput = document.getElementById('input-level-price');
-                if (!priceInput) return;
+            // Default selection
+            if ((!selectedLevelId || !activeIds.includes(selectedLevelId)) && availableLevels.length > 0) {
+                selectedLevelId = availableLevels[0].id;
+                selector.value = selectedLevelId;
+            }
 
-                const price = parseFloat(priceInput.value);
-                if (isNaN(price)) return;
+            // Find target row
+            let targetRow = null;
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                const symbol = cells[1].textContent.trim();
+                const levelPrice = parseFloat(cells[2].textContent);
+                const id = `${symbol}-${levelPrice}`;
+                if (id === selectedLevelId) {
+                    targetRow = row;
+                }
+            });
 
-                ['tier1', 'tier2', 'tier3'].forEach(tier => {
-                    const input = document.getElementById(`input-${tier}`);
-                    const tip = document.getElementById(`tip-${tier}`);
-                    if (!input || !tip) return;
+            if (!targetRow) return;
 
-                    const pct = parseFloat(input.value);
-                    if (isNaN(pct)) {
-                        tip.innerHTML = '';
-                        return;
+            const cells = targetRow.querySelectorAll('td');
+            const symbol = cells[1].textContent.trim();
+            const levelPrice = parseFloat(cells[2].textContent);
+
+            // Fetch Candles
+            try {
+                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`);
+                const candles = await response.json();
+                if (candles && candles.length > 0) {
+                    // Ensure candles are sorted by time (ascending)
+                    candles.sort((a, b) => a.time - b.time);
+
+                    // Deduplicate candles by time
+                    const uniqueCandles = [];
+                    const seenTimes = new Set();
+                    for (const c of candles) {
+                        if (!seenTimes.has(c.time)) {
+                            seenTimes.add(c.time);
+                            uniqueCandles.push(c);
+                        }
                     }
 
-                    const longPrice = price * (1 + pct / 100);
-                    const shortPrice = price * (1 - pct / 100);
+                    candleSeries.setData(uniqueCandles);
 
-                    tip.innerHTML = `<span style="color:#28a745" title="Long (Above)">L:${longPrice.toFixed(6)}</span><br><span style="color:#dc3545" title="Short (Below)">S:${shortPrice.toFixed(6)}</span>`;
-                });
+                    // Sync liquiditySeries with same data (using close price)
+                    // This ensures it shares the same scale and range
+                    const lineData = uniqueCandles.map(c => ({ time: c.time, value: c.close }));
+                    liquiditySeries.setData(lineData);
+
+                    // Only auto-scale if symbol changed or first load
+                    if (window.lastChartSymbol !== symbol) {
+                        chart.timeScale().fitContent();
+                        chart.priceScale('right').applyOptions({
+                            autoScale: true,
+                        });
+                        window.lastChartSymbol = symbol;
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch candles", e);
             }
 
-            // Add listeners
+            // Update Price Lines (Level and Tiers)
+            // We will track active lines to avoid clearing/re-adding if not needed.
+            // However, LightweightCharts doesn't support updating PriceLine properties easily.
+            // But for Liquidity lines, we can diff the data.
+            // For Level/Tiers, they change rarely (only if user edits).
+
+            // Strategy:
+            // 1. Level/Tiers: Clear and re-add ONLY if level details changed (price/tiers).
+            // 2. Liquidity: Fetch, diff with current. If different, clear and re-add ONLY liquidity lines.
+
+            // For simplicity in this MVP, let's separate the arrays.
+            // currentLevelLines (Base + Tiers)
+            // currentLiquidityLines (Order Book)
+
+            // Parse Tiers from the nested table in cell 4
+            const tierCell = cells[4];
+            const nestedTable = tierCell.querySelector('table');
+            let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
+
+            if (nestedTable) {
+                const nestedRows = nestedTable.querySelectorAll('tr');
+                if (nestedRows.length >= 2) {
+                    // Long Tiers (Row 0)
+                    const longCells = nestedRows[0].querySelectorAll('td');
+                    longTier1 = parseFloat(longCells[1].textContent);
+                    longTier2 = parseFloat(longCells[2].textContent);
+                    longTier3 = parseFloat(longCells[3].textContent);
+
+                    // Short Tiers (Row 1)
+                    const shortCells = nestedRows[1].querySelectorAll('td');
+                    shortTier1 = parseFloat(shortCells[1].textContent);
+                    shortTier2 = parseFloat(shortCells[2].textContent);
+                    shortTier3 = parseFloat(shortCells[3].textContent);
+                }
+            }
+
+            // Fallback if parsing fails (shouldn't happen if table structure is correct)
+            if (!longTier1) {
+                console.warn("Failed to parse tiers from table, using defaults");
+                longTier1 = levelPrice * (1 + 0.005);
+                longTier2 = levelPrice * (1 + 0.003);
+                longTier3 = levelPrice * (1 + 0.0015);
+                shortTier1 = levelPrice * (1 - 0.005);
+                shortTier2 = levelPrice * (1 - 0.003);
+                shortTier3 = levelPrice * (1 - 0.0015);
+            }
+
+            // Check if level details changed
+            const levelDetails = {
+                price: levelPrice,
+                long: [longTier1, longTier2, longTier3],
+                short: [shortTier1, shortTier2, shortTier3]
+            };
+            const levelDetailsJson = JSON.stringify(levelDetails);
+
+            if (window.lastLevelDetails !== levelDetailsJson) {
+                // Clear old Level/Tier lines
+                if (window.currentLevelLines) {
+                    window.currentLevelLines.forEach(line => candleSeries.removePriceLine(line));
+                }
+                window.currentLevelLines = [];
+
+                // Add Base Level
+                window.currentLevelLines.push(candleSeries.createPriceLine({
+                    price: levelPrice,
+                    color: '#000000',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    axisLabelVisible: true,
+                    title: 'Base Level',
+                }));
+
+                // Add Tier Lines
+                const addTierLine = (price, label, color) => {
+                    window.currentLevelLines.push(candleSeries.createPriceLine({
+                        price: price,
+                        color: color,
+                        lineWidth: 1,
+                        lineStyle: LightweightCharts.LineStyle.Dashed,
+                        axisLabelVisible: true,
+                        title: label,
+                    }));
+                };
+
+                addTierLine(longTier1, 'L-T1', '#28a745');
+                addTierLine(longTier2, 'L-T2', '#28a745');
+                addTierLine(longTier3, 'L-T3', '#28a745');
+
+                addTierLine(shortTier1, 'S-T1', '#dc3545');
+                addTierLine(shortTier2, 'S-T2', '#dc3545');
+                addTierLine(shortTier3, 'S-T3', '#dc3545');
+
+                window.lastLevelDetails = levelDetailsJson;
+            }
+
+            // Fetch and Render Liquidity Clusters
+            try {
+                const liqResp = await fetch(`/api/liquidity?symbol=${symbol}`);
+                const clusters = await liqResp.json();
+                const clustersJson = JSON.stringify(clusters);
+
+                if (window.lastLiquidityJson !== clustersJson) {
+                    // Clear old Liquidity lines from LIQUIDITY SERIES
+                    if (window.currentLiquidityLines) {
+                        window.currentLiquidityLines.forEach(line => liquiditySeries.removePriceLine(line));
+                    }
+                    window.currentLiquidityLines = [];
+
+                    if (clusters && clusters.length > 0) {
+                        // Find max volume for scaling
+                        const maxVol = Math.max(...clusters.map(c => c.volume));
+
+                        clusters.forEach(c => {
+                            // Intensity Clamping: clamp(size/max_size, 0..1)
+                            let opacity = 0.0;
+                            if (maxVol > 0) {
+                                opacity = c.volume / maxVol;
+                                if (opacity > 1.0) opacity = 1.0;
+                                if (opacity < 0.0) opacity = 0.0;
+                            }
+
+                            // Ensure minimum visibility for anything returned by backend
+                            if (opacity < 0.1) opacity = 0.1;
+
+                            const color = c.type === 'bid'
+                                ? `rgba(0, 255, 0, ${opacity.toFixed(2)})`
+                                : `rgba(255, 105, 180, ${opacity.toFixed(2)})`; // Pink for Asks
+
+                            // Add to LIQUIDITY SERIES (Background)
+                            window.currentLiquidityLines.push(liquiditySeries.createPriceLine({
+                                price: c.price,
+                                color: color,
+                                lineWidth: 2, // Fixed width
+                                lineStyle: LightweightCharts.LineStyle.Solid,
+                                axisLabelVisible: false,
+                                title: '',
+                            }));
+                        });
+                    }
+                    window.lastLiquidityJson = clustersJson;
+                }
+            } catch (e) {
+                console.error("Failed to fetch liquidity", e);
+            }
+        }
+
+        // Update chart when levels table updates
+        document.body.addEventListener('htmx:afterSwap', function (event) {
+            if (event.detail.target.id === 'levels-table') {
+                updateChart();
+            }
+        });
+
+        // Initial render
+        document.addEventListener('DOMContentLoaded', function () {
+            setTimeout(updateChart, 500);
+        });
+
+        // Retry mechanism for updateChart if selector is missing
+        let updateChartRetryCount = 0;
+
+
+        // Tier Tips Logic
+        function updateTierTips() {
             const priceInput = document.getElementById('input-level-price');
-            if (priceInput) {
-                priceInput.addEventListener('input', updateTierTips);
-                // Also update on load if value exists
-                updateTierTips();
-            }
+            if (!priceInput) return;
+
+            const price = parseFloat(priceInput.value);
+            if (isNaN(price)) return;
+
             ['tier1', 'tier2', 'tier3'].forEach(tier => {
                 const input = document.getElementById(`input-${tier}`);
-                if (input) input.addEventListener('input', updateTierTips);
+                const tip = document.getElementById(`tip-${tier}`);
+                if (!input || !tip) return;
+
+                const pct = parseFloat(input.value);
+                if (isNaN(pct)) {
+                    tip.innerHTML = '';
+                    return;
+                }
+
+                const longPrice = price * (1 + pct / 100);
+                const shortPrice = price * (1 - pct / 100);
+
+                tip.innerHTML = `<span style="color:#28a745" title="Long (Above)">L:${longPrice.toFixed(6)}</span><br><span style="color:#dc3545" title="Short (Below)">S:${shortPrice.toFixed(6)}</span>`;
             });
+        }
 
-            // Call once on init
-            setTimeout(updateTierTips, 100);
+        // Add listeners
+        const priceInput = document.getElementById('input-level-price');
+        if (priceInput) {
+            priceInput.addEventListener('input', updateTierTips);
+            // Also update on load if value exists
+            updateTierTips();
+        }
+        ['tier1', 'tier2', 'tier3'].forEach(tier => {
+            const input = document.getElementById(`input-${tier}`);
+            if (input) input.addEventListener('input', updateTierTips);
+        });
 
-            // Market Stats Logic
-            async function updateMarketStats() {
-                const selector = document.getElementById('level-selector');
-                // Use selected level symbol or default
-                let symbol = "BTCUSDT";
-                if (selector && selector.value) {
-                    // value is symbol-price, extract symbol
-                    const parts = selector.value.split('-');
-                    if (parts.length > 0) symbol = parts[0];
-                }
+        // Call once on init
+        setTimeout(updateTierTips, 100);
 
-                try {
-                    const resp = await fetch(`/api/market-stats?symbol=${symbol}`);
-                    const stats = await resp.json();
-
-                    // Update Speed Gauge
-                    // Ratio: Buy / (Buy + Sell). 0 = Full Sell (-90deg), 1 = Full Buy (90deg)
-                    const totalSpeed = stats.speed_buy + stats.speed_sell;
-                    let speedRatio = 0.5;
-                    if (totalSpeed > 0) {
-                        speedRatio = stats.speed_buy / totalSpeed;
-                    }
-                    // Map 0..1 to -90..90
-                    const speedDeg = (speedRatio * 180) - 90;
-                    const speedNeedle = document.getElementById('speed-needle');
-                    if (speedNeedle) speedNeedle.style.transform = `rotate(${speedDeg}deg)`;
-
-                    const speedValue = document.getElementById('speed-value');
-                    if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(2)} / ${stats.speed_buy.toFixed(2)}`;
-
-
-                    // Update Depth Gauge
-                    // Ratio: Bid / (Bid + Ask). 0 = Full Ask (-90deg), 1 = Full Bid (90deg)
-                    // Wait, usually Left=Ask (Sell pressure), Right=Bid (Buy pressure).
-                    // If Bid is high, price goes UP (Right). If Ask is high, price goes DOWN (Left).
-                    // So Bid Ratio -> Right.
-                    const totalDepth = stats.depth_bid + stats.depth_ask;
-                    let depthRatio = 0.5;
-                    if (totalDepth > 0) {
-                        depthRatio = stats.depth_bid / totalDepth;
-                    }
-                    const depthDeg = (depthRatio * 180) - 90;
-                    const depthNeedle = document.getElementById('depth-needle');
-                    if (depthNeedle) depthNeedle.style.transform = `rotate(${depthDeg}deg)`;
-
-                    const depthValue = document.getElementById('depth-value');
-                    if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)} / ${stats.depth_bid.toFixed(2)}`;
-
-                    // Update Divergence Gauge
-                    // Divergence = TradeSentiment - DepthSentiment
-                    // TradeSentiment = speedRatio (0..1, 1=Buy)
-                    // DepthSentiment = depthRatio (0..1, 1=Bid/Buy)
-                    // Div = speedRatio - depthRatio
-                    // Range: -1 (Max Sell Speed, Max Buy Depth) to +1 (Max Buy Speed, Max Sell Depth)
-                    // Wait, if Speed=Buy(1) and Depth=Buy(1), Div=0 (Agreement).
-                    // If Speed=Buy(1) and Depth=Sell(0), Div=1 (Bullish Divergence? Price moving up despite sell wall?)
-                    // Let's define:
-                    // Bullish Div: High Buy Speed vs Low Buy Depth (Sell Wall eating) -> Speed(1) - Depth(0) = 1
-                    // Bearish Div: High Sell Speed vs Low Sell Depth (Buy Wall eating) -> Speed(0) - Depth(1) = -1
-
-                    const divergence = speedRatio - depthRatio;
-                    // Map -1..1 to -90..90
-                    const divDeg = divergence * 90;
-
-                    const divNeedle = document.getElementById('div-needle');
-                    if (divNeedle) divNeedle.style.transform = `rotate(${divDeg}deg)`;
-
-                    const divValue = document.getElementById('div-value');
-                    if (divValue) divValue.textContent = divergence.toFixed(2);
-
-                } catch (e) {
-                    console.error("Failed to fetch market stats", e);
-                }
+        // Market Stats Logic
+        async function updateMarketStats() {
+            const selector = document.getElementById('level-selector');
+            // Use selected level symbol or default
+            let symbol = "BTCUSDT";
+            if (selector && selector.value) {
+                // value is symbol-price, extract symbol
+                const parts = selector.value.split('-');
+                if (parts.length > 0) symbol = parts[0];
             }
 
-            // Update stats every 1s
-            setInterval(updateMarketStats, 1000);
-            // Also update when level changes
-            document.getElementById('level-selector').addEventListener('change', updateMarketStats);
-        </script>
+            try {
+                const resp = await fetch(`/api/market-stats?symbol=${symbol}`);
+                const stats = await resp.json();
+
+                // Update Speed Gauge
+                // Ratio: Buy / (Buy + Sell). 0 = Full Sell (-90deg), 1 = Full Buy (90deg)
+                const totalSpeed = stats.speed_buy + stats.speed_sell;
+                let speedRatio = 0.5;
+                if (totalSpeed > 0) {
+                    speedRatio = stats.speed_buy / totalSpeed;
+                }
+                // Map 0..1 to -90..90
+                const speedDeg = (speedRatio * 180) - 90;
+                const speedNeedle = document.getElementById('speed-needle');
+                if (speedNeedle) speedNeedle.style.transform = `rotate(${speedDeg}deg)`;
+
+                const speedValue = document.getElementById('speed-value');
+                if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(2)} / ${stats.speed_buy.toFixed(2)}`;
+
+
+                // Update Depth Gauge
+                // Ratio: Bid / (Bid + Ask). 0 = Full Ask (-90deg), 1 = Full Bid (90deg)
+                // Wait, usually Left=Ask (Sell pressure), Right=Bid (Buy pressure).
+                // If Bid is high, price goes UP (Right). If Ask is high, price goes DOWN (Left).
+                // So Bid Ratio -> Right.
+                const totalDepth = stats.depth_bid + stats.depth_ask;
+                let depthRatio = 0.5;
+                if (totalDepth > 0) {
+                    depthRatio = stats.depth_bid / totalDepth;
+                }
+                const depthDeg = (depthRatio * 180) - 90;
+                const depthNeedle = document.getElementById('depth-needle');
+                if (depthNeedle) depthNeedle.style.transform = `rotate(${depthDeg}deg)`;
+
+                const depthValue = document.getElementById('depth-value');
+                if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)} / ${stats.depth_bid.toFixed(2)}`;
+
+                // Update Divergence Gauge
+                // Divergence = TradeSentiment - DepthSentiment
+                // TradeSentiment = speedRatio (0..1, 1=Buy)
+                // DepthSentiment = depthRatio (0..1, 1=Bid/Buy)
+                // Div = speedRatio - depthRatio
+                // Range: -1 (Max Sell Speed, Max Buy Depth) to +1 (Max Buy Speed, Max Sell Depth)
+                // Wait, if Speed=Buy(1) and Depth=Buy(1), Div=0 (Agreement).
+                // If Speed=Buy(1) and Depth=Sell(0), Div=1 (Bullish Divergence? Price moving up despite sell wall?)
+                // Let's define:
+                // Bullish Div: High Buy Speed vs Low Buy Depth (Sell Wall eating) -> Speed(1) - Depth(0) = 1
+                // Bearish Div: High Sell Speed vs Low Sell Depth (Buy Wall eating) -> Speed(0) - Depth(1) = -1
+
+                const divergence = speedRatio - depthRatio;
+                // Map -1..1 to -90..90
+                const divDeg = divergence * 90;
+
+                const divNeedle = document.getElementById('div-needle');
+                if (divNeedle) divNeedle.style.transform = `rotate(${divDeg}deg)`;
+
+                const divValue = document.getElementById('div-value');
+                if (divValue) divValue.textContent = divergence.toFixed(2);
+
+            } catch (e) {
+                console.error("Failed to fetch market stats", e);
+            }
+        }
+
+        // Update stats every 1s
+        setInterval(updateMarketStats, 1000);
+        // Also update when level changes
+        const levelSelector = document.getElementById('level-selector');
+        if (levelSelector) {
+            levelSelector.addEventListener('change', updateMarketStats);
+        }
+    </script>
 
 
 
-        <div class="card">
-            <h2>Active Positions</h2>
-            <div id="positions-table" hx-get="/positions" hx-trigger="load, every 5s">
-                <!-- Loaded via HTMX -->
-            </div>
+    <div class="card">
+        <h2>Active Positions</h2>
+        <div id="positions-table" hx-get="/positions" hx-trigger="load, every 5s">
+            <!-- Loaded via HTMX -->
         </div>
+    </div>
 
-        <div class="card">
-            <h2>Recent Trades</h2>
-            <div hx-get="/trades" hx-trigger="every 5s">
-                <!-- Initial load or empty -->
-            </div>
+    <div class="card">
+        <h2>Recent Trades</h2>
+        <div hx-get="/trades" hx-trigger="every 5s">
+            <!-- Initial load or empty -->
         </div>
+    </div>
     </div>
 </body>
 

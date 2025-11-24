@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -15,6 +14,7 @@ type LevelService struct {
 	levelRepo domain.LevelRepository
 	tradeRepo domain.TradeRepository
 	exchange  domain.Exchange
+	market    *MarketService // Injected dependency
 	evaluator *LevelEvaluator
 	engine    *SublevelEngine
 	executor  *TradeExecutor
@@ -31,11 +31,13 @@ func NewLevelService(
 	levelRepo domain.LevelRepository,
 	tradeRepo domain.TradeRepository,
 	exchange domain.Exchange,
+	market *MarketService,
 ) *LevelService {
 	return &LevelService{
 		levelRepo:   levelRepo,
 		tradeRepo:   tradeRepo,
 		exchange:    exchange,
+		market:      market,
 		evaluator:   NewLevelEvaluator(),
 		engine:      NewSublevelEngine(),
 		executor:    NewTradeExecutor(exchange),
@@ -133,7 +135,7 @@ func (s *LevelService) UpdateCache(ctx context.Context) error {
 
 // ProcessTick should be called when a new price arrives (e.g. from WebSocket).
 func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol string, price float64) error {
-	fmt.Printf("Tick: %s %f\n", symbol, price) // Simple print for debugging
+	// fmt.Printf("Tick: %s %f\n", symbol, price) // Too noisy
 	s.mu.Lock()
 	prevPrice, ok := s.lastPrices[symbol]
 	s.lastPrices[symbol] = price
@@ -144,7 +146,6 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	s.mu.Unlock()
 
 	if !ok {
-		// First tick, can't detect crossing
 		return nil
 	}
 
@@ -168,14 +169,69 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		return nil // No tiers, can't trade
 	}
 
+	// --- SENTIMENT LOGIC ---
+	sentiment, err := s.market.GetTradeSentiment(ctx, symbol)
+	if err != nil {
+		log.Printf("Error getting sentiment for %s: %v", symbol, err)
+		sentiment = 0 // Default to neutral
+	}
+
+	// Exit Trigger: "Ride the trend until it bends"
+	// Threshold: 0.6
+	const sentimentThreshold = 0.6
+
+	// Optimization: Only check position if sentiment is strong enough to potentially trigger a close
+	if sentiment < -sentimentThreshold || sentiment > sentimentThreshold {
+		// Check if we have an open position that contradicts sentiment
+		// We use the exchange to get the authoritative position
+		// Note: This adds a REST call on ticks with strong sentiment.
+		// We could optimize by checking local state first, but for safety we check exchange.
+		// To avoid spamming REST, maybe we should rate limit this check?
+		// For MVP, we'll assume strong sentiment is not constant flickering.
+
+		pos, err := s.exchange.GetPosition(ctx, symbol)
+		if err == nil && pos.Size > 0 {
+			shouldClose := false
+			if pos.Side == domain.SideLong && sentiment < -sentimentThreshold {
+				log.Printf("SENTIMENT: Strong Sell Speed (%f). Closing LONG on %s.", sentiment, symbol)
+				shouldClose = true
+			} else if pos.Side == domain.SideShort && sentiment > sentimentThreshold {
+				log.Printf("SENTIMENT: Strong Buy Speed (%f). Closing SHORT on %s.", sentiment, symbol)
+				shouldClose = true
+			}
+
+			if shouldClose {
+				if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
+					log.Printf("Failed to close position on sentiment: %v", err)
+				} else {
+					// Reset State for all levels of this symbol
+					for _, l := range relevantLevels {
+						s.engine.ResetState(l.ID)
+					}
+					// Log Trade
+					s.tradeRepo.SaveTrade(ctx, &domain.Order{
+						Exchange:  exchangeName,
+						Symbol:    symbol,
+						LevelID:   "sentiment-exit",
+						Side:      pos.Side, // Closing side? Or original side? Usually we log the action.
+						Size:      0,        // Marker
+						Price:     price,
+						CreatedAt: time.Now(),
+					})
+					return nil // Stop processing this tick
+				}
+			}
+		}
+	}
+
 	for _, level := range relevantLevels {
-		s.processLevel(ctx, level, tiers, prevPrice, price)
+		s.processLevel(ctx, level, tiers, prevPrice, price, sentiment)
 	}
 
 	return nil
 }
 
-func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, prevPrice, currPrice float64) {
+func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, prevPrice, currPrice, sentiment float64) {
 	// 1. Determine Side
 	side := s.evaluator.DetermineSide(level.LevelPrice, currPrice)
 	if side == "" {
@@ -189,6 +245,19 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 	action, size := s.engine.Evaluate(level, boundaries, prevPrice, currPrice, side)
 
 	if action != ActionNone {
+		// --- ENTRY FILTER ---
+		const sentimentThreshold = 0.6
+		if action == ActionOpen || action == ActionAddToPosition {
+			if side == domain.SideLong && sentiment < -sentimentThreshold {
+				log.Printf("SENTIMENT: Skipping LONG on %s. Sentiment is Bearish (%f).", level.Symbol, sentiment)
+				return
+			}
+			if side == domain.SideShort && sentiment > sentimentThreshold {
+				log.Printf("SENTIMENT: Skipping SHORT on %s. Sentiment is Bullish (%f).", level.Symbol, sentiment)
+				return
+			}
+		}
+
 		log.Printf("AUDIT: Action Triggered: %s. Level: %s, Symbol: %s, Side: %s, Size: %f", action, level.ID, level.Symbol, side, size)
 		log.Printf("Triggered: %s on %s %s (Side: %s, Size: %f)", action, level.Exchange, level.Symbol, side, size)
 
@@ -264,7 +333,7 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 
 		// 4. Execute Trade
 		stopLoss := 0.0
-		if level.StopLossAtBase {
+		if level.StopLossAtBase && level.StopLossMode == "exchange" {
 			stopLoss = level.LevelPrice
 		}
 
