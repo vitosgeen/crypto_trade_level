@@ -152,13 +152,30 @@ func (s *MarketService) updateOrderBook(ctx context.Context, symbol string) {
 		return // Skip update on error
 	}
 
-	// Calculate Total Volume
+	// Calculate Total Volume (within +/- 0.5% range)
+	// 1. Find Mid Price
+	if len(linearOB.Bids) == 0 || len(linearOB.Asks) == 0 {
+		return
+	}
+	bestBid := linearOB.Bids[0].Price
+	bestAsk := linearOB.Asks[0].Price
+	midPrice := (bestBid + bestAsk) / 2
+
+	// 2. Define Range
+	rangePct := 0.005 // 0.5%
+	minBid := midPrice * (1 - rangePct)
+	maxAsk := midPrice * (1 + rangePct)
+
 	var totalBid, totalAsk float64
 	for _, e := range linearOB.Bids {
-		totalBid += e.Size
+		if e.Price >= minBid {
+			totalBid += e.Size
+		}
 	}
 	for _, e := range linearOB.Asks {
-		totalAsk += e.Size
+		if e.Price <= maxAsk {
+			totalAsk += e.Size
+		}
 	}
 
 	now := s.timeNow()

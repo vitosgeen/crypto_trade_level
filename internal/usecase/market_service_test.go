@@ -51,10 +51,24 @@ func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {
 	symbol := "BTCUSDT"
 
 	// 1. First Call: Initial Depth
-	// Bid: 10, Ask: 20
+	// Mid Price: (100+101)/2 = 100.5
+	// Range: 0.5% -> +/- 0.5025
+	// MinBid: 99.9975, MaxAsk: 101.0025
+	//
+	// Orders:
+	// Bid @ 100 (In) -> 10
+	// Bid @ 90 (Out) -> 100 (Should be ignored)
+	// Ask @ 101 (In) -> 20
+	// Ask @ 110 (Out) -> 200 (Should be ignored)
 	mockEx.OrderBook = &domain.OrderBook{
-		Bids: []domain.OrderBookEntry{{Price: 100, Size: 10}},
-		Asks: []domain.OrderBookEntry{{Price: 101, Size: 20}},
+		Bids: []domain.OrderBookEntry{
+			{Price: 100, Size: 10},
+			{Price: 90, Size: 100},
+		},
+		Asks: []domain.OrderBookEntry{
+			{Price: 101, Size: 20},
+			{Price: 110, Size: 200},
+		},
 	}
 
 	stats, err := service.GetMarketStats(ctx, symbol)
@@ -63,7 +77,7 @@ func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {
 	}
 
 	if stats.DepthBid != 10 || stats.DepthAsk != 20 {
-		t.Errorf("Expected Depth 10/20, got %.2f/%.2f", stats.DepthBid, stats.DepthAsk)
+		t.Errorf("Expected Depth 10/20 (filtered), got %.2f/%.2f", stats.DepthBid, stats.DepthAsk)
 	}
 
 	// 2. Advance Time by 10s (Trigger new fetch)
