@@ -25,17 +25,27 @@ type Trade struct {
 }
 
 type MarketService struct {
-	exchange domain.Exchange
-	cache    map[string]CachedLiquidity
-	trades   map[string][]Trade // Symbol -> Trades
-	mu       sync.Mutex
+	exchange     domain.Exchange
+	cache        map[string]CachedLiquidity
+	trades       map[string][]Trade // Symbol -> Trades
+	depthHistory map[string][]DepthSnapshot
+	mu           sync.Mutex
+	timeNow      func() time.Time // For testing
+}
+
+type DepthSnapshot struct {
+	Time     time.Time
+	TotalBid float64
+	TotalAsk float64
 }
 
 func NewMarketService(exchange domain.Exchange) *MarketService {
 	s := &MarketService{
-		exchange: exchange,
-		cache:    make(map[string]CachedLiquidity),
-		trades:   make(map[string][]Trade),
+		exchange:     exchange,
+		cache:        make(map[string]CachedLiquidity),
+		trades:       make(map[string][]Trade),
+		depthHistory: make(map[string][]DepthSnapshot),
+		timeNow:      time.Now,
 	}
 
 	// Subscribe to trades
@@ -48,7 +58,7 @@ func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now()
+	now := s.timeNow()
 	// Add new trade
 	s.trades[symbol] = append(s.trades[symbol], Trade{
 		Symbol: symbol,
@@ -83,7 +93,7 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 	// 1. Calculate Speed (from trades)
 	var speedBuy, speedSell float64
 	if trades, ok := s.trades[symbol]; ok {
-		now := time.Now()
+		now := s.timeNow()
 		cutoff := now.Add(-60 * time.Second)
 		// Prune again just in case (lazy pruning)
 		validTrades := trades[:0]
@@ -100,19 +110,74 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		s.trades[symbol] = validTrades
 	}
 
-	// 2. Get Depth (from cache)
-	var depthBid, depthAsk float64
-	if cached, ok := s.cache[symbol]; ok {
-		depthBid = cached.TotalBid
-		depthAsk = cached.TotalAsk
+	// 2. Get Depth (60s Moving Average)
+	// Check if we need to update depth history (lazy fetch if stale)
+	s.updateOrderBook(ctx, symbol)
+
+	var avgBid, avgAsk float64
+	if history, ok := s.depthHistory[symbol]; ok && len(history) > 0 {
+		var sumBid, sumAsk float64
+		for _, snapshot := range history {
+			sumBid += snapshot.TotalBid
+			sumAsk += snapshot.TotalAsk
+		}
+		avgBid = sumBid / float64(len(history))
+		avgAsk = sumAsk / float64(len(history))
 	}
 
 	return &MarketStats{
 		SpeedBuy:  speedBuy,
 		SpeedSell: speedSell,
-		DepthBid:  depthBid,
-		DepthAsk:  depthAsk,
+		DepthBid:  avgBid,
+		DepthAsk:  avgAsk,
 	}, nil
+}
+
+func (s *MarketService) updateOrderBook(ctx context.Context, symbol string) {
+	// Check if latest snapshot is fresh (< 5s)
+	if history, ok := s.depthHistory[symbol]; ok && len(history) > 0 {
+		last := history[len(history)-1]
+		if time.Since(last.Time) < 5*time.Second {
+			return // Fresh enough
+		}
+	}
+
+	// Fetch Linear (Futures) Order Book
+	// We use a separate context with timeout to avoid blocking too long
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	linearOB, err := s.exchange.GetOrderBook(ctx, symbol, "linear")
+	if err != nil {
+		return // Skip update on error
+	}
+
+	// Calculate Total Volume
+	var totalBid, totalAsk float64
+	for _, e := range linearOB.Bids {
+		totalBid += e.Size
+	}
+	for _, e := range linearOB.Asks {
+		totalAsk += e.Size
+	}
+
+	now := s.timeNow()
+	// Append to history
+	s.depthHistory[symbol] = append(s.depthHistory[symbol], DepthSnapshot{
+		Time:     now,
+		TotalBid: totalBid,
+		TotalAsk: totalAsk,
+	})
+
+	// Prune old history (> 60s)
+	cutoff := now.Add(-60 * time.Second)
+	validHistory := s.depthHistory[symbol][:0]
+	for _, snapshot := range s.depthHistory[symbol] {
+		if snapshot.Time.After(cutoff) {
+			validHistory = append(validHistory, snapshot)
+		}
+	}
+	s.depthHistory[symbol] = validHistory
 }
 
 type LiquidityCluster struct {
