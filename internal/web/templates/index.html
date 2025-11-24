@@ -235,6 +235,23 @@
                     </div>
                     <div class="gauge-value" id="depth-value">0 / 0</div>
                 </div>
+
+                <!-- Gauge 3: Divergence -->
+                <div class="gauge-container">
+                    <h3 style="text-align: center; margin-bottom: 10px;">Sentiment Divergence</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"
+                            style="background: conic-gradient(from 270deg, #ffc107 0deg 90deg, #007bff 90deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="div-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span style="color: #ffc107;">Bearish Div</span>
+                        <span style="color: #007bff;">Bullish Div</span>
+                    </div>
+                    <div class="gauge-value" id="div-value">0.00</div>
+                </div>
             </div>
         </div>
 
@@ -690,6 +707,28 @@
 
                     const depthValue = document.getElementById('depth-value');
                     if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)} / ${stats.depth_bid.toFixed(2)}`;
+
+                    // Update Divergence Gauge
+                    // Divergence = TradeSentiment - DepthSentiment
+                    // TradeSentiment = speedRatio (0..1, 1=Buy)
+                    // DepthSentiment = depthRatio (0..1, 1=Bid/Buy)
+                    // Div = speedRatio - depthRatio
+                    // Range: -1 (Max Sell Speed, Max Buy Depth) to +1 (Max Buy Speed, Max Sell Depth)
+                    // Wait, if Speed=Buy(1) and Depth=Buy(1), Div=0 (Agreement).
+                    // If Speed=Buy(1) and Depth=Sell(0), Div=1 (Bullish Divergence? Price moving up despite sell wall?)
+                    // Let's define:
+                    // Bullish Div: High Buy Speed vs Low Buy Depth (Sell Wall eating) -> Speed(1) - Depth(0) = 1
+                    // Bearish Div: High Sell Speed vs Low Sell Depth (Buy Wall eating) -> Speed(0) - Depth(1) = -1
+
+                    const divergence = speedRatio - depthRatio;
+                    // Map -1..1 to -90..90
+                    const divDeg = divergence * 90;
+
+                    const divNeedle = document.getElementById('div-needle');
+                    if (divNeedle) divNeedle.style.transform = `rotate(${divDeg}deg)`;
+
+                    const divValue = document.getElementById('div-value');
+                    if (divValue) divValue.textContent = divergence.toFixed(2);
 
                 } catch (e) {
                     console.error("Failed to fetch market stats", e);
