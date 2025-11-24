@@ -88,6 +88,26 @@ type MarketStats struct {
 
 func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*MarketStats, error) {
 	s.mu.Lock()
+	// Check if we need to hydrate trades
+	if len(s.trades[symbol]) == 0 {
+		s.mu.Unlock() // Release lock for network call
+
+		recentTrades, err := s.exchange.GetRecentTrades(ctx, symbol, 1000)
+
+		s.mu.Lock() // Re-acquire lock
+		// Double-check if still empty and no error
+		if err == nil && len(s.trades[symbol]) == 0 {
+			for _, t := range recentTrades {
+				s.trades[symbol] = append(s.trades[symbol], Trade{
+					Symbol: t.Symbol,
+					Side:   t.Side,
+					Size:   t.Size,
+					Price:  t.Price,
+					Time:   time.UnixMilli(t.Time),
+				})
+			}
+		}
+	}
 	defer s.mu.Unlock()
 
 	// 1. Calculate Speed (from trades)

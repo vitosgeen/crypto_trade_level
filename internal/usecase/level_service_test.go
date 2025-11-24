@@ -61,7 +61,7 @@ func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error {
 	return nil
 }
 func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
-	return nil, nil
+	return &domain.Position{Symbol: symbol, Size: 0}, nil
 }
 func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
 	return nil, nil
@@ -70,6 +70,9 @@ func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, 
 	return nil, nil
 }
 func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
+}
+func (m *MockExchange) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
+	return nil, nil
 }
 
 func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
@@ -176,6 +179,9 @@ func (m *MockExchangeForService) GetOrderBook(ctx context.Context, symbol string
 }
 func (m *MockExchangeForService) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 	m.TradeCallback = callback
+}
+func (m *MockExchangeForService) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
+	return nil, nil
 }
 
 func TestLevelService_StopLossMode(t *testing.T) {

@@ -37,6 +37,10 @@ func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, 
 func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 }
 
+func (m *MockExchange) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
+	return nil, nil
+}
+
 func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {
 	mockEx := &MockExchange{}
 	service := NewMarketService(mockEx)
