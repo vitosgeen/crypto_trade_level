@@ -157,14 +157,27 @@ func (s *MarketService) updateOrderBook(ctx context.Context, symbol string) {
 	// Check if latest snapshot is fresh (< 5s)
 	if history, ok := s.depthHistory[symbol]; ok && len(history) > 0 {
 		last := history[len(history)-1]
-		if time.Since(last.Time) < 5*time.Second {
+		if s.timeNow().Sub(last.Time) < 5*time.Second {
 			return // Fresh enough
 		}
 	}
 
 	// Fetch Linear (Futures) Order Book
+	// Fetch Linear (Futures) Order Book
 	// We use a separate context with timeout to avoid blocking too long
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	var cancel context.CancelFunc
+	timeout := 2 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		// Parent context has a deadline, use the earlier of the two
+		earliest := time.Now().Add(timeout)
+		if deadline.Before(earliest) {
+			ctx, cancel = context.WithDeadline(ctx, deadline)
+		} else {
+			ctx, cancel = context.WithDeadline(ctx, earliest)
+		}
+	} else {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+	}
 	defer cancel()
 
 	linearOB, err := s.exchange.GetOrderBook(ctx, symbol, "linear")
@@ -228,7 +241,7 @@ func (s *MarketService) GetLiquidityClusters(ctx context.Context, symbol string)
 	// Check Cache
 	s.mu.Lock()
 	if cached, ok := s.cache[symbol]; ok {
-		if time.Now().Before(cached.Expiry) {
+		if s.timeNow().Before(cached.Expiry) {
 			s.mu.Unlock()
 			return cached.Data, nil
 		}
@@ -274,7 +287,7 @@ func (s *MarketService) GetLiquidityClusters(ctx context.Context, symbol string)
 		Data:     clusters,
 		TotalBid: totalBid,
 		TotalAsk: totalAsk,
-		Expiry:   time.Now().Add(10 * time.Second),
+		Expiry:   s.timeNow().Add(10 * time.Second),
 	}
 	s.mu.Unlock()
 
@@ -315,43 +328,35 @@ func (s *MarketService) processSide(linear, spot []domain.OrderBookEntry, side s
 		return nil
 	}
 
-	// 2. Calculate Density (Price Zoning)
+	// 2. Calculate Density (Price Zoning) using Sliding Window (O(n))
 	// For each point, sum volume of all points within ±0.05% range
-	// Optimization: Use sliding window since points are sorted
-
-	// Define Zone Delta (0.05% of current price)
-	// Since price changes, delta changes slightly, but we can use the point's own price.
 
 	var densityPoints []LiquidityCluster
+	left := 0
+	right := 0
+	currentVol := 0.0
 
 	for i := 0; i < len(rawPoints); i++ {
 		centerP := rawPoints[i].Price
 		delta := centerP * 0.0005 // 0.05%
-
 		minP := centerP - delta
 		maxP := centerP + delta
 
-		var sumVol float64
-
-		// Simple look-around (can be optimized but N=200 is small enough for brute-ish force)
-		// Look backwards
-		for k := i; k >= 0; k-- {
-			if rawPoints[k].Price < minP {
-				break
-			}
-			sumVol += rawPoints[k].Volume
+		// Adjust right
+		for right < len(rawPoints) && rawPoints[right].Price <= maxP {
+			currentVol += rawPoints[right].Volume
+			right++
 		}
-		// Look forwards
-		for k := i + 1; k < len(rawPoints); k++ {
-			if rawPoints[k].Price > maxP {
-				break
-			}
-			sumVol += rawPoints[k].Volume
+
+		// Adjust left
+		for left < right && rawPoints[left].Price < minP {
+			currentVol -= rawPoints[left].Volume
+			left++
 		}
 
 		densityPoints = append(densityPoints, LiquidityCluster{
 			Price:  centerP,
-			Volume: sumVol,
+			Volume: currentVol,
 			Type:   side,
 			Source: "combined",
 		})

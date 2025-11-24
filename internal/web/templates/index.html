@@ -258,7 +258,7 @@
                 style="padding: 8px; border-radius: 4px; border: 1px solid #ddd; min-width: 200px;">
                 <option value="" selected disabled>Select a level...</option>
                 {{range .Levels}}
-                <option value="{{.ID}}">{{.Exchange}} - {{.Symbol}} - {{.LevelPrice}}</option>
+                <option value="{{.Symbol}}-{{.LevelPrice}}">{{.Exchange}} - {{.Symbol}} - {{.LevelPrice}}</option>
                 {{end}}
             </select>
         </div>
@@ -708,8 +708,8 @@
             let symbol = "BTCUSDT";
             if (selector && selector.value) {
                 // value is symbol-price, extract symbol
-                const parts = selector.value.split('-');
-                if (parts.length > 0) symbol = parts[0];
+                const lastHyphen = selector.value.lastIndexOf('-');
+                if (lastHyphen > 0) symbol = selector.value.substring(0, lastHyphen);
             }
 
             try {

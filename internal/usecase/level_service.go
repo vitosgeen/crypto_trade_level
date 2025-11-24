@@ -182,7 +182,12 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 
 	// Check if we have an open position
 	pos, err := s.exchange.GetPosition(ctx, symbol)
-	if err == nil && pos.Size > 0 {
+	if err != nil {
+		log.Printf("Error getting position for %s: %v", symbol, err)
+		return nil
+	}
+
+	if pos.Size > 0 {
 		// Determine if we are in a "Strict Zone"
 		// Strict Zone = Between Base Level and Edge Tier (Max Tier)
 		inStrictZone := false
@@ -253,13 +258,13 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	}
 
 	for _, level := range relevantLevels {
-		s.processLevel(ctx, level, tiers, prevPrice, price, sentiment)
+		s.processLevel(ctx, level, tiers, prevPrice, price, sentiment, sentimentThreshold)
 	}
 
 	return nil
 }
 
-func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, prevPrice, currPrice, sentiment float64) {
+func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, prevPrice, currPrice, sentiment, sentimentThreshold float64) {
 	// 1. Determine Side
 	side := s.evaluator.DetermineSide(level.LevelPrice, currPrice)
 	if side == "" {
@@ -274,7 +279,6 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 
 	if action != ActionNone {
 		// --- ENTRY FILTER ---
-		const sentimentThreshold = 0.6
 		if action == ActionOpen || action == ActionAddToPosition {
 			if side == domain.SideLong && sentiment < -sentimentThreshold {
 				log.Printf("SENTIMENT: Skipping LONG on %s. Sentiment is Bearish (%f).", level.Symbol, sentiment)

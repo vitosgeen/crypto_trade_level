@@ -504,10 +504,6 @@ func (b *BybitAdapter) readLoop() {
 				price, _ := strconv.ParseFloat(priceStr, 64)
 
 				b.mu.Lock()
-				// We need a new callback type for trades or reuse existing?
-				// For now, let's just log or add a specific trade callback handler later.
-				// Actually, MarketService needs this.
-				// Let's add OnTradeUpdate to BybitAdapter.
 				tradeCallbacks := make([]func(string, string, float64, float64), len(b.tradeCallbacks))
 				copy(tradeCallbacks, b.tradeCallbacks)
 				b.mu.Unlock()
