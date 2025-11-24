@@ -19,7 +19,7 @@ vendor/
 go.work
 
 # Project specific
-bot
+/bot
 bot.pid
 bot.db
 bot.log

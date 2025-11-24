@@ -37,7 +37,8 @@ func NewTestScenarioHelper(t *testing.T) *TestScenarioHelper {
 	}
 
 	mockEx := &MockExchange{Price: 0}
-	svc := usecase.NewLevelService(store, store, mockEx)
+	marketService := usecase.NewMarketService(mockEx)
+	svc := usecase.NewLevelService(store, store, mockEx, marketService)
 
 	return &TestScenarioHelper{
 		t:        t,
@@ -76,6 +77,11 @@ func (h *TestScenarioHelper) SetupLevel(price float64, stopLossAtBase bool) {
 	}
 	if err := h.store.SaveSymbolTiers(h.ctx, tiers); err != nil {
 		h.t.Fatalf("Failed to save tiers: %v", err)
+	}
+
+	// Update Cache
+	if err := h.svc.UpdateCache(h.ctx); err != nil {
+		h.t.Fatalf("Failed to update cache: %v", err)
 	}
 }
 

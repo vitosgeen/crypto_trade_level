@@ -34,7 +34,7 @@ type LevelView struct {
 func (s *Server) handleLanding(w http.ResponseWriter, r *http.Request) {
 	if err := templates.ExecuteTemplate(w, "landing.html", nil); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
-		http.Error(w, "Internal Server Error", 500)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
 
@@ -78,7 +78,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	if err := templates.ExecuteTemplate(w, "index.html", data); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
-		http.Error(w, "Internal Server Error", 500)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
 
@@ -117,7 +117,7 @@ func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 
 	if err := templates.ExecuteTemplate(w, "levels_table", views); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
-		http.Error(w, "Internal Server Error", 500)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
 
@@ -145,6 +145,10 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	symbol := r.FormValue("symbol")
 	marginType := r.FormValue("margin_type")
 	stopLossAtBase := r.FormValue("stop_loss_at_base") == "on"
+	stopLossMode := r.FormValue("stop_loss_mode")
+	if stopLossMode == "" {
+		stopLossMode = "exchange"
+	}
 
 	level := &domain.Level{
 		ID:             fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -156,6 +160,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		MarginType:     marginType,
 		CoolDownMs:     coolDownMs,
 		StopLossAtBase: stopLossAtBase,
+		StopLossMode:   stopLossMode,
 		Source:         "manual-web",
 		CreatedAt:      time.Now(),
 	}
@@ -188,7 +193,7 @@ func (s *Server) handleDeleteLevel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.levelRepo.DeleteLevel(r.Context(), id); err != nil {
 		s.logger.Error("Failed to delete level", zap.Error(err))
-		http.Error(w, "Failed to delete level", 500)
+		http.Error(w, "Failed to delete level", http.StatusInternalServerError)
 		return
 	}
 	s.handleLevelsTable(w, r)
@@ -203,7 +208,7 @@ func (s *Server) handlePositionsTable(w http.ResponseWriter, r *http.Request) {
 	positions, err := s.service.GetPositions(r.Context())
 	if err != nil {
 		s.logger.Error("Failed to get positions", zap.Error(err))
-		http.Error(w, "Failed to get positions", 500)
+		http.Error(w, "Failed to get positions", http.StatusInternalServerError)
 		return
 	}
 
@@ -246,10 +251,44 @@ func (s *Server) handleGetCandles(w http.ResponseWriter, r *http.Request) {
 	candles, err := s.service.GetExchange().GetCandles(r.Context(), symbol, interval, limit)
 	if err != nil {
 		s.logger.Error("Failed to get candles", zap.Error(err))
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(candles)
+}
+
+func (s *Server) handleLiquidity(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		symbol = "BTCUSDT"
+	}
+
+	clusters, err := s.marketService.GetLiquidityClusters(r.Context(), symbol)
+	if err != nil {
+		s.logger.Error("Failed to get liquidity clusters", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(clusters)
+}
+
+func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		symbol = "BTCUSDT"
+	}
+
+	stats, err := s.marketService.GetMarketStats(r.Context(), symbol)
+	if err != nil {
+		s.logger.Error("Failed to get market stats", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
 }

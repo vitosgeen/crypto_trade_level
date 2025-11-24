@@ -38,7 +38,40 @@ func (m *MockTradeRepo) ListTrades(ctx context.Context, limit int) ([]*domain.Or
 	return nil, nil
 }
 
+type MockExchange struct {
+	BuyCalled    bool
+	SellCalled   bool
+	LastStopLoss float64
+}
+
+func (m *MockExchange) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
+	return 0, nil
+}
+func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+	m.BuyCalled = true
+	m.LastStopLoss = stopLoss
+	return nil
+}
+func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+	m.SellCalled = true
+	m.LastStopLoss = stopLoss
+	return nil
+}
+func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error {
+	return nil
+}
+func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
+	return &domain.Position{Symbol: symbol, Size: 0}, nil
+}
+func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
+	return nil, nil
+}
 func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
+	return nil, nil
+}
+func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
+}
+func (m *MockExchange) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
 	return nil, nil
 }
 
@@ -65,7 +98,11 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 	// We need to define MockExchange here since we are in a new file/package (or same package test)
 	// Let's redefine minimal mock
 
-	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx)
+	// We need to define MockExchange here since we are in a new file/package (or same package test)
+	// Let's redefine minimal mock
+
+	marketService := usecase.NewMarketService(mockEx)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
 
 	// Populate Cache
@@ -106,9 +143,12 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 
 // Enhanced MockExchange
 type MockExchangeForService struct {
-	BuyCalled  bool
-	SellCalled bool
-	CloseError error
+	BuyCalled     bool
+	SellCalled    bool
+	CloseCalled   bool
+	LastStopLoss  float64
+	CloseError    error
+	TradeCallback func(symbol string, side string, size float64, price float64)
 }
 
 func (m *MockExchangeForService) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
@@ -116,18 +156,247 @@ func (m *MockExchangeForService) GetCurrentPrice(ctx context.Context, symbol str
 }
 func (m *MockExchangeForService) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
 	m.BuyCalled = true
+	m.LastStopLoss = stopLoss
 	return nil
 }
 func (m *MockExchangeForService) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
 	m.SellCalled = true
+	m.LastStopLoss = stopLoss
 	return nil
 }
 func (m *MockExchangeForService) ClosePosition(ctx context.Context, symbol string) error {
+	m.CloseCalled = true
 	return m.CloseError
 }
 func (m *MockExchangeForService) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
-	return &domain.Position{Size: 0.1}, nil // Always return position so Close is attempted
+	return &domain.Position{Symbol: symbol, Size: 0.1, Side: domain.SideLong, EntryPrice: 100}, nil // Default Long for Exit Test
 }
 func (m *MockExchangeForService) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return nil, nil
+}
+func (m *MockExchangeForService) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
+	return nil, nil
+}
+func (m *MockExchangeForService) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
+	m.TradeCallback = callback
+}
+func (m *MockExchangeForService) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
+	return nil, nil
+}
+
+func TestLevelService_StopLossMode(t *testing.T) {
+	// Setup
+	levelExchange := &domain.Level{
+		ID:             "level-exchange",
+		Symbol:         "BTCUSDT",
+		Exchange:       "bybit",
+		LevelPrice:     10000,
+		BaseSize:       0.1,
+		StopLossAtBase: true,
+		StopLossMode:   "exchange",
+	}
+	levelApp := &domain.Level{
+		ID:             "level-app",
+		Symbol:         "ETHUSDT",
+		Exchange:       "bybit",
+		LevelPrice:     2000,
+		BaseSize:       1.0,
+		StopLossAtBase: true,
+		StopLossMode:   "app",
+	}
+
+	tiers := &domain.SymbolTiers{
+		Tier1Pct: 0.005,
+		Tier2Pct: 0.010,
+		Tier3Pct: 0.015,
+	}
+
+	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{levelExchange, levelApp}, Tiers: tiers}
+	mockTradeRepo := &MockTradeRepo{}
+	mockEx := &MockExchange{}
+
+	marketService := usecase.NewMarketService(mockEx)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
+	ctx := context.Background()
+	service.UpdateCache(ctx)
+
+	// Case 1: Exchange Mode
+	// Trigger Long Entry at Tier 1 (10050)
+	// Price crosses 10050 upwards -> Buy
+	// SL should be LevelPrice (10000)
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10000) // At Level
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10060) // Cross Tier 1
+
+	if !mockEx.BuyCalled {
+		t.Error("Expected Buy for Exchange Mode")
+	}
+	if mockEx.LastStopLoss != 10000 {
+		t.Errorf("Expected StopLoss 10000 for Exchange Mode, got %f", mockEx.LastStopLoss)
+	}
+
+	// Reset Mock
+	mockEx.BuyCalled = false
+	mockEx.LastStopLoss = 0
+
+	// Case 2: App Mode
+	// Trigger Long Entry at Tier 1 (2010)
+	// Price crosses 2010 upwards -> Buy
+	// SL should be 0
+	service.ProcessTick(ctx, "bybit", "ETHUSDT", 2000) // At Level
+	service.ProcessTick(ctx, "bybit", "ETHUSDT", 2012) // Cross Tier 1
+
+	if !mockEx.BuyCalled {
+		t.Error("Expected Buy for App Mode")
+	}
+
+	if mockEx.LastStopLoss != 0 {
+		t.Errorf("Expected StopLoss 0 for App Mode, got %f", mockEx.LastStopLoss)
+	}
+}
+
+func TestLevelService_SentimentLogic(t *testing.T) {
+	// Setup
+	level := &domain.Level{
+		ID:         "level-sentiment",
+		Symbol:     "BTCUSDT",
+		Exchange:   "bybit",
+		LevelPrice: 10000,
+		BaseSize:   0.1,
+	}
+	tiers := &domain.SymbolTiers{
+		Tier1Pct: 0.005, // 10050
+		Tier2Pct: 0.010,
+		Tier3Pct: 0.015,
+	}
+
+	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
+	mockTradeRepo := &MockTradeRepo{}
+	mockEx := &MockExchangeForService{} // Use Enhanced Mock
+
+	marketService := usecase.NewMarketService(mockEx)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
+	ctx := context.Background()
+	service.UpdateCache(ctx)
+
+	// Ensure MockExchange captured the callback
+	if mockEx.TradeCallback == nil {
+		t.Fatal("MarketService did not subscribe to trades")
+	}
+
+	// 1. Inject Bearish Sentiment (Strong Sell)
+	// Sell 100 BTC @ 10000 -> 1M Volume
+	mockEx.TradeCallback("BTCUSDT", "Sell", 100, 10000)
+
+	// Verify Sentiment
+	sentiment, _ := marketService.GetTradeSentiment(ctx, "BTCUSDT")
+	if sentiment != -1.0 {
+		t.Fatalf("Expected Sentiment -1.0, got %f", sentiment)
+	}
+
+	// 2. Try to Open Long (Cross Tier 1 Downwards)
+	// Level 10000. Tier 1 10050.
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10100) // Above
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10040) // Cross 10050
+
+	if mockEx.BuyCalled {
+		t.Error("Expected Long Entry to be BLOCKED by Bearish Sentiment")
+	}
+
+	// 3. Inject Bullish Sentiment (Flip to Strong Buy)
+	// Buy 300 BTC @ 10000 -> 3M Volume. Total Buy 3M, Sell 1M. Net +2M. Total 4M. Sentiment +0.5.
+	// Need more to reach > 0.6.
+	// Buy 1000 BTC -> 10M. Total Buy 10M, Sell 1M. Net 9M. Total 11M. Sentiment ~0.81.
+	mockEx.TradeCallback("BTCUSDT", "Buy", 1000, 10000)
+
+	sentiment, _ = marketService.GetTradeSentiment(ctx, "BTCUSDT")
+	if sentiment <= 0.6 {
+		t.Fatalf("Expected Sentiment > 0.6, got %f", sentiment)
+	}
+
+	// 4. Try to Open Long Again (Reset Trigger first?)
+	// The previous attempt didn't trigger the engine because it returned early?
+	// No, `processLevel` returns early. `engine.Evaluate` was called?
+	// Let's check `processLevel` logic.
+	// `action, size := s.engine.Evaluate(...)`
+	// `if action != ActionNone { ... if blocked return ... }`
+	// So `engine` state WAS updated (Tier1Triggered = true).
+	// So we can't re-trigger Tier 1 unless we reset.
+	// But wait, if we blocked the trade, we shouldn't have updated the state?
+	// `Evaluate` updates the state internally!
+	// This is a side effect. If we block the trade, the state remains "Triggered" but no trade happened.
+	// So the bot "missed" the trade. This is correct behavior for a filter.
+	// To test Entry again, we need to trigger Tier 2 or reset state.
+	// Let's trigger Tier 2 (10000 * 1.01 = 10100). Wait, Long Tiers are above.
+	// T1: 10050. T2: 10100? No, Tiers are distances.
+	// T1 0.5% -> 10050.
+	// T2 1.0% -> 10100.
+	// T3 1.5% -> 10150.
+	// Wait, Long Tiers are usually closer to level?
+	// "Tier1 is farthest, Tier3 closest."
+	// T1 0.5% -> 10050.
+	// T2 0.3% -> 10030.
+	// T3 0.15% -> 10015.
+	// My test setup: T1 0.005, T2 0.010, T3 0.015.
+	// If T2 > T1, then T2 is FARTHER.
+	// Let's assume standard config: T1 > T2 > T3.
+	// But here I set T2=0.01 (1%). So T2 is 10100.
+	// If Price is 10040. We crossed T1 (10050).
+	// To cross T2 (10100), we need to go UP? No, Long Entry is usually on DIP.
+	// Price comes from Above.
+	// Crosses T1 (10050) -> 10040.
+	// Crosses T2 (10030) -> 10020.
+	// So T2 should be smaller pct if we want it closer to level.
+	// But if I configured T2=0.01 (1%), then T2 is 10100.
+	// So T2 is ABOVE T1.
+	// If price is 10040, we are below T2.
+	// Did we cross T2?
+	// Prev 10100. Curr 10040.
+	// T2 is 10100.
+	// We touched T2.
+	// `crosses` logic: (p1 < b && p2 >= b) || (p1 > b && p2 <= b).
+	// 10100 > 10100 (False). 10040 <= 10100 (True).
+	// So we might have crossed T2 too?
+	// Let's reset state to be clean.
+	// Accessing private engine is hard.
+	// I'll just use a new level ID or reset mock.
+	// Or I can just trigger Tier 2 if I configure it correctly.
+
+	// Let's just create a new level for the second part.
+	level2 := &domain.Level{
+		ID:         "level-sentiment-2",
+		Symbol:     "ETHUSDT",
+		Exchange:   "bybit",
+		LevelPrice: 2000,
+		BaseSize:   1.0,
+	}
+	mockLevelRepo.Levels = append(mockLevelRepo.Levels, level2)
+	service.UpdateCache(ctx)
+
+	// Inject Bullish Sentiment for ETH too (same logic if symbol-agnostic? No, per symbol)
+	mockEx.TradeCallback("ETHUSDT", "Buy", 1000, 2000)
+
+	// Trigger Long Entry on ETH
+	// T1 0.5% -> 2010.
+	service.ProcessTick(ctx, "bybit", "ETHUSDT", 2020)
+	service.ProcessTick(ctx, "bybit", "ETHUSDT", 2005) // Cross 2010
+
+	if !mockEx.BuyCalled {
+		t.Error("Expected Long Entry to be ALLOWED by Bullish Sentiment")
+	}
+
+	// 5. Test Exit Trigger
+	// We have a Long Position on ETH (from Mock GetPosition default)
+	// Inject Bearish Sentiment for ETH
+	mockEx.TradeCallback("ETHUSDT", "Sell", 5000, 2000) // Flip to Bearish
+
+	// Reset CloseError
+	mockEx.CloseError = nil
+
+	// Process Tick (Price doesn't matter much, just needs to trigger check)
+	service.ProcessTick(ctx, "bybit", "ETHUSDT", 2005)
+
+	// MockExchange.ClosePosition should be called
+	if !mockEx.CloseCalled {
+		t.Error("Expected ClosePosition to be called due to Bearish Sentiment")
+	}
 }

@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -15,6 +14,7 @@ type LevelService struct {
 	levelRepo domain.LevelRepository
 	tradeRepo domain.TradeRepository
 	exchange  domain.Exchange
+	market    *MarketService // Injected dependency
 	evaluator *LevelEvaluator
 	engine    *SublevelEngine
 	executor  *TradeExecutor
@@ -31,11 +31,13 @@ func NewLevelService(
 	levelRepo domain.LevelRepository,
 	tradeRepo domain.TradeRepository,
 	exchange domain.Exchange,
+	market *MarketService,
 ) *LevelService {
 	return &LevelService{
 		levelRepo:   levelRepo,
 		tradeRepo:   tradeRepo,
 		exchange:    exchange,
+		market:      market,
 		evaluator:   NewLevelEvaluator(),
 		engine:      NewSublevelEngine(),
 		executor:    NewTradeExecutor(exchange),
@@ -133,7 +135,7 @@ func (s *LevelService) UpdateCache(ctx context.Context) error {
 
 // ProcessTick should be called when a new price arrives (e.g. from WebSocket).
 func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol string, price float64) error {
-	fmt.Printf("Tick: %s %f\n", symbol, price) // Simple print for debugging
+	// fmt.Printf("Tick: %s %f\n", symbol, price) // Too noisy
 	s.mu.Lock()
 	prevPrice, ok := s.lastPrices[symbol]
 	s.lastPrices[symbol] = price
@@ -144,7 +146,6 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	s.mu.Unlock()
 
 	if !ok {
-		// First tick, can't detect crossing
 		return nil
 	}
 
@@ -168,14 +169,102 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		return nil // No tiers, can't trade
 	}
 
+	// --- SENTIMENT LOGIC ---
+	sentiment, err := s.market.GetTradeSentiment(ctx, symbol)
+	if err != nil {
+		log.Printf("Error getting sentiment for %s: %v", symbol, err)
+		sentiment = 0 // Default to neutral
+	}
+
+	// Dynamic Threshold Logic
+	// Default Loose Threshold
+	sentimentThreshold := 0.6
+
+	// Check if we have an open position
+	pos, err := s.exchange.GetPosition(ctx, symbol)
+	if err != nil {
+		log.Printf("Error getting position for %s: %v", symbol, err)
+		return nil
+	}
+
+	if pos.Size > 0 {
+		// Determine if we are in a "Strict Zone"
+		// Strict Zone = Between Base Level and Edge Tier (Max Tier)
+		inStrictZone := false
+
+		for _, l := range relevantLevels {
+			// Calculate Max Tier Percentage
+			maxTierPct := tiers.Tier1Pct
+			if tiers.Tier2Pct > maxTierPct {
+				maxTierPct = tiers.Tier2Pct
+			}
+			if tiers.Tier3Pct > maxTierPct {
+				maxTierPct = tiers.Tier3Pct
+			}
+
+			if pos.Side == domain.SideLong {
+				// Long Zone: [BaseLevel, BaseLevel * (1 + MaxTierPct)]
+				upperBound := l.LevelPrice * (1 + maxTierPct)
+				if price >= l.LevelPrice && price <= upperBound {
+					inStrictZone = true
+					break
+				}
+			} else if pos.Side == domain.SideShort {
+				// Short Zone: [BaseLevel * (1 - MaxTierPct), BaseLevel]
+				lowerBound := l.LevelPrice * (1 - maxTierPct)
+				if price >= lowerBound && price <= l.LevelPrice {
+					inStrictZone = true
+					break
+				}
+			}
+		}
+
+		if inStrictZone {
+			sentimentThreshold = 0.3
+			// log.Printf("SENTIMENT: Strict Zone for %s. Threshold: %f", symbol, sentimentThreshold)
+		}
+
+		// Check Exit Trigger
+		shouldClose := false
+		if pos.Side == domain.SideLong && sentiment < -sentimentThreshold {
+			log.Printf("SENTIMENT: Strong Sell Speed (%f < -%f). Closing LONG on %s.", sentiment, sentimentThreshold, symbol)
+			shouldClose = true
+		} else if pos.Side == domain.SideShort && sentiment > sentimentThreshold {
+			log.Printf("SENTIMENT: Strong Buy Speed (%f > %f). Closing SHORT on %s.", sentiment, sentimentThreshold, symbol)
+			shouldClose = true
+		}
+
+		if shouldClose {
+			if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
+				log.Printf("Failed to close position on sentiment: %v", err)
+			} else {
+				// Reset State for all levels of this symbol
+				for _, l := range relevantLevels {
+					s.engine.ResetState(l.ID)
+				}
+				// Log Trade
+				s.tradeRepo.SaveTrade(ctx, &domain.Order{
+					Exchange:  exchangeName,
+					Symbol:    symbol,
+					LevelID:   "sentiment-exit",
+					Side:      pos.Side,
+					Size:      0, // Marker
+					Price:     price,
+					CreatedAt: time.Now(),
+				})
+				return nil // Stop processing this tick
+			}
+		}
+	}
+
 	for _, level := range relevantLevels {
-		s.processLevel(ctx, level, tiers, prevPrice, price)
+		s.processLevel(ctx, level, tiers, prevPrice, price, sentiment, sentimentThreshold)
 	}
 
 	return nil
 }
 
-func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, prevPrice, currPrice float64) {
+func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, prevPrice, currPrice, sentiment, sentimentThreshold float64) {
 	// 1. Determine Side
 	side := s.evaluator.DetermineSide(level.LevelPrice, currPrice)
 	if side == "" {
@@ -189,6 +278,18 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 	action, size := s.engine.Evaluate(level, boundaries, prevPrice, currPrice, side)
 
 	if action != ActionNone {
+		// --- ENTRY FILTER ---
+		if action == ActionOpen || action == ActionAddToPosition {
+			if side == domain.SideLong && sentiment < -sentimentThreshold {
+				log.Printf("SENTIMENT: Skipping LONG on %s. Sentiment is Bearish (%f).", level.Symbol, sentiment)
+				return
+			}
+			if side == domain.SideShort && sentiment > sentimentThreshold {
+				log.Printf("SENTIMENT: Skipping SHORT on %s. Sentiment is Bullish (%f).", level.Symbol, sentiment)
+				return
+			}
+		}
+
 		log.Printf("AUDIT: Action Triggered: %s. Level: %s, Symbol: %s, Side: %s, Size: %f", action, level.ID, level.Symbol, side, size)
 		log.Printf("Triggered: %s on %s %s (Side: %s, Size: %f)", action, level.Exchange, level.Symbol, side, size)
 
@@ -264,7 +365,7 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 
 		// 4. Execute Trade
 		stopLoss := 0.0
-		if level.StopLossAtBase {
+		if level.StopLossAtBase && level.StopLossMode == "exchange" {
 			stopLoss = level.LevelPrice
 		}
 

@@ -11,12 +11,13 @@ import (
 )
 
 type Server struct {
-	router    *http.ServeMux
-	server    *http.Server
-	levelRepo domain.LevelRepository
-	tradeRepo domain.TradeRepository
-	service   *usecase.LevelService
-	logger    *zap.Logger
+	router        *http.ServeMux
+	server        *http.Server
+	levelRepo     domain.LevelRepository
+	tradeRepo     domain.TradeRepository
+	service       *usecase.LevelService
+	marketService *usecase.MarketService
+	logger        *zap.Logger
 }
 
 func NewServer(
@@ -24,14 +25,16 @@ func NewServer(
 	levelRepo domain.LevelRepository,
 	tradeRepo domain.TradeRepository,
 	service *usecase.LevelService,
+	marketService *usecase.MarketService,
 	logger *zap.Logger,
 ) *Server {
 	s := &Server{
-		router:    http.NewServeMux(),
-		levelRepo: levelRepo,
-		tradeRepo: tradeRepo,
-		service:   service,
-		logger:    logger,
+		router:        http.NewServeMux(),
+		levelRepo:     levelRepo,
+		tradeRepo:     tradeRepo,
+		service:       service,
+		marketService: marketService,
+		logger:        logger,
 	}
 	s.routes()
 	s.server = &http.Server{
@@ -62,11 +65,17 @@ func (s *Server) routes() {
 	// Trades
 	s.router.HandleFunc("GET /trades", s.handleTradesTable)
 
+	// Liquidity
+	s.router.HandleFunc("GET /api/liquidity", s.handleLiquidity)
+
 	// Status
 	s.router.HandleFunc("GET /status", s.handleStatus)
 
 	// Candles
 	s.router.HandleFunc("GET /api/candles", s.handleGetCandles)
+
+	// Market Stats
+	s.router.HandleFunc("GET /api/market-stats", s.handleMarketStats)
 }
 
 func (s *Server) Start() error {

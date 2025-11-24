@@ -26,15 +26,16 @@ const (
 )
 
 type BybitAdapter struct {
-	apiKey    string
-	apiSecret string
-	baseURL   string
-	wsURL     string
-	client    *http.Client
-	wsConn    *websocket.Conn
-	wsDone    chan struct{}
-	callbacks []func(symbol string, price float64)
-	mu        sync.Mutex
+	apiKey         string
+	apiSecret      string
+	baseURL        string
+	wsURL          string
+	client         *http.Client
+	wsConn         *websocket.Conn
+	wsDone         chan struct{}
+	callbacks      []func(symbol string, price float64)
+	tradeCallbacks []func(symbol string, side string, size float64, price float64)
+	mu             sync.Mutex
 }
 
 func NewBybitAdapter(apiKey, apiSecret, baseURL, wsURL string) *BybitAdapter {
@@ -340,6 +341,12 @@ func (b *BybitAdapter) OnPriceUpdate(callback func(symbol string, price float64)
 	b.callbacks = append(b.callbacks, callback)
 }
 
+func (b *BybitAdapter) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.tradeCallbacks = append(b.tradeCallbacks, callback)
+}
+
 func (b *BybitAdapter) ConnectWS(symbols []string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -379,6 +386,12 @@ func (b *BybitAdapter) subscribe(symbols []string) error {
 	for i, s := range symbols {
 		args[i] = "orderbook.1." + s
 	}
+	// Also subscribe to publicTrade
+	tradeArgs := make([]interface{}, len(symbols))
+	for i, s := range symbols {
+		tradeArgs[i] = "publicTrade." + s
+	}
+	args = append(args, tradeArgs...)
 
 	subMsg := map[string]interface{}{
 		"op":   "subscribe",
@@ -469,6 +482,36 @@ func (b *BybitAdapter) readLoop() {
 			for _, cb := range callbacks {
 				cb(symbol, price)
 			}
+		} else if strings.HasPrefix(topic, "publicTrade.") {
+			data, ok := event["data"].([]interface{})
+			if !ok {
+				continue
+			}
+			symbol := strings.TrimPrefix(topic, "publicTrade.")
+
+			for _, item := range data {
+				trade, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				// Parse Trade
+				side, _ := trade["S"].(string)
+				sizeStr, _ := trade["v"].(string)
+				priceStr, _ := trade["p"].(string)
+
+				size, _ := strconv.ParseFloat(sizeStr, 64)
+				price, _ := strconv.ParseFloat(priceStr, 64)
+
+				b.mu.Lock()
+				tradeCallbacks := make([]func(string, string, float64, float64), len(b.tradeCallbacks))
+				copy(tradeCallbacks, b.tradeCallbacks)
+				b.mu.Unlock()
+
+				for _, cb := range tradeCallbacks {
+					cb(symbol, side, size, price)
+				}
+			}
 		}
 	}
 }
@@ -532,4 +575,117 @@ func (b *BybitAdapter) GetCandles(ctx context.Context, symbol, interval string, 
 	}
 
 	return candles, nil
+}
+
+func (b *BybitAdapter) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
+	params := map[string]interface{}{
+		"category": "linear",
+		"symbol":   symbol,
+		"limit":    limit,
+	}
+
+	resp, err := b.sendRequest(ctx, "GET", "/v5/market/recent-trade", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				Symbol string `json:"symbol"`
+				Side   string `json:"side"`
+				Size   string `json:"size"`
+				Price  string `json:"price"`
+				Time   string `json:"time"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit api error: %s", result.RetMsg)
+	}
+
+	var trades []domain.PublicTrade
+	for _, t := range result.Result.List {
+		price, _ := strconv.ParseFloat(t.Price, 64)
+		size, _ := strconv.ParseFloat(t.Size, 64)
+		timeMs, _ := strconv.ParseInt(t.Time, 10, 64)
+
+		trades = append(trades, domain.PublicTrade{
+			Symbol: t.Symbol,
+			Side:   t.Side,
+			Size:   size,
+			Price:  price,
+			Time:   timeMs,
+		})
+	}
+
+	return trades, nil
+}
+
+func (b *BybitAdapter) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
+	// category: "linear" (futures) or "spot"
+	if category == "" {
+		category = "linear"
+	}
+
+	limit := 50
+	if category == "linear" {
+		limit = 500
+	}
+
+	path := fmt.Sprintf("/v5/market/orderbook?category=%s&symbol=%s&limit=%d", category, symbol, limit)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int `json:"retCode"`
+		Result  struct {
+			S string     `json:"s"`
+			B [][]string `json:"b"`
+			A [][]string `json:"a"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit orderbook error: %d", result.RetCode)
+	}
+
+	ob := &domain.OrderBook{
+		Symbol: result.Result.S,
+		Bids:   make([]domain.OrderBookEntry, 0, len(result.Result.B)),
+		Asks:   make([]domain.OrderBookEntry, 0, len(result.Result.A)),
+	}
+
+	for _, bid := range result.Result.B {
+		if len(bid) < 2 {
+			continue
+		}
+		price, _ := strconv.ParseFloat(bid[0], 64)
+		size, _ := strconv.ParseFloat(bid[1], 64)
+		ob.Bids = append(ob.Bids, domain.OrderBookEntry{Price: price, Size: size})
+	}
+
+	for _, ask := range result.Result.A {
+		if len(ask) < 2 {
+			continue
+		}
+		price, _ := strconv.ParseFloat(ask[0], 64)
+		size, _ := strconv.ParseFloat(ask[1], 64)
+		ob.Asks = append(ob.Asks, domain.OrderBookEntry{Price: price, Size: size})
+	}
+
+	return ob, nil
 }

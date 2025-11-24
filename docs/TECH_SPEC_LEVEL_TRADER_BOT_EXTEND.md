@@ -754,6 +754,28 @@ Parameter optimizer for tiers and BaseSize.
 Rich web dashboard with charts and analytics.
 
 
+16. Sentiment-Based Trading Logic
+16.1 Concept
+
+The bot uses "Market Speed" (Trade Volume Sentiment) to filter entries and trigger exits.
+Sentiment Score: A value from -1.0 (Strong Sell) to +1.0 (Strong Buy).
+Calculation: (BuyVolume - SellVolume) / (BuyVolume + SellVolume) over the last 60 seconds.
+
+16.2 Entry Filter ("Don't catch a falling knife")
+
+Before opening a position (Long or Short), the bot checks the Sentiment Score.
+Confident Threshold: 0.6 (60% dominance).
+Rules:
+Long Entry: Blocked if Sentiment < -0.6 (Strong Sell Pressure).
+Short Entry: Blocked if Sentiment > 0.6 (Strong Buy Pressure).
+
+16.3 Exit Trigger ("Ride the trend until it bends")
+
+The bot continuously monitors open positions against the Sentiment Score.
+Rules:
+Long Position: Close if Sentiment drops below -0.6 (Reversal to Strong Sell).
+Short Position: Close if Sentiment rises above 0.6 (Reversal to Strong Buy).
+
 ## TODO
 
 Position Management:
