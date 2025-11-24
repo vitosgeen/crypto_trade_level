@@ -176,50 +176,78 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		sentiment = 0 // Default to neutral
 	}
 
-	// Exit Trigger: "Ride the trend until it bends"
-	// Threshold: 0.6
-	const sentimentThreshold = 0.6
+	// Dynamic Threshold Logic
+	// Default Loose Threshold
+	sentimentThreshold := 0.6
 
-	// Optimization: Only check position if sentiment is strong enough to potentially trigger a close
-	if sentiment < -sentimentThreshold || sentiment > sentimentThreshold {
-		// Check if we have an open position that contradicts sentiment
-		// We use the exchange to get the authoritative position
-		// Note: This adds a REST call on ticks with strong sentiment.
-		// We could optimize by checking local state first, but for safety we check exchange.
-		// To avoid spamming REST, maybe we should rate limit this check?
-		// For MVP, we'll assume strong sentiment is not constant flickering.
+	// Check if we have an open position
+	pos, err := s.exchange.GetPosition(ctx, symbol)
+	if err == nil && pos.Size > 0 {
+		// Determine if we are in a "Strict Zone"
+		// Strict Zone = Between Base Level and Edge Tier (Max Tier)
+		inStrictZone := false
 
-		pos, err := s.exchange.GetPosition(ctx, symbol)
-		if err == nil && pos.Size > 0 {
-			shouldClose := false
-			if pos.Side == domain.SideLong && sentiment < -sentimentThreshold {
-				log.Printf("SENTIMENT: Strong Sell Speed (%f). Closing LONG on %s.", sentiment, symbol)
-				shouldClose = true
-			} else if pos.Side == domain.SideShort && sentiment > sentimentThreshold {
-				log.Printf("SENTIMENT: Strong Buy Speed (%f). Closing SHORT on %s.", sentiment, symbol)
-				shouldClose = true
+		for _, l := range relevantLevels {
+			// Calculate Max Tier Percentage
+			maxTierPct := tiers.Tier1Pct
+			if tiers.Tier2Pct > maxTierPct {
+				maxTierPct = tiers.Tier2Pct
+			}
+			if tiers.Tier3Pct > maxTierPct {
+				maxTierPct = tiers.Tier3Pct
 			}
 
-			if shouldClose {
-				if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
-					log.Printf("Failed to close position on sentiment: %v", err)
-				} else {
-					// Reset State for all levels of this symbol
-					for _, l := range relevantLevels {
-						s.engine.ResetState(l.ID)
-					}
-					// Log Trade
-					s.tradeRepo.SaveTrade(ctx, &domain.Order{
-						Exchange:  exchangeName,
-						Symbol:    symbol,
-						LevelID:   "sentiment-exit",
-						Side:      pos.Side, // Closing side? Or original side? Usually we log the action.
-						Size:      0,        // Marker
-						Price:     price,
-						CreatedAt: time.Now(),
-					})
-					return nil // Stop processing this tick
+			if pos.Side == domain.SideLong {
+				// Long Zone: [BaseLevel, BaseLevel * (1 + MaxTierPct)]
+				upperBound := l.LevelPrice * (1 + maxTierPct)
+				if price >= l.LevelPrice && price <= upperBound {
+					inStrictZone = true
+					break
 				}
+			} else if pos.Side == domain.SideShort {
+				// Short Zone: [BaseLevel * (1 - MaxTierPct), BaseLevel]
+				lowerBound := l.LevelPrice * (1 - maxTierPct)
+				if price >= lowerBound && price <= l.LevelPrice {
+					inStrictZone = true
+					break
+				}
+			}
+		}
+
+		if inStrictZone {
+			sentimentThreshold = 0.3
+			// log.Printf("SENTIMENT: Strict Zone for %s. Threshold: %f", symbol, sentimentThreshold)
+		}
+
+		// Check Exit Trigger
+		shouldClose := false
+		if pos.Side == domain.SideLong && sentiment < -sentimentThreshold {
+			log.Printf("SENTIMENT: Strong Sell Speed (%f < -%f). Closing LONG on %s.", sentiment, sentimentThreshold, symbol)
+			shouldClose = true
+		} else if pos.Side == domain.SideShort && sentiment > sentimentThreshold {
+			log.Printf("SENTIMENT: Strong Buy Speed (%f > %f). Closing SHORT on %s.", sentiment, sentimentThreshold, symbol)
+			shouldClose = true
+		}
+
+		if shouldClose {
+			if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
+				log.Printf("Failed to close position on sentiment: %v", err)
+			} else {
+				// Reset State for all levels of this symbol
+				for _, l := range relevantLevels {
+					s.engine.ResetState(l.ID)
+				}
+				// Log Trade
+				s.tradeRepo.SaveTrade(ctx, &domain.Order{
+					Exchange:  exchangeName,
+					Symbol:    symbol,
+					LevelID:   "sentiment-exit",
+					Side:      pos.Side,
+					Size:      0, // Marker
+					Price:     price,
+					CreatedAt: time.Now(),
+				})
+				return nil // Stop processing this tick
 			}
 		}
 	}
