@@ -12,6 +12,7 @@ type Exchange interface {
 	GetCandles(ctx context.Context, symbol, interval string, limit int) ([]Candle, error)
 	GetOrderBook(ctx context.Context, symbol string, category string) (*OrderBook, error)
 	GetRecentTrades(ctx context.Context, symbol string, limit int) ([]PublicTrade, error)
+	GetInstruments(ctx context.Context, category string) ([]Instrument, error)
 	OnTradeUpdate(callback func(symbol string, side string, size float64, price float64))
 }
 

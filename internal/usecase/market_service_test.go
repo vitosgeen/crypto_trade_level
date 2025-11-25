@@ -41,6 +41,10 @@ func (m *MockExchange) GetRecentTrades(ctx context.Context, symbol string, limit
 	return nil, nil
 }
 
+func (m *MockExchange) GetInstruments(ctx context.Context, category string) ([]domain.Instrument, error) {
+	return nil, nil
+}
+
 func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {
 	mockEx := &MockExchange{}
 	service := NewMarketService(mockEx)

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Speed Bot - All Coins</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background: #f8f9fa;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th:hover {
+            background: #e9ecef;
+        }
+
+        .status-trading {
+            color: #28a745;
+            font-weight: bold;
+        }
+
+        .status-other {
+            color: #6c757d;
+        }
+
+        a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            padding: 8px 16px;
+            background: #6c757d;
+            color: white;
+            border-radius: 4px;
+        }
+
+        .back-link:hover {
+            background: #5a6268;
+            text-decoration: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Home</a>
+        <a href="/dashboard" class="back-link">← Back to Dashboard</a>
+
+        <div class="card">
+            <h1>Bybit Futures - All Coins</h1>
+            <input type="text" id="searchBox" class="search-box" placeholder="Search by symbol or base coin..."
+                onkeyup="filterTable()">
+
+            <table id="coinsTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">Symbol ▼</th>
+                        <th onclick="sortTable(1)">Base Coin ▼</th>
+                        <th onclick="sortTable(2)">Quote Coin ▼</th>
+                        <th onclick="sortTable(3)">Status ▼</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Instruments}}
+                    <tr>
+                        <td>{{.Symbol}}</td>
+                        <td>{{.BaseCoin}}</td>
+                        <td>{{.QuoteCoin}}</td>
+                        <td class="{{if eq .Status "Trading"}}status-trading{{else}}status-other{{end}}">{{.Status}}
+                        </td>
+                        <td><a href="/speed-bot/coin/{{.Symbol}}">View Details →</a></td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Search/Filter functionality
+        function filterTable() {
+            const input = document.getElementById('searchBox');
+            const filter = input.value.toUpperCase();
+            const table = document.getElementById('coinsTable');
+            const rows = table.getElementsByTagName('tr');
+
+            for (let i = 1; i < rows.length; i++) {
+                const cells = rows[i].getElementsByTagName('td');
+                let found = false;
+
+                // Search in Symbol (0) and Base Coin (1)
+                for (let j = 0; j < 2; j++) {
+                    if (cells[j]) {
+                        const txtValue = cells[j].textContent || cells[j].innerText;
+                        if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+
+                rows[i].style.display = found ? '' : 'none';
+            }
+        }
+
+        // Sort functionality
+        let sortDirection = [1, 1, 1, 1]; // 1 = ascending, -1 = descending
+
+        function sortTable(columnIndex) {
+            const table = document.getElementById('coinsTable');
+            const tbody = table.getElementsByTagName('tbody')[0];
+            const rows = Array.from(tbody.getElementsByTagName('tr'));
+
+            const direction = sortDirection[columnIndex];
+
+            rows.sort((a, b) => {
+                const aText = a.getElementsByTagName('td')[columnIndex].textContent.trim();
+                const bText = b.getElementsByTagName('td')[columnIndex].textContent.trim();
+
+                if (aText < bText) return -1 * direction;
+                if (aText > bText) return 1 * direction;
+                return 0;
+            });
+
+            // Reverse direction for next click
+            sortDirection[columnIndex] *= -1;
+
+            // Re-append rows in sorted order
+            rows.forEach(row => tbody.appendChild(row));
+        }
+    </script>
+</body>
+
+</html>

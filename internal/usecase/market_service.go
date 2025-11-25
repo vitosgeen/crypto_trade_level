@@ -24,11 +24,17 @@ type Trade struct {
 	Time   time.Time
 }
 
+type PricePoint struct {
+	Price float64
+	Time  time.Time
+}
+
 type MarketService struct {
 	exchange     domain.Exchange
 	cache        map[string]CachedLiquidity
 	trades       map[string][]Trade // Symbol -> Trades
 	depthHistory map[string][]DepthSnapshot
+	priceHistory map[string][]PricePoint // Symbol -> Price Points
 	mu           sync.Mutex
 	timeNow      func() time.Time // For testing
 }
@@ -45,6 +51,7 @@ func NewMarketService(exchange domain.Exchange) *MarketService {
 		cache:        make(map[string]CachedLiquidity),
 		trades:       make(map[string][]Trade),
 		depthHistory: make(map[string][]DepthSnapshot),
+		priceHistory: make(map[string][]PricePoint),
 		timeNow:      time.Now,
 	}
 
@@ -68,7 +75,13 @@ func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
 		Time:   now,
 	})
 
-	// Prune old trades (> 60s)
+	// Track price point
+	s.priceHistory[symbol] = append(s.priceHistory[symbol], PricePoint{
+		Price: price,
+		Time:  now,
+	})
+
+	// Prune old trades and prices (> 60s)
 	cutoff := now.Add(-60 * time.Second)
 	validTrades := s.trades[symbol][:0]
 	for _, t := range s.trades[symbol] {
@@ -77,34 +90,87 @@ func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
 		}
 	}
 	s.trades[symbol] = validTrades
+
+	// Prune old prices
+	validPrices := s.priceHistory[symbol][:0]
+	for _, p := range s.priceHistory[symbol] {
+		if p.Time.After(cutoff) {
+			validPrices = append(validPrices, p)
+		}
+	}
+	s.priceHistory[symbol] = validPrices
 }
 
 type MarketStats struct {
-	SpeedBuy  float64 `json:"speed_buy"`
-	SpeedSell float64 `json:"speed_sell"`
-	DepthBid  float64 `json:"depth_bid"`
-	DepthAsk  float64 `json:"depth_ask"`
+	SpeedBuy       float64 `json:"speed_buy"`
+	SpeedSell      float64 `json:"speed_sell"`
+	DepthBid       float64 `json:"depth_bid"`
+	DepthAsk       float64 `json:"depth_ask"`
+	PriceChange60s float64 `json:"price_change_60s"`
 }
 
 func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*MarketStats, error) {
 	s.mu.Lock()
-	// Check if we need to hydrate trades
-	if len(s.trades[symbol]) == 0 {
+
+	// Check if we need to hydrate/refresh trades
+	// Refresh if: 1) No trades at all, OR 2) No trades in last 60 seconds
+	needsRefresh := len(s.trades[symbol]) == 0
+	if !needsRefresh {
+		// Check if we have any trades in the last 60 seconds
+		cutoff := s.timeNow().Add(-60 * time.Second)
+		hasRecentTrades := false
+		for _, t := range s.trades[symbol] {
+			if t.Time.After(cutoff) {
+				hasRecentTrades = true
+				break
+			}
+		}
+		needsRefresh = !hasRecentTrades
+	}
+
+	if needsRefresh {
 		s.mu.Unlock() // Release lock for network call
 
 		recentTrades, err := s.exchange.GetRecentTrades(ctx, symbol, 1000)
 
 		s.mu.Lock() // Re-acquire lock
-		// Double-check if still empty and no error
-		if err == nil && len(s.trades[symbol]) == 0 {
-			for _, t := range recentTrades {
-				s.trades[symbol] = append(s.trades[symbol], Trade{
-					Symbol: t.Symbol,
-					Side:   t.Side,
-					Size:   t.Size,
-					Price:  t.Price,
-					Time:   time.UnixMilli(t.Time),
-				})
+		if err == nil {
+			// Double-check if we still need to refresh (another goroutine might have done it)
+			if len(s.trades[symbol]) > 0 {
+				// Check timestamp of latest trade
+				lastTradeTime := s.trades[symbol][len(s.trades[symbol])-1].Time
+				if s.timeNow().Sub(lastTradeTime) < 60*time.Second {
+					// Already refreshed, proceed to calculation
+					// We need to break out of the update block, but we are inside if err == nil.
+					// We can just set err = nil and skip the update loop?
+					// Or better, wrap the update logic in an else or just use a flag.
+					// Let's just use a goto or restructure.
+					// Restructuring is cleaner.
+				} else {
+					// Replace old trades with fresh ones
+					s.trades[symbol] = nil
+					for _, t := range recentTrades {
+						s.trades[symbol] = append(s.trades[symbol], Trade{
+							Symbol: t.Symbol,
+							Side:   t.Side,
+							Size:   t.Size,
+							Price:  t.Price,
+							Time:   time.UnixMilli(t.Time),
+						})
+					}
+				}
+			} else {
+				// Replace old trades with fresh ones
+				s.trades[symbol] = nil
+				for _, t := range recentTrades {
+					s.trades[symbol] = append(s.trades[symbol], Trade{
+						Symbol: t.Symbol,
+						Side:   t.Side,
+						Size:   t.Size,
+						Price:  t.Price,
+						Time:   time.UnixMilli(t.Time),
+					})
+				}
 			}
 		}
 	}
@@ -145,11 +211,24 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		avgAsk = sumAsk / float64(len(history))
 	}
 
+	// 3. Calculate 60s price change percentage
+	var priceChange60s float64
+	if prices, ok := s.priceHistory[symbol]; ok && len(prices) >= 2 {
+		// Get oldest and newest price in the 60s window
+		oldestPrice := prices[0].Price
+		newestPrice := prices[len(prices)-1].Price
+
+		if oldestPrice > 0 {
+			priceChange60s = ((newestPrice - oldestPrice) / oldestPrice) * 100
+		}
+	}
+
 	return &MarketStats{
-		SpeedBuy:  speedBuy,
-		SpeedSell: speedSell,
-		DepthBid:  avgBid,
-		DepthAsk:  avgAsk,
+		SpeedBuy:       speedBuy,
+		SpeedSell:      speedSell,
+		DepthBid:       avgBid,
+		DepthAsk:       avgAsk,
+		PriceChange60s: priceChange60s,
 	}, nil
 }
 

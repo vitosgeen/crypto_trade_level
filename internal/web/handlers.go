@@ -149,20 +149,22 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	if stopLossMode == "" {
 		stopLossMode = "exchange"
 	}
+	disableSpeedClose := r.FormValue("disable_speed_close") == "on"
 
 	level := &domain.Level{
-		ID:             fmt.Sprintf("%d", time.Now().UnixNano()),
-		Exchange:       exchange,
-		Symbol:         symbol,
-		LevelPrice:     price,
-		BaseSize:       baseSize,
-		Leverage:       leverage,
-		MarginType:     marginType,
-		CoolDownMs:     coolDownMs,
-		StopLossAtBase: stopLossAtBase,
-		StopLossMode:   stopLossMode,
-		Source:         "manual-web",
-		CreatedAt:      time.Now(),
+		ID:                fmt.Sprintf("%d", time.Now().UnixNano()),
+		Exchange:          exchange,
+		Symbol:            symbol,
+		LevelPrice:        price,
+		BaseSize:          baseSize,
+		Leverage:          leverage,
+		MarginType:        marginType,
+		CoolDownMs:        coolDownMs,
+		StopLossAtBase:    stopLossAtBase,
+		StopLossMode:      stopLossMode,
+		DisableSpeedClose: disableSpeedClose,
+		Source:            "manual-web",
+		CreatedAt:         time.Now(),
 	}
 
 	if err := s.levelRepo.SaveLevel(r.Context(), level); err != nil {
@@ -291,4 +293,136 @@ func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+func (s *Server) handleSpeedBot(w http.ResponseWriter, r *http.Request) {
+	instruments, err := s.service.GetExchange().GetInstruments(r.Context(), "linear")
+	if err != nil {
+		s.logger.Error("Failed to get instruments", zap.Error(err))
+		http.Error(w, "Failed to fetch instruments", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Instruments": instruments,
+	}
+
+	if err := templates.ExecuteTemplate(w, "coins.html", data); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleCoinDetail(w http.ResponseWriter, r *http.Request) {
+	symbol := r.PathValue("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch market stats for the symbol
+	stats, err := s.marketService.GetMarketStats(r.Context(), symbol)
+	if err != nil {
+		s.logger.Error("Failed to get market stats", zap.Error(err))
+		stats = &usecase.MarketStats{} // Use empty stats on error
+	}
+
+	data := map[string]interface{}{
+		"Symbol": symbol,
+		"Stats":  stats,
+	}
+
+	if err := templates.ExecuteTemplate(w, "coin_detail.html", data); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+// Speed Bot API Handlers
+
+func (s *Server) handleStartSpeedBot(w http.ResponseWriter, r *http.Request) {
+	// Decode into a temporary struct to handle cooldown as integer ms
+	type SpeedBotConfigRequest struct {
+		Symbol       string  `json:"symbol"`
+		PositionSize float64 `json:"position_size"`
+		Leverage     int     `json:"leverage"`
+		MarginType   string  `json:"margin_type"`
+		CooldownMs   int64   `json:"cooldown"` // Read as integer ms
+	}
+
+	var req SpeedBotConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if req.Symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+	if req.PositionSize <= 0 {
+		http.Error(w, "PositionSize must be greater than 0", http.StatusBadRequest)
+		return
+	}
+	if req.Leverage <= 0 {
+		http.Error(w, "Leverage must be greater than 0", http.StatusBadRequest)
+		return
+	}
+	if req.MarginType == "" {
+		http.Error(w, "MarginType is required", http.StatusBadRequest)
+		return
+	}
+
+	config := usecase.SpeedBotConfig{
+		Symbol:       req.Symbol,
+		PositionSize: req.PositionSize,
+		Leverage:     req.Leverage,
+		MarginType:   req.MarginType,
+		Cooldown:     time.Duration(req.CooldownMs) * time.Millisecond,
+	}
+
+	if err := s.speedBotService.StartBot(r.Context(), config); err != nil {
+		s.logger.Error("Failed to start speed bot", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
+}
+
+func (s *Server) handleStopSpeedBot(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "symbol parameter required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.speedBotService.StopBot(symbol); err != nil {
+		s.logger.Error("Failed to stop speed bot", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
+}
+
+func (s *Server) handleSpeedBotStatus(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "symbol parameter required", http.StatusBadRequest)
+		return
+	}
+
+	status, err := s.speedBotService.GetBotStatus(r.Context(), symbol)
+	if err != nil {
+		s.logger.Error("Failed to get speed bot status", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
 }

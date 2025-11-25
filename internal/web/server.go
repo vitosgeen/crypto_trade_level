@@ -11,13 +11,14 @@ import (
 )
 
 type Server struct {
-	router        *http.ServeMux
-	server        *http.Server
-	levelRepo     domain.LevelRepository
-	tradeRepo     domain.TradeRepository
-	service       *usecase.LevelService
-	marketService *usecase.MarketService
-	logger        *zap.Logger
+	router          *http.ServeMux
+	server          *http.Server
+	levelRepo       domain.LevelRepository
+	tradeRepo       domain.TradeRepository
+	service         *usecase.LevelService
+	marketService   *usecase.MarketService
+	speedBotService *usecase.SpeedBotService
+	logger          *zap.Logger
 }
 
 func NewServer(
@@ -26,15 +27,17 @@ func NewServer(
 	tradeRepo domain.TradeRepository,
 	service *usecase.LevelService,
 	marketService *usecase.MarketService,
+	speedBotService *usecase.SpeedBotService,
 	logger *zap.Logger,
 ) *Server {
 	s := &Server{
-		router:        http.NewServeMux(),
-		levelRepo:     levelRepo,
-		tradeRepo:     tradeRepo,
-		service:       service,
-		marketService: marketService,
-		logger:        logger,
+		router:          http.NewServeMux(),
+		levelRepo:       levelRepo,
+		tradeRepo:       tradeRepo,
+		service:         service,
+		marketService:   marketService,
+		speedBotService: speedBotService,
+		logger:          logger,
 	}
 	s.routes()
 	s.server = &http.Server{
@@ -76,6 +79,15 @@ func (s *Server) routes() {
 
 	// Market Stats
 	s.router.HandleFunc("GET /api/market-stats", s.handleMarketStats)
+
+	// Speed Bot
+	s.router.HandleFunc("GET /speed-bot", s.handleSpeedBot)
+	s.router.HandleFunc("GET /speed-bot/coin/{symbol}", s.handleCoinDetail)
+
+	// Speed Bot API
+	s.router.HandleFunc("POST /api/speedbot/start", s.handleStartSpeedBot)
+	s.router.HandleFunc("POST /api/speedbot/stop", s.handleStopSpeedBot)
+	s.router.HandleFunc("GET /api/speedbot/status", s.handleSpeedBotStatus)
 }
 
 func (s *Server) Start() error {

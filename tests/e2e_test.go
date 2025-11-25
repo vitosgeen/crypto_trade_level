@@ -63,6 +63,10 @@ func (m *MockExchange) GetRecentTrades(ctx context.Context, symbol string, limit
 	return nil, nil
 }
 
+func (m *MockExchange) GetInstruments(ctx context.Context, category string) ([]domain.Instrument, error) {
+	return nil, nil
+}
+
 func TestEndToEnd_LevelDefense(t *testing.T) {
 	// Enable logs
 	// log.SetOutput(os.Stdout) // Default is stderr which go test shows on failure

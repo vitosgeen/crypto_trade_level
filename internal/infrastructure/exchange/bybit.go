@@ -33,6 +33,8 @@ type BybitAdapter struct {
 	client         *http.Client
 	wsConn         *websocket.Conn
 	wsDone         chan struct{}
+	pingTicker     *time.Ticker
+	pingDone       chan struct{}
 	callbacks      []func(symbol string, price float64)
 	tradeCallbacks []func(symbol string, side string, size float64, price float64)
 	mu             sync.Mutex
@@ -361,8 +363,10 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 		return err
 	}
 	b.wsConn = c
+	b.pingDone = make(chan struct{})
 
 	go b.readLoop()
+	go b.startPingLoop()
 
 	return b.subscribe(symbols)
 }
@@ -402,9 +406,41 @@ func (b *BybitAdapter) subscribe(symbols []string) error {
 	}
 	return nil
 }
+func (b *BybitAdapter) startPingLoop() {
+	b.pingTicker = time.NewTicker(20 * time.Second)
+	defer b.pingTicker.Stop()
+
+	for {
+		select {
+		case <-b.pingTicker.C:
+			b.mu.Lock()
+			if b.wsConn != nil {
+				pingMsg := map[string]string{"op": "ping"}
+				if err := b.wsConn.WriteJSON(pingMsg); err != nil {
+					log.Println("WS Ping error:", err)
+					b.mu.Unlock()
+					return
+				}
+				log.Println("WS: Sent ping")
+			}
+			b.mu.Unlock()
+		case <-b.pingDone:
+			log.Println("WS: Ping loop stopped")
+			return
+		}
+	}
+}
 
 func (b *BybitAdapter) readLoop() {
 	defer func() {
+		// Stop ping loop
+		if b.pingDone != nil {
+			close(b.pingDone)
+		}
+		if b.pingTicker != nil {
+			b.pingTicker.Stop()
+		}
+		// Close connection
 		b.wsConn.Close()
 		b.mu.Lock()
 		b.wsConn = nil
@@ -424,6 +460,12 @@ func (b *BybitAdapter) readLoop() {
 		var event map[string]interface{}
 		if err := json.Unmarshal(message, &event); err != nil {
 			log.Println("WS Unmarshal error:", err)
+			continue
+		}
+
+		// Handle pong response
+		if op, ok := event["op"].(string); ok && op == "pong" {
+			log.Println("WS: Received pong")
 			continue
 		}
 
@@ -688,4 +730,52 @@ func (b *BybitAdapter) GetOrderBook(ctx context.Context, symbol string, category
 	}
 
 	return ob, nil
+}
+
+func (b *BybitAdapter) GetInstruments(ctx context.Context, category string) ([]domain.Instrument, error) {
+	if category == "" {
+		category = "linear"
+	}
+
+	path := fmt.Sprintf("/v5/market/instruments-info?category=%s", category)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				Symbol     string `json:"symbol"`
+				BaseCoin   string `json:"baseCoin"`
+				QuoteCoin  string `json:"quoteCoin"`
+				Status     string `json:"status"`
+				LaunchTime string `json:"launchTime"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit api error: %s", result.RetMsg)
+	}
+
+	var instruments []domain.Instrument
+	for _, item := range result.Result.List {
+		launchTime, _ := strconv.ParseInt(item.LaunchTime, 10, 64)
+		instruments = append(instruments, domain.Instrument{
+			Symbol:     item.Symbol,
+			BaseCoin:   item.BaseCoin,
+			QuoteCoin:  item.QuoteCoin,
+			Status:     item.Status,
+			LaunchTime: launchTime,
+		})
+	}
+
+	return instruments, nil
 }

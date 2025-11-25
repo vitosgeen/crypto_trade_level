@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{.Symbol}} - Speed Bot</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .back-link {
+            margin-bottom: 20px;
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Table styling for Active Positions and Recent Trades */
+        .table-container {
+            overflow-x: auto;
+            max-height: 300px;
+        }
+
+        .table-container table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table-container th,
+        .table-container td {
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        .table-container th {
+            background: #f2f2f2;
+            font-weight: 600;
+        }
+
+        .table-container tr:nth-child(even) {
+            background: #fafafa;
+        }
+
+        .table-container tr:hover {
+            background: #e9f5ff;
+        }
+
+        /* Gauge Styles */
+        .gauge-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .gauge {
+            position: relative;
+            width: 200px;
+            height: 100px;
+            overflow: hidden;
+        }
+
+        .gauge-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: conic-gradient(from 270deg, #dc3545 0deg 90deg, #28a745 90deg 180deg, transparent 180deg);
+            clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
+        }
+
+        .gauge-needle {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 4px;
+            height: 90px;
+            background: #333;
+            transform-origin: bottom center;
+            transform: rotate(-90deg);
+            transition: transform 0.5s cubic-bezier(0.4, 0.0, 0.2, 1);
+            z-index: 2;
+            border-radius: 2px;
+        }
+
+        .gauge-center {
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            background: #333;
+            border-radius: 50%;
+            transform: translateX(-50%);
+            z-index: 3;
+        }
+
+        .gauge-labels {
+            display: flex;
+            justify-content: space-between;
+            width: 200px;
+            margin-top: 5px;
+            font-weight: bold;
+        }
+
+        .gauge-value {
+            margin-top: 5px;
+            font-family: monospace;
+            font-size: 1.1em;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <a href="/speed-bot" class="back-link">← Back to All Coins</a>
+
+        <div class="card">
+            <h1>{{.Symbol}} Analysis</h1>
+        </div>
+
+        <div class="card">
+            <h2>Price Chart</h2>
+            <div id="levelChart" style="width: 100%; height: 400px;"></div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-bottom: 25px; border-bottom: 2px solid #007bff; padding-bottom: 10px;">⚡ Speed Bot
+                Controls</h3>
+
+                <!-- Bot Status Card -->
+                <div id="bot-status-card"
+                    style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <div style="flex: 1; min-width: 200px;">
+                            <h3 style="margin: 0; font-size: 20px;">🤖 Speed Bot: <span
+                                    id="bot-running-status">Running</span></h3>
+                            <p id="bot-signal-text" style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">Waiting
+                                for signal...</p>
+                        </div>
+                        <div id="bot-position-info"
+                            style="display: none; flex: 1; min-width: 300px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px;">
+                            <div
+                                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px;">
+                                <div>
+                                    <div style="font-size: 12px; opacity: 0.8;">Position</div>
+                                    <div style="font-size: 18px; font-weight: bold;" id="bot-position-side">LONG</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 12px; opacity: 0.8;">Size</div>
+                                    <div style="font-size: 18px; font-weight: bold;" id="bot-position-size">0.001</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 12px; opacity: 0.8;">Entry</div>
+                                    <div style="font-size: 18px; font-weight: bold;" id="bot-entry-price">$0.00</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 12px; opacity: 0.8;">P&L</div>
+                                    <div style="font-size: 18px; font-weight: bold;" id="bot-pnl">$0.00</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <form id="speed-bot-form">
+                    <!-- Position Settings -->
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #495057;">📊 Position Settings</h3>
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div>
+                                <label for="position-size"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Position
+                                    Size</label>
+                                <input type="number" id="position-size" name="position_size" step="0.001" min="0.001"
+                                    placeholder="0.1"
+                                    style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                            </div>
+                            <div>
+                                <label for="leverage"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Leverage</label>
+                                <input type="number" id="leverage" name="leverage" min="1" max="100" value="1"
+                                    style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                            </div>
+                            <div>
+                                <label for="margin-type"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Margin
+                                    Type</label>
+                                <select id="margin-type" name="margin_type"
+                                    style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; background: white;">
+                                    <option value="isolated">🔒 Isolated</option>
+                                    <option value="cross">🌐 Cross</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Speed Thresholds -->
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #495057;">🎯 Speed Thresholds</h3>
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div>
+                                <label for="speed-open"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">
+                                    <span style="color: #28a745;">▲</span> Open Position
+                                </label>
+                                <input type="number" id="speed-open" name="speed_open" step="0.1" min="0" value="0"
+                                    placeholder="0.0"
+                                    style="width: 100%; padding: 10px; border: 2px solid #28a745; border-radius: 6px; font-size: 14px;">
+                                <small style="color: #6c757d; font-size: 12px;">Buy volume threshold</small>
+                            </div>
+                            <div>
+                                <label for="speed-close"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">
+                                    <span style="color: #dc3545;">▼</span> Close Position
+                                </label>
+                                <input type="number" id="speed-close" name="speed_close" step="0.1" min="0" value="0"
+                                    placeholder="0.0"
+                                    style="width: 100%; padding: 10px; border: 2px solid #dc3545; border-radius: 6px; font-size: 14px;">
+                                <small style="color: #6c757d; font-size: 12px;">Sell volume threshold</small>
+                            </div>
+                            <div>
+                                <label for="cooldown"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">
+                                    ⏱️ Cooldown
+                                </label>
+                                <input type="number" id="cooldown" name="cooldown" min="0" step="100" value="1000"
+                                    placeholder="1000"
+                                    style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                                <small style="color: #6c757d; font-size: 12px;">Milliseconds between trades</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Control Buttons -->
+                    <div style="display: flex; gap: 15px; justify-content: center;">
+                        <button type="button" id="start-bot-btn"
+                            style="flex: 1; max-width: 250px; padding: 15px 30px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(40, 167, 69, 0.3); transition: all 0.3s;">
+                            <span style="font-size: 18px;">▶</span> Start Bot
+                        </button>
+                        <button type="button" id="stop-bot-btn"
+                            style="flex: 1; max-width: 250px; padding: 15px 30px; background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 53, 69, 0.3); transition: all 0.3s;">
+                            <span style="font-size: 18px;">■</span> Stop Bot
+                        </button>
+                    </div>
+                </form>
+
+                <div id="config-status"
+                    style="margin-top: 20px; padding: 15px; border-radius: 8px; display: none; text-align: center; font-weight: 600;">
+                </div>
+        </div>
+
+        <div class="card">
+            <h2>Market Speed & Depth</h2>
+            <div style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 20px;">
+                <!-- Gauge 1: Trade Speed -->
+                <div class="gauge-container">
+                    <h3 id="speed-gauge-title" style="text-align: center; margin-bottom: 10px;">Trade Volume (60s)</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"></div>
+                        <div class="gauge-needle" id="speed-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span style="color: #dc3545;">Sell</span>
+                        <span style="color: #28a745;">Buy</span>
+                    </div>
+                    <div class="gauge-value" id="speed-value">0 / 0</div>
+                </div>
+
+                <!-- Gauge 2: Price Change Rate -->
+                <div class="gauge-container">
+                    <h3 style="text-align: center; margin-bottom: 10px;">Price Change (60s)</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"></div>
+                        <div class="gauge-needle" id="price-change-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span style="color: #dc3545;">Down</span>
+                        <span style="color: #28a745;">Up</span>
+                    </div>
+                    <div class="gauge-value" id="price-change-value">0.00%</div>
+                </div>
+
+                <!-- Gauge 3: Order Book Depth -->
+                <div class="gauge-container">
+                    <h3 style="text-align: center; margin-bottom: 10px;">Order Book Depth</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"></div>
+                        <div class="gauge-needle" id="depth-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span style="color: #dc3545;">Ask</span>
+                        <span style="color: #28a745;">Bid</span>
+                    </div>
+                    <div class="gauge-value" id="depth-value">0 / 0</div>
+                </div>
+
+                <!-- Gauge 4: Divergence -->
+                <div class="gauge-container">
+                    <h3 style="text-align: center; margin-bottom: 10px;">Sentiment Divergence</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"
+                            style="background: conic-gradient(from 270deg, #ffc107 0deg 90deg, #007bff 90deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="div-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span style="color: #ffc107;">Bearish Div</span>
+                        <span style="color: #007bff;">Bullish Div</span>
+                    </div>
+                    <div class="gauge-value" id="div-value">0.00</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Active Positions</h2>
+            <div class="table-container" id="positions-table" hx-get="/positions" hx-trigger="load, every 5s">
+                <!-- Loaded via HTMX -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Recent Trades</h2>
+            <div class="table-container" hx-get="/trades" hx-trigger="load, every 5s">
+                <!-- Loaded via HTMX -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Quick Actions</h2>
+            <p>
+                <a href="/dashboard">Create Level for {{.Symbol}}</a>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const symbol = "{{.Symbol}}";
+        let chart = null;
+        let candleSeries = null;
+        let liquiditySeries = null;
+        let currentLiquidityLines = [];
+        let lastCandle = null;
+
+        function initChart() {
+            const chartContainer = document.getElementById('levelChart');
+            if (!chartContainer) return;
+
+            chart = LightweightCharts.createChart(chartContainer, {
+                width: chartContainer.clientWidth || 800,
+                height: 400,
+                layout: {
+                    background: { type: 'solid', color: 'white' },
+                    textColor: 'black',
+                },
+                grid: {
+                    vertLines: { color: '#eee' },
+                    horzLines: { color: '#eee' },
+                },
+                rightPriceScale: {
+                    borderColor: '#d1d4dc',
+                },
+                timeScale: {
+                    borderColor: '#d1d4dc',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+            });
+
+            // Liquidity series (background)
+            liquiditySeries = chart.addLineSeries({
+                color: 'transparent',
+                lineWidth: 0,
+                crosshairMarkerVisible: false,
+                lastValueVisible: false,
+                priceLineVisible: false,
+                priceFormat: {
+                    type: 'price',
+                    precision: 6,
+                    minMove: 0.000001,
+                },
+            });
+
+            // Candle series (foreground)
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#26a69a',
+                downColor: '#ef5350',
+                borderVisible: false,
+                wickUpColor: '#26a69a',
+                wickDownColor: '#ef5350',
+                priceFormat: {
+                    type: 'price',
+                    precision: 6,
+                    minMove: 0.000001,
+                },
+            });
+
+            window.addEventListener('resize', () => {
+                if (chart && chartContainer) {
+                    chart.applyOptions({ width: chartContainer.clientWidth });
+                }
+            });
+
+            loadChartData();
+            loadLiquidity();
+        }
+
+        async function loadChartData() {
+            try {
+                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`);
+                const candles = await response.json();
+                if (candles && candles.length > 0) {
+                    candles.sort((a, b) => a.time - b.time);
+                    candleSeries.setData(candles);
+
+                    // Sync liquidity series
+                    const lineData = candles.map(c => ({ time: c.time, value: c.close }));
+                    liquiditySeries.setData(lineData);
+
+                    chart.timeScale().fitContent();
+
+                    // Store last candle for updates
+                    lastCandle = candles[candles.length - 1];
+                }
+            } catch (e) {
+                console.error("Failed to fetch candles", e);
+            }
+        }
+
+        async function loadLiquidity() {
+            try {
+                const response = await fetch(`/api/liquidity?symbol=${symbol}`);
+                const clusters = await response.json();
+
+                // Clear old liquidity lines
+                if (currentLiquidityLines) {
+                    currentLiquidityLines.forEach(line => liquiditySeries.removePriceLine(line));
+                }
+                currentLiquidityLines = [];
+
+                if (clusters && clusters.length > 0) {
+                    const maxVol = Math.max(...clusters.map(c => c.volume));
+
+                    clusters.forEach(c => {
+                        let opacity = 0.0;
+                        if (maxVol > 0) {
+                            opacity = c.volume / maxVol;
+                            if (opacity > 1.0) opacity = 1.0;
+                            if (opacity < 0.1) opacity = 0.1;
+                        }
+
+                        const color = c.type === 'bid'
+                            ? `rgba(0, 255, 0, ${opacity.toFixed(2)})`
+                            : `rgba(255, 105, 180, ${opacity.toFixed(2)})`;
+
+                        currentLiquidityLines.push(liquiditySeries.createPriceLine({
+                            price: c.price,
+                            color: color,
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Solid,
+                            axisLabelVisible: false,
+                            title: '',
+                        }));
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to fetch liquidity", e);
+            }
+        }
+
+        // Update chart with real-time price (simulated via periodic candle refresh)
+        async function updateChart() {
+            try {
+                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=5`);
+                const candles = await response.json();
+                if (candles && candles.length > 0) {
+                    candles.sort((a, b) => a.time - b.time);
+                    const latestCandle = candles[candles.length - 1];
+
+                    // Update the last candle
+                    if (lastCandle && latestCandle.time === lastCandle.time) {
+                        // Same candle, update it
+                        candleSeries.update(latestCandle);
+                        liquiditySeries.update({ time: latestCandle.time, value: latestCandle.close });
+                    } else if (latestCandle.time > (lastCandle?.time || 0)) {
+                        // New candle
+                        candleSeries.update(latestCandle);
+                        liquiditySeries.update({ time: latestCandle.time, value: latestCandle.close });
+                    }
+
+                    lastCandle = latestCandle;
+                }
+            } catch (e) {
+                console.error("Failed to update chart", e);
+            }
+        }
+
+        async function updateMarketStats() {
+            try {
+                const resp = await fetch(`/api/market-stats?symbol=${symbol}`);
+                const stats = await resp.json();
+
+                // Calculate buy/sell ratio
+                let ratio = 0;
+                let ratioText = '0:0';
+                if (stats.speed_sell > 0 && stats.speed_buy > 0) {
+                    if (stats.speed_buy > stats.speed_sell) {
+                        ratio = stats.speed_buy / stats.speed_sell;
+                        ratioText = `${ratio.toFixed(2)}:1`;
+                    } else {
+                        ratio = stats.speed_sell / stats.speed_buy;
+                        ratioText = `1:${ratio.toFixed(2)}`;
+                    }
+                } else if (stats.speed_buy > 0) {
+                    ratioText = '∞:1';
+                } else if (stats.speed_sell > 0) {
+                    ratioText = '1:∞';
+                }
+
+                // Update gauge title with ratio
+                const titleEl = document.getElementById('speed-gauge-title');
+                if (titleEl) {
+                    const color = stats.speed_buy > stats.speed_sell ? '#28a745' : '#dc3545';
+                    titleEl.innerHTML = `Trade Volume (60s) <span style="color: ${color}; font-weight: bold;">(${ratioText})</span>`;
+                }
+
+                // Update Speed Gauge
+                const totalSpeed = stats.speed_buy + stats.speed_sell;
+                let speedRatio = 0.5;
+                if (totalSpeed > 0) {
+                    speedRatio = stats.speed_buy / totalSpeed;
+                }
+                const speedDeg = (speedRatio * 180) - 90;
+                const speedNeedle = document.getElementById('speed-needle');
+                if (speedNeedle) speedNeedle.style.transform = `rotate(${speedDeg}deg)`;
+
+                const speedValue = document.getElementById('speed-value');
+                if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(2)} / ${stats.speed_buy.toFixed(2)}`;
+
+                // Update Depth Gauge
+                const totalDepth = stats.depth_bid + stats.depth_ask;
+                let depthRatio = 0.5;
+                if (totalDepth > 0) {
+                    depthRatio = stats.depth_bid / totalDepth;
+                }
+                const depthDeg = (depthRatio * 180) - 90;
+                const depthNeedle = document.getElementById('depth-needle');
+                if (depthNeedle) depthNeedle.style.transform = `rotate(${depthDeg}deg)`;
+
+                const depthValue = document.getElementById('depth-value');
+                if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)} / ${stats.depth_bid.toFixed(2)}`;
+
+                // Update Price Change Gauge
+                // Map percentage to gauge angle: -5% to +5% maps to -90deg to +90deg
+                const maxChange = 5; // 5% max for gauge scale
+                let changeRatio = stats.price_change_60s / maxChange;
+                if (changeRatio > 1) changeRatio = 1;
+                if (changeRatio < -1) changeRatio = -1;
+
+                const changeDeg = changeRatio * 90; // -90 to +90 degrees
+                const changeNeedle = document.getElementById('price-change-needle');
+                if (changeNeedle) changeNeedle.style.transform = `rotate(${changeDeg}deg)`;
+
+                const changeValue = document.getElementById('price-change-value');
+                if (changeValue) {
+                    const sign = stats.price_change_60s >= 0 ? '+' : '';
+                    changeValue.textContent = `${sign}${stats.price_change_60s.toFixed(2)}%`;
+                    changeValue.style.color = stats.price_change_60s >= 0 ? '#28a745' : '#dc3545';
+                }
+
+                // Update Divergence Gauge
+                const divergence = speedRatio - depthRatio;
+                const divDeg = divergence * 90;
+
+                const divNeedle = document.getElementById('div-needle');
+                if (divNeedle) divNeedle.style.transform = `rotate(${divDeg}deg)`;
+
+                const divValue = document.getElementById('div-value');
+                if (divValue) divValue.textContent = divergence.toFixed(2);
+
+            } catch (e) {
+                console.error("Failed to fetch market stats", e);
+            }
+        }
+
+        // Speed Bot Configuration
+        let statusPollingInterval = null;
+
+        async function startBot() {
+            const config = {
+                symbol: symbol,
+                position_size: parseFloat(document.getElementById('position-size').value),
+                leverage: parseInt(document.getElementById('leverage').value),
+                margin_type: document.getElementById('margin-type').value,
+                cooldown: parseInt(document.getElementById('cooldown').value),
+            };
+
+            // Validate
+            if (!config.position_size || config.position_size <= 0) {
+                showStatus('Please enter a valid position size', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/speedbot/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
+                updateButtonStates(true);
+                showStatus('Speed Bot started!', 'success');
+                startStatusPolling();
+            } catch (e) {
+                showStatus(`Error: ${e.message}`, 'error');
+            }
+        }
+
+        async function stopBot() {
+            try {
+                const response = await fetch(`/api/speedbot/stop?symbol=${symbol}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
+                updateButtonStates(false);
+                showStatus('Speed Bot stopped', 'info');
+                stopStatusPolling();
+            } catch (e) {
+                showStatus(`Error: ${e.message}`, 'error');
+            }
+        }
+
+        async function updateBotStatus() {
+            try {
+                const response = await fetch(`/api/speedbot/status?symbol=${symbol}`);
+                const status = await response.json();
+
+                const card = document.getElementById('bot-status-card');
+                const signalText = document.getElementById('bot-signal-text');
+                const positionInfo = document.getElementById('bot-position-info');
+
+                if (status.running) {
+                    card.style.display = 'block';
+                    signalText.textContent = status.signal || 'Scanning market...';
+
+                    // Show position info if active
+                    if (status.position && status.position.size > 0) {
+                        positionInfo.style.display = 'block';
+                        document.getElementById('bot-position-side').textContent = status.position.side;
+                        document.getElementById('bot-position-size').textContent = status.position.size.toFixed(4);
+                        document.getElementById('bot-entry-price').textContent = `$${status.position.entry_price.toFixed(2)}`;
+
+                        const pnl = status.position.unrealized_pnl || 0;
+                        const pnlEl = document.getElementById('bot-pnl');
+                        pnlEl.textContent = `$${pnl.toFixed(2)}`;
+                        pnlEl.style.color = pnl >= 0 ? '#4ade80' : '#f87171';
+                    } else {
+                        positionInfo.style.display = 'none';
+                    }
+                } else {
+                    card.style.display = 'none';
+                }
+            } catch (e) {
+                console.error('Failed to fetch bot status', e);
+            }
+        }
+
+        function startStatusPolling() {
+            updateBotStatus(); // Initial update
+            statusPollingInterval = setInterval(updateBotStatus, 2000); // Poll every 2 seconds
+        }
+
+        function stopStatusPolling() {
+            if (statusPollingInterval) {
+                clearInterval(statusPollingInterval);
+                statusPollingInterval = null;
+            }
+            document.getElementById('bot-status-card').style.display = 'none';
+        }
+
+        function updateButtonStates(running) {
+            const startBtn = document.getElementById('start-bot-btn');
+            const stopBtn = document.getElementById('stop-bot-btn');
+
+            if (running) {
+                startBtn.style.opacity = '0.5';
+                startBtn.style.cursor = 'not-allowed';
+                startBtn.disabled = true;
+                stopBtn.style.opacity = '1';
+                stopBtn.style.cursor = 'pointer';
+                stopBtn.disabled = false;
+            } else {
+                startBtn.style.opacity = '1';
+                startBtn.style.cursor = 'pointer';
+                startBtn.disabled = false;
+                stopBtn.style.opacity = '0.5';
+                stopBtn.style.cursor = 'not-allowed';
+                stopBtn.disabled = true;
+            }
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('config-status');
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+
+            if (type === 'success') {
+                statusDiv.style.background = '#d4edda';
+                statusDiv.style.color = '#155724';
+                statusDiv.style.border = '1px solid #c3e6cb';
+            } else if (type === 'error') {
+                statusDiv.style.background = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                statusDiv.style.border = '1px solid #f5c6cb';
+            } else {
+                statusDiv.style.background = '#d1ecf1';
+                statusDiv.style.color = '#0c5460';
+                statusDiv.style.border = '1px solid #bee5eb';
+            }
+
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function () {
+            initChart();
+            updateMarketStats();
+
+            // Button handlers
+            document.getElementById('start-bot-btn').addEventListener('click', startBot);
+            document.getElementById('stop-bot-btn').addEventListener('click', stopBot);
+
+            // Check if bot is running and start polling
+            updateBotStatus();
+
+            // Update chart every 2 seconds
+            setInterval(updateChart, 2000);
+
+            // Update liquidity every 10 seconds
+            setInterval(loadLiquidity, 10000);
+
+            // Update market stats every second
+            setInterval(updateMarketStats, 1000);
+        });
+    </script>
+    </div>
+</body>
+
+</html>
