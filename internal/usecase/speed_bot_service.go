@@ -264,8 +264,11 @@ func (b *SpeedBot) shouldClose(stats *MarketStats, currentSide domain.Side) bool
 func (b *SpeedBot) getStatus(ctx context.Context) (*BotStatus, error) {
 	b.mu.Lock()
 	running := b.running
-	inCooldown := time.Since(b.lastCloseTime) < b.config.Cooldown
+	lastCloseTime := b.lastCloseTime
+	cooldownDuration := b.config.Cooldown
 	b.mu.Unlock()
+
+	inCooldown := time.Since(lastCloseTime) < cooldownDuration
 
 	status := &BotStatus{
 		Running:    running,
@@ -307,7 +310,7 @@ func (b *SpeedBot) getStatus(ctx context.Context) (*BotStatus, error) {
 
 			if status.InCooldown {
 				status.Signal = fmt.Sprintf("Cooldown: %ds remaining",
-					int(b.config.Cooldown.Seconds()-time.Since(b.lastCloseTime).Seconds()))
+					int(cooldownDuration.Seconds()-time.Since(lastCloseTime).Seconds()))
 			} else if longSignal {
 				status.Signal = "🟢 LONG signal detected - 3 gauges bullish"
 			} else if shortSignal {
