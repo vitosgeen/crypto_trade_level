@@ -257,7 +257,22 @@
                     <div class="gauge-value" id="speed-value">0 / 0</div>
                 </div>
 
-                <!-- Gauge 2: Order Book Depth -->
+                <!-- Gauge 2: Price Change Rate -->
+                <div class="gauge-container">
+                    <h3 style="text-align: center; margin-bottom: 10px;">Price Change (60s)</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"></div>
+                        <div class="gauge-needle" id="price-change-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span style="color: #dc3545;">Down</span>
+                        <span style="color: #28a745;">Up</span>
+                    </div>
+                    <div class="gauge-value" id="price-change-value">0.00%</div>
+                </div>
+
+                <!-- Gauge 3: Order Book Depth -->
                 <div class="gauge-container">
                     <h3 style="text-align: center; margin-bottom: 10px;">Order Book Depth</h3>
                     <div class="gauge">
@@ -272,7 +287,7 @@
                     <div class="gauge-value" id="depth-value">0 / 0</div>
                 </div>
 
-                <!-- Gauge 3: Divergence -->
+                <!-- Gauge 4: Divergence -->
                 <div class="gauge-container">
                     <h3 style="text-align: center; margin-bottom: 10px;">Sentiment Divergence</h3>
                     <div class="gauge">
@@ -528,6 +543,24 @@
 
                 const depthValue = document.getElementById('depth-value');
                 if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)} / ${stats.depth_bid.toFixed(2)}`;
+
+                // Update Price Change Gauge
+                // Map percentage to gauge angle: -5% to +5% maps to -90deg to +90deg
+                const maxChange = 5; // 5% max for gauge scale
+                let changeRatio = stats.price_change_60s / maxChange;
+                if (changeRatio > 1) changeRatio = 1;
+                if (changeRatio < -1) changeRatio = -1;
+
+                const changeDeg = changeRatio * 90; // -90 to +90 degrees
+                const changeNeedle = document.getElementById('price-change-needle');
+                if (changeNeedle) changeNeedle.style.transform = `rotate(${changeDeg}deg)`;
+
+                const changeValue = document.getElementById('price-change-value');
+                if (changeValue) {
+                    const sign = stats.price_change_60s >= 0 ? '+' : '';
+                    changeValue.textContent = `${sign}${stats.price_change_60s.toFixed(2)}%`;
+                    changeValue.style.color = stats.price_change_60s >= 0 ? '#28a745' : '#dc3545';
+                }
 
                 // Update Divergence Gauge
                 const divergence = speedRatio - depthRatio;
