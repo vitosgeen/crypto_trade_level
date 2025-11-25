@@ -689,3 +689,51 @@ func (b *BybitAdapter) GetOrderBook(ctx context.Context, symbol string, category
 
 	return ob, nil
 }
+
+func (b *BybitAdapter) GetInstruments(ctx context.Context, category string) ([]domain.Instrument, error) {
+	if category == "" {
+		category = "linear"
+	}
+
+	path := fmt.Sprintf("/v5/market/instruments-info?category=%s", category)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				Symbol     string `json:"symbol"`
+				BaseCoin   string `json:"baseCoin"`
+				QuoteCoin  string `json:"quoteCoin"`
+				Status     string `json:"status"`
+				LaunchTime string `json:"launchTime"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit api error: %s", result.RetMsg)
+	}
+
+	var instruments []domain.Instrument
+	for _, item := range result.Result.List {
+		launchTime, _ := strconv.ParseInt(item.LaunchTime, 10, 64)
+		instruments = append(instruments, domain.Instrument{
+			Symbol:     item.Symbol,
+			BaseCoin:   item.BaseCoin,
+			QuoteCoin:  item.QuoteCoin,
+			Status:     item.Status,
+			LaunchTime: launchTime,
+		})
+	}
+
+	return instruments, nil
+}

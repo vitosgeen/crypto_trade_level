@@ -292,3 +292,46 @@ func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
 }
+
+func (s *Server) handleSpeedBot(w http.ResponseWriter, r *http.Request) {
+	instruments, err := s.service.GetExchange().GetInstruments(r.Context(), "linear")
+	if err != nil {
+		s.logger.Error("Failed to get instruments", zap.Error(err))
+		http.Error(w, "Failed to fetch instruments", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Instruments": instruments,
+	}
+
+	if err := templates.ExecuteTemplate(w, "coins.html", data); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleCoinDetail(w http.ResponseWriter, r *http.Request) {
+	symbol := r.PathValue("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch market stats for the symbol
+	stats, err := s.marketService.GetMarketStats(r.Context(), symbol)
+	if err != nil {
+		s.logger.Error("Failed to get market stats", zap.Error(err))
+		stats = &usecase.MarketStats{} // Use empty stats on error
+	}
+
+	data := map[string]interface{}{
+		"Symbol": symbol,
+		"Stats":  stats,
+	}
+
+	if err := templates.ExecuteTemplate(w, "coin_detail.html", data); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}

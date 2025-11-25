@@ -88,15 +88,32 @@ type MarketStats struct {
 
 func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*MarketStats, error) {
 	s.mu.Lock()
-	// Check if we need to hydrate trades
-	if len(s.trades[symbol]) == 0 {
+
+	// Check if we need to hydrate/refresh trades
+	// Refresh if: 1) No trades at all, OR 2) No trades in last 60 seconds
+	needsRefresh := len(s.trades[symbol]) == 0
+	if !needsRefresh {
+		// Check if we have any trades in the last 60 seconds
+		cutoff := s.timeNow().Add(-60 * time.Second)
+		hasRecentTrades := false
+		for _, t := range s.trades[symbol] {
+			if t.Time.After(cutoff) {
+				hasRecentTrades = true
+				break
+			}
+		}
+		needsRefresh = !hasRecentTrades
+	}
+
+	if needsRefresh {
 		s.mu.Unlock() // Release lock for network call
 
 		recentTrades, err := s.exchange.GetRecentTrades(ctx, symbol, 1000)
 
 		s.mu.Lock() // Re-acquire lock
-		// Double-check if still empty and no error
-		if err == nil && len(s.trades[symbol]) == 0 {
+		if err == nil {
+			// Replace old trades with fresh ones
+			s.trades[symbol] = nil
 			for _, t := range recentTrades {
 				s.trades[symbol] = append(s.trades[symbol], Trade{
 					Symbol: t.Symbol,

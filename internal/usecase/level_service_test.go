@@ -74,6 +74,9 @@ func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, s
 func (m *MockExchange) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
 	return nil, nil
 }
+func (m *MockExchange) GetInstruments(ctx context.Context, category string) ([]domain.Instrument, error) {
+	return nil, nil
+}
 
 func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 	// Setup
@@ -181,6 +184,9 @@ func (m *MockExchangeForService) OnTradeUpdate(callback func(symbol string, side
 	m.TradeCallback = callback
 }
 func (m *MockExchangeForService) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
+	return nil, nil
+}
+func (m *MockExchangeForService) GetInstruments(ctx context.Context, category string) ([]domain.Instrument, error) {
 	return nil, nil
 }
 

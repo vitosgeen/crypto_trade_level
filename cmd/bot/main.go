@@ -156,7 +156,9 @@ func main() {
 	}()
 
 	// 7. Init Web Server
-	web.InitTemplates("internal/web/templates")
+	if err := web.InitTemplates("internal/web/templates"); err != nil {
+		log.Fatal("Failed to initialize templates", zap.Error(err))
+	}
 	port := cfg.Server.Port
 	if port == 0 {
 		port = 8080 // Default

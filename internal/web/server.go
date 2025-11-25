@@ -76,6 +76,10 @@ func (s *Server) routes() {
 
 	// Market Stats
 	s.router.HandleFunc("GET /api/market-stats", s.handleMarketStats)
+
+	// Speed Bot
+	s.router.HandleFunc("GET /speed-bot", s.handleSpeedBot)
+	s.router.HandleFunc("GET /speed-bot/coin/{symbol}", s.handleCoinDetail)
 }
 
 func (s *Server) Start() error {
