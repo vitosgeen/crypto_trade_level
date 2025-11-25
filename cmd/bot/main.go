@@ -155,6 +155,21 @@ func main() {
 		}
 	}()
 
+	// Safety Monitor Loop (Every 1s)
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				svc.CheckSafety(context.Background())
+			case <-stop:
+				return
+			}
+		}
+	}()
+
 	// 7. Init Web Server
 	if err := web.InitTemplates("internal/web/templates"); err != nil {
 		log.Fatal("Failed to initialize templates", zap.Error(err))
@@ -164,7 +179,10 @@ func main() {
 		port = 8080 // Default
 	}
 
-	server := web.NewServer(port, store, store, svc, marketService, log)
+	// Init Speed Bot Service
+	speedBotService := usecase.NewSpeedBotService(bybitAdapter, marketService, log)
+
+	server := web.NewServer(port, store, store, svc, marketService, speedBotService, log)
 
 	// 8. Start Server
 	go func() {

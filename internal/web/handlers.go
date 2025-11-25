@@ -149,20 +149,22 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	if stopLossMode == "" {
 		stopLossMode = "exchange"
 	}
+	disableSpeedClose := r.FormValue("disable_speed_close") == "on"
 
 	level := &domain.Level{
-		ID:             fmt.Sprintf("%d", time.Now().UnixNano()),
-		Exchange:       exchange,
-		Symbol:         symbol,
-		LevelPrice:     price,
-		BaseSize:       baseSize,
-		Leverage:       leverage,
-		MarginType:     marginType,
-		CoolDownMs:     coolDownMs,
-		StopLossAtBase: stopLossAtBase,
-		StopLossMode:   stopLossMode,
-		Source:         "manual-web",
-		CreatedAt:      time.Now(),
+		ID:                fmt.Sprintf("%d", time.Now().UnixNano()),
+		Exchange:          exchange,
+		Symbol:            symbol,
+		LevelPrice:        price,
+		BaseSize:          baseSize,
+		Leverage:          leverage,
+		MarginType:        marginType,
+		CoolDownMs:        coolDownMs,
+		StopLossAtBase:    stopLossAtBase,
+		StopLossMode:      stopLossMode,
+		DisableSpeedClose: disableSpeedClose,
+		Source:            "manual-web",
+		CreatedAt:         time.Now(),
 	}
 
 	if err := s.levelRepo.SaveLevel(r.Context(), level); err != nil {
@@ -334,4 +336,61 @@ func (s *Server) handleCoinDetail(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("Template error", zap.Error(err))
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
+}
+
+// Speed Bot API Handlers
+
+func (s *Server) handleStartSpeedBot(w http.ResponseWriter, r *http.Request) {
+	var config usecase.SpeedBotConfig
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Convert cooldown from milliseconds to duration
+	config.Cooldown = time.Duration(config.Cooldown) * time.Millisecond
+
+	if err := s.speedBotService.StartBot(r.Context(), config); err != nil {
+		s.logger.Error("Failed to start speed bot", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
+}
+
+func (s *Server) handleStopSpeedBot(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "symbol parameter required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.speedBotService.StopBot(symbol); err != nil {
+		s.logger.Error("Failed to stop speed bot", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
+}
+
+func (s *Server) handleSpeedBotStatus(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "symbol parameter required", http.StatusBadRequest)
+		return
+	}
+
+	status, err := s.speedBotService.GetBotStatus(r.Context(), symbol)
+	if err != nil {
+		s.logger.Error("Failed to get speed bot status", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
 }

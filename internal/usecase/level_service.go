@@ -180,79 +180,68 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	// Default Loose Threshold
 	sentimentThreshold := 0.6
 
-	// Check if we have an open position
-	pos, err := s.exchange.GetPosition(ctx, symbol)
-	if err != nil {
-		log.Printf("Error getting position for %s: %v", symbol, err)
-		return nil
+	// --- SENTIMENT-BASED EXIT LOGIC ---
+	// Check if any level for this symbol has DisableSpeedClose enabled
+	speedCloseDisabled := false
+	for _, l := range relevantLevels {
+		if l.DisableSpeedClose {
+			speedCloseDisabled = true
+			break
+		}
 	}
 
-	if pos.Size > 0 {
-		// Determine if we are in a "Strict Zone"
-		// Strict Zone = Between Base Level and Edge Tier (Max Tier)
-		inStrictZone := false
-
-		for _, l := range relevantLevels {
-			// Calculate Max Tier Percentage
-			maxTierPct := tiers.Tier1Pct
-			if tiers.Tier2Pct > maxTierPct {
-				maxTierPct = tiers.Tier2Pct
-			}
-			if tiers.Tier3Pct > maxTierPct {
-				maxTierPct = tiers.Tier3Pct
-			}
-
-			if pos.Side == domain.SideLong {
-				// Long Zone: [BaseLevel, BaseLevel * (1 + MaxTierPct)]
-				upperBound := l.LevelPrice * (1 + maxTierPct)
-				if price >= l.LevelPrice && price <= upperBound {
-					inStrictZone = true
-					break
+	if !speedCloseDisabled {
+		// Check if we have an open position
+		pos, err := s.exchange.GetPosition(ctx, symbol)
+		if err == nil && pos.Size > 0 {
+			// Determine if in strict zone (within 1% of any level)
+			inStrictZone := false
+			for _, l := range relevantLevels {
+				distance := (price - l.LevelPrice) / l.LevelPrice
+				if distance < 0 {
+					distance = -distance
 				}
-			} else if pos.Side == domain.SideShort {
-				// Short Zone: [BaseLevel * (1 - MaxTierPct), BaseLevel]
-				lowerBound := l.LevelPrice * (1 - maxTierPct)
-				if price >= lowerBound && price <= l.LevelPrice {
+				if distance < 0.01 { // 1%
 					inStrictZone = true
 					break
 				}
 			}
-		}
 
-		if inStrictZone {
-			sentimentThreshold = 0.3
-			// log.Printf("SENTIMENT: Strict Zone for %s. Threshold: %f", symbol, sentimentThreshold)
-		}
+			if inStrictZone {
+				sentimentThreshold = 0.3
+				// log.Printf("SENTIMENT: Strict Zone for %s. Threshold: %f", symbol, sentimentThreshold)
+			}
 
-		// Check Exit Trigger
-		shouldClose := false
-		if pos.Side == domain.SideLong && sentiment < -sentimentThreshold {
-			log.Printf("SENTIMENT: Strong Sell Speed (%f < -%f). Closing LONG on %s.", sentiment, sentimentThreshold, symbol)
-			shouldClose = true
-		} else if pos.Side == domain.SideShort && sentiment > sentimentThreshold {
-			log.Printf("SENTIMENT: Strong Buy Speed (%f > %f). Closing SHORT on %s.", sentiment, sentimentThreshold, symbol)
-			shouldClose = true
-		}
+			// Check Exit Trigger
+			shouldClose := false
+			if pos.Side == domain.SideLong && sentiment < -sentimentThreshold {
+				log.Printf("SENTIMENT: Strong Sell Speed (%f < -%f). Closing LONG on %s.", sentiment, sentimentThreshold, symbol)
+				shouldClose = true
+			} else if pos.Side == domain.SideShort && sentiment > sentimentThreshold {
+				log.Printf("SENTIMENT: Strong Buy Speed (%f > %f). Closing SHORT on %s.", sentiment, sentimentThreshold, symbol)
+				shouldClose = true
+			}
 
-		if shouldClose {
-			if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
-				log.Printf("Failed to close position on sentiment: %v", err)
-			} else {
-				// Reset State for all levels of this symbol
-				for _, l := range relevantLevels {
-					s.engine.ResetState(l.ID)
+			if shouldClose {
+				if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
+					log.Printf("Failed to close position on sentiment: %v", err)
+				} else {
+					// Reset State for all levels of this symbol
+					for _, l := range relevantLevels {
+						s.engine.ResetState(l.ID)
+					}
+					// Log Trade
+					s.tradeRepo.SaveTrade(ctx, &domain.Order{
+						Exchange:  exchangeName,
+						Symbol:    symbol,
+						LevelID:   "sentiment-exit",
+						Side:      pos.Side,
+						Size:      0, // Marker
+						Price:     price,
+						CreatedAt: time.Now(),
+					})
+					return nil // Stop processing this tick
 				}
-				// Log Trade
-				s.tradeRepo.SaveTrade(ctx, &domain.Order{
-					Exchange:  exchangeName,
-					Symbol:    symbol,
-					LevelID:   "sentiment-exit",
-					Side:      pos.Side,
-					Size:      0, // Marker
-					Price:     price,
-					CreatedAt: time.Now(),
-				})
-				return nil // Stop processing this tick
 			}
 		}
 	}
@@ -387,6 +376,98 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 		}
 		if err := s.tradeRepo.SaveTrade(ctx, order); err != nil {
 			log.Printf("Failed to save trade: %v", err)
+		}
+	}
+}
+
+// CheckSafety iterates over all active levels and checks if the current position is safe.
+// Safety Condition:
+// - Long Position: Price must be >= LevelPrice
+// - Short Position: Price must be <= LevelPrice
+// If unsafe, it closes the position immediately.
+func (s *LevelService) CheckSafety(ctx context.Context) {
+	s.mu.RLock()
+	// Copy cache to avoid holding lock during IO
+	levelsMap := make(map[string][]*domain.Level)
+	for k, v := range s.levelsCache {
+		levelsMap[k] = v
+	}
+	s.mu.RUnlock()
+
+	for symbol, levels := range levelsMap {
+		if len(levels) == 0 {
+			continue
+		}
+
+		pos, err := s.exchange.GetPosition(ctx, symbol)
+		if err != nil {
+			log.Printf("SAFETY: Failed to get position for %s: %v", symbol, err)
+			continue
+		}
+
+		if pos.Size == 0 {
+			continue
+		}
+
+		// Find the level closest to the Entry Price
+		var relevantLevel *domain.Level
+		minDiff := 1e9 // Infinity
+		for _, l := range levels {
+			diff := pos.EntryPrice - l.LevelPrice
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff < minDiff {
+				minDiff = diff
+				relevantLevel = l
+			}
+		}
+
+		if relevantLevel == nil {
+			continue
+		}
+
+		// Check Safety against this relevant level
+		price := s.GetLatestPrice(symbol)
+		if price == 0 {
+			continue
+		}
+
+		shouldClose := false
+		if pos.Side == domain.SideLong {
+			// Long: Price should be > Level
+			// If Price < Level, we are losing and below base.
+			if price < relevantLevel.LevelPrice {
+				log.Printf("SAFETY: UNSAFE LONG on %s. Price %f < Level %f. Closing...", symbol, price, relevantLevel.LevelPrice)
+				shouldClose = true
+			}
+		} else if pos.Side == domain.SideShort {
+			// Short: Price should be < Level
+			// If Price > Level, we are losing and above base.
+			if price > relevantLevel.LevelPrice {
+				log.Printf("SAFETY: UNSAFE SHORT on %s. Price %f > Level %f. Closing...", symbol, price, relevantLevel.LevelPrice)
+				shouldClose = true
+			}
+		}
+
+		if shouldClose {
+			if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
+				log.Printf("SAFETY: Failed to close position for %s: %v", symbol, err)
+			} else {
+				log.Printf("SAFETY: Closed position for %s", symbol)
+				// Reset state
+				s.engine.ResetState(relevantLevel.ID)
+				// Log Trade
+				s.tradeRepo.SaveTrade(ctx, &domain.Order{
+					Exchange:  relevantLevel.Exchange,
+					Symbol:    symbol,
+					LevelID:   "safety-exit",
+					Side:      pos.Side,
+					Size:      0,
+					Price:     price,
+					CreatedAt: time.Now(),
+				})
+			}
 		}
 	}
 }

@@ -406,3 +406,104 @@ func TestLevelService_SentimentLogic(t *testing.T) {
 		t.Error("Expected ClosePosition to be called due to Bearish Sentiment")
 	}
 }
+
+func TestLevelService_DisableSpeedClose(t *testing.T) {
+	// Setup
+	level := &domain.Level{
+		ID:                "level-disable-speed",
+		Symbol:            "SOLUSDT",
+		Exchange:          "bybit",
+		LevelPrice:        20,
+		BaseSize:          1.0,
+		DisableSpeedClose: true, // ENABLED
+	}
+	tiers := &domain.SymbolTiers{
+		Tier1Pct: 0.005,
+		Tier2Pct: 0.010,
+		Tier3Pct: 0.015,
+	}
+
+	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
+	mockTradeRepo := &MockTradeRepo{}
+	mockEx := &MockExchangeForService{}
+
+	marketService := usecase.NewMarketService(mockEx)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
+	ctx := context.Background()
+	service.UpdateCache(ctx)
+
+	// Ensure MockExchange captured the callback
+	if mockEx.TradeCallback == nil {
+		t.Fatal("MarketService did not subscribe to trades")
+	}
+
+	// 1. Inject Bearish Sentiment (Strong Sell)
+	mockEx.TradeCallback("SOLUSDT", "Sell", 10000, 20)
+
+	// 2. Verify Sentiment is Bearish
+	sentiment, _ := marketService.GetTradeSentiment(ctx, "SOLUSDT")
+	if sentiment != -1.0 {
+		t.Fatalf("Expected Sentiment -1.0, got %f", sentiment)
+	}
+
+	// 3. Trigger Check (Price update)
+	// We have a Long Position on SOL (from Mock GetPosition default)
+	// Reset CloseCalled
+	mockEx.CloseCalled = false
+
+	service.ProcessTick(ctx, "bybit", "SOLUSDT", 20)
+
+	// 4. Verify ClosePosition was NOT called
+	if mockEx.CloseCalled {
+		t.Error("Expected ClosePosition to be SKIPPED due to DisableSpeedClose=true")
+	}
+}
+
+func TestLevelService_CheckSafety(t *testing.T) {
+	// Setup
+	level := &domain.Level{
+		ID:         "level-safety",
+		Symbol:     "BTCUSDT",
+		Exchange:   "bybit",
+		LevelPrice: 100, // Base Level
+		BaseSize:   0.1,
+	}
+	tiers := &domain.SymbolTiers{
+		Tier1Pct: 0.005,
+		Tier2Pct: 0.010,
+		Tier3Pct: 0.015,
+	}
+
+	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
+	mockTradeRepo := &MockTradeRepo{}
+	mockEx := &MockExchangeForService{} // Returns Long @ 100 by default
+
+	marketService := usecase.NewMarketService(mockEx)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
+	ctx := context.Background()
+	service.UpdateCache(ctx)
+
+	// 1. Safe Scenario
+	// Level 100. Position Long @ 100. Price 105.
+	// Should NOT Close.
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 105) // Update LastPrice
+	mockEx.CloseCalled = false
+
+	service.CheckSafety(ctx)
+
+	if mockEx.CloseCalled {
+		t.Error("Expected Safety Check to PASS (No Close) when Price > Level for Long")
+	}
+
+	// 2. Unsafe Scenario
+	// Level 100. Position Long @ 100. Price 95.
+	// Should Close.
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 95) // Update LastPrice
+	mockEx.CloseCalled = false
+
+	service.CheckSafety(ctx)
+
+	if !mockEx.CloseCalled {
+		t.Error("Expected Safety Check to FAIL (Close) when Price < Level for Long")
+	}
+}

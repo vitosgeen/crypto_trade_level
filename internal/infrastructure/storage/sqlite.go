@@ -40,6 +40,7 @@ func (s *SQLiteStore) initSchema() error {
 			cool_down_ms INTEGER NOT NULL,
 			stop_loss_at_base BOOLEAN NOT NULL DEFAULT 0,
 			stop_loss_mode TEXT NOT NULL DEFAULT 'exchange',
+			disable_speed_close BOOLEAN NOT NULL DEFAULT 0,
 			source TEXT,
 			created_at DATETIME NOT NULL
 		);`,
@@ -75,6 +76,7 @@ func (s *SQLiteStore) initSchema() error {
 	// We ignore the error if the column already exists
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN stop_loss_at_base BOOLEAN NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN stop_loss_mode TEXT NOT NULL DEFAULT 'exchange'`)
+	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN disable_speed_close BOOLEAN NOT NULL DEFAULT 0`)
 
 	return nil
 }
@@ -82,20 +84,20 @@ func (s *SQLiteStore) initSchema() error {
 // LevelRepository Implementation
 
 func (s *SQLiteStore) SaveLevel(ctx context.Context, level *domain.Level) error {
-	query := `INSERT INTO levels (id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, source, created_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO levels (id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, source, created_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, query,
 		level.ID, level.Exchange, level.Symbol, level.LevelPrice, level.BaseSize,
-		level.Leverage, level.MarginType, level.CoolDownMs, level.StopLossAtBase, level.StopLossMode, level.Source, level.CreatedAt)
+		level.Leverage, level.MarginType, level.CoolDownMs, level.StopLossAtBase, level.StopLossMode, level.DisableSpeedClose, level.Source, level.CreatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetLevel(ctx context.Context, id string) (*domain.Level, error) {
-	query := `SELECT id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, source, created_at FROM levels WHERE id = ?`
+	query := `SELECT id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, source, created_at FROM levels WHERE id = ?`
 	row := s.db.QueryRowContext(ctx, query, id)
 
 	var l domain.Level
-	err := row.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.Source, &l.CreatedAt)
+	err := row.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.Source, &l.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +105,7 @@ func (s *SQLiteStore) GetLevel(ctx context.Context, id string) (*domain.Level, e
 }
 
 func (s *SQLiteStore) ListLevels(ctx context.Context) ([]*domain.Level, error) {
-	query := `SELECT id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, source, created_at FROM levels`
+	query := `SELECT id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, source, created_at FROM levels`
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -113,7 +115,7 @@ func (s *SQLiteStore) ListLevels(ctx context.Context) ([]*domain.Level, error) {
 	var levels []*domain.Level
 	for rows.Next() {
 		var l domain.Level
-		if err := rows.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.Source, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.Source, &l.CreatedAt); err != nil {
 			return nil, err
 		}
 		levels = append(levels, &l)

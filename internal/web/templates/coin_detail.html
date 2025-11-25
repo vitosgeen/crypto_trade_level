@@ -150,93 +150,131 @@
 
         <div class="card">
             <h2 style="margin-bottom: 25px; border-bottom: 2px solid #007bff; padding-bottom: 10px;">⚡ Speed Bot
-                Controls</h2>
+                Controls</h3>
 
-            <form id="speed-bot-form">
-                <!-- Position Settings -->
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #495057;">📊 Position Settings</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                        <div>
-                            <label for="position-size"
-                                style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Position
-                                Size</label>
-                            <input type="number" id="position-size" name="position_size" step="0.001" min="0.001"
-                                placeholder="0.1"
-                                style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                <!-- Bot Status Card -->
+                <div id="bot-status-card"
+                    style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <div style="flex: 1; min-width: 200px;">
+                            <h3 style="margin: 0; font-size: 20px;">🤖 Speed Bot: <span
+                                    id="bot-running-status">Running</span></h3>
+                            <p id="bot-signal-text" style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">Waiting
+                                for signal...</p>
                         </div>
-                        <div>
-                            <label for="leverage"
-                                style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Leverage</label>
-                            <input type="number" id="leverage" name="leverage" min="1" max="100" value="1"
-                                style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
-                        </div>
-                        <div>
-                            <label for="margin-type"
-                                style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Margin
-                                Type</label>
-                            <select id="margin-type" name="margin_type"
-                                style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; background: white;">
-                                <option value="isolated">🔒 Isolated</option>
-                                <option value="cross">🌐 Cross</option>
-                            </select>
+                        <div id="bot-position-info"
+                            style="display: none; flex: 1; min-width: 300px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px;">
+                            <div
+                                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px;">
+                                <div>
+                                    <div style="font-size: 12px; opacity: 0.8;">Position</div>
+                                    <div style="font-size: 18px; font-weight: bold;" id="bot-position-side">LONG</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 12px; opacity: 0.8;">Size</div>
+                                    <div style="font-size: 18px; font-weight: bold;" id="bot-position-size">0.001</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 12px; opacity: 0.8;">Entry</div>
+                                    <div style="font-size: 18px; font-weight: bold;" id="bot-entry-price">$0.00</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 12px; opacity: 0.8;">P&L</div>
+                                    <div style="font-size: 18px; font-weight: bold;" id="bot-pnl">$0.00</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Speed Thresholds -->
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                    <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #495057;">🎯 Speed Thresholds</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                        <div>
-                            <label for="speed-open"
-                                style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">
-                                <span style="color: #28a745;">▲</span> Open Position
-                            </label>
-                            <input type="number" id="speed-open" name="speed_open" step="0.1" min="0" value="0"
-                                placeholder="0.0"
-                                style="width: 100%; padding: 10px; border: 2px solid #28a745; border-radius: 6px; font-size: 14px;">
-                            <small style="color: #6c757d; font-size: 12px;">Buy volume threshold</small>
-                        </div>
-                        <div>
-                            <label for="speed-close"
-                                style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">
-                                <span style="color: #dc3545;">▼</span> Close Position
-                            </label>
-                            <input type="number" id="speed-close" name="speed_close" step="0.1" min="0" value="0"
-                                placeholder="0.0"
-                                style="width: 100%; padding: 10px; border: 2px solid #dc3545; border-radius: 6px; font-size: 14px;">
-                            <small style="color: #6c757d; font-size: 12px;">Sell volume threshold</small>
-                        </div>
-                        <div>
-                            <label for="cooldown"
-                                style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">
-                                ⏱️ Cooldown
-                            </label>
-                            <input type="number" id="cooldown" name="cooldown" min="0" step="100" value="1000"
-                                placeholder="1000"
-                                style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
-                            <small style="color: #6c757d; font-size: 12px;">Milliseconds between trades</small>
+                <form id="speed-bot-form">
+                    <!-- Position Settings -->
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #495057;">📊 Position Settings</h3>
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div>
+                                <label for="position-size"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Position
+                                    Size</label>
+                                <input type="number" id="position-size" name="position_size" step="0.001" min="0.001"
+                                    placeholder="0.1"
+                                    style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                            </div>
+                            <div>
+                                <label for="leverage"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Leverage</label>
+                                <input type="number" id="leverage" name="leverage" min="1" max="100" value="1"
+                                    style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                            </div>
+                            <div>
+                                <label for="margin-type"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Margin
+                                    Type</label>
+                                <select id="margin-type" name="margin_type"
+                                    style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; background: white;">
+                                    <option value="isolated">🔒 Isolated</option>
+                                    <option value="cross">🌐 Cross</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Control Buttons -->
-                <div style="display: flex; gap: 15px; justify-content: center;">
-                    <button type="button" id="start-bot-btn"
-                        style="flex: 1; max-width: 250px; padding: 15px 30px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(40, 167, 69, 0.3); transition: all 0.3s;">
-                        <span style="font-size: 18px;">▶</span> Start Bot
-                    </button>
-                    <button type="button" id="stop-bot-btn"
-                        style="flex: 1; max-width: 250px; padding: 15px 30px; background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 53, 69, 0.3); transition: all 0.3s;">
-                        <span style="font-size: 18px;">■</span> Stop Bot
-                    </button>
-                </div>
-            </form>
+                    <!-- Speed Thresholds -->
+                    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #495057;">🎯 Speed Thresholds</h3>
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div>
+                                <label for="speed-open"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">
+                                    <span style="color: #28a745;">▲</span> Open Position
+                                </label>
+                                <input type="number" id="speed-open" name="speed_open" step="0.1" min="0" value="0"
+                                    placeholder="0.0"
+                                    style="width: 100%; padding: 10px; border: 2px solid #28a745; border-radius: 6px; font-size: 14px;">
+                                <small style="color: #6c757d; font-size: 12px;">Buy volume threshold</small>
+                            </div>
+                            <div>
+                                <label for="speed-close"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">
+                                    <span style="color: #dc3545;">▼</span> Close Position
+                                </label>
+                                <input type="number" id="speed-close" name="speed_close" step="0.1" min="0" value="0"
+                                    placeholder="0.0"
+                                    style="width: 100%; padding: 10px; border: 2px solid #dc3545; border-radius: 6px; font-size: 14px;">
+                                <small style="color: #6c757d; font-size: 12px;">Sell volume threshold</small>
+                            </div>
+                            <div>
+                                <label for="cooldown"
+                                    style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">
+                                    ⏱️ Cooldown
+                                </label>
+                                <input type="number" id="cooldown" name="cooldown" min="0" step="100" value="1000"
+                                    placeholder="1000"
+                                    style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                                <small style="color: #6c757d; font-size: 12px;">Milliseconds between trades</small>
+                            </div>
+                        </div>
+                    </div>
 
-            <div id="config-status"
-                style="margin-top: 20px; padding: 15px; border-radius: 8px; display: none; text-align: center; font-weight: 600;">
-            </div>
+                    <!-- Control Buttons -->
+                    <div style="display: flex; gap: 15px; justify-content: center;">
+                        <button type="button" id="start-bot-btn"
+                            style="flex: 1; max-width: 250px; padding: 15px 30px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(40, 167, 69, 0.3); transition: all 0.3s;">
+                            <span style="font-size: 18px;">▶</span> Start Bot
+                        </button>
+                        <button type="button" id="stop-bot-btn"
+                            style="flex: 1; max-width: 250px; padding: 15px 30px; background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 53, 69, 0.3); transition: all 0.3s;">
+                            <span style="font-size: 18px;">■</span> Stop Bot
+                        </button>
+                    </div>
+                </form>
+
+                <div id="config-status"
+                    style="margin-top: 20px; padding: 15px; border-radius: 8px; display: none; text-align: center; font-weight: 600;">
+                </div>
         </div>
 
         <div class="card">
@@ -578,28 +616,15 @@
         }
 
         // Speed Bot Configuration
-        function loadConfig() {
-            const config = JSON.parse(localStorage.getItem(`speedbot_${symbol}`) || '{}');
-            if (config.position_size) document.getElementById('position-size').value = config.position_size;
-            if (config.leverage) document.getElementById('leverage').value = config.leverage;
-            if (config.margin_type) document.getElementById('margin-type').value = config.margin_type;
-            if (config.cooldown !== undefined) document.getElementById('cooldown').value = config.cooldown;
-            if (config.speed_open !== undefined) document.getElementById('speed-open').value = config.speed_open;
-            if (config.speed_close !== undefined) document.getElementById('speed-close').value = config.speed_close;
+        let statusPollingInterval = null;
 
-            // Update button states
-            updateButtonStates(config.running || false);
-        }
-
-        function startBot() {
+        async function startBot() {
             const config = {
+                symbol: symbol,
                 position_size: parseFloat(document.getElementById('position-size').value),
                 leverage: parseInt(document.getElementById('leverage').value),
                 margin_type: document.getElementById('margin-type').value,
                 cooldown: parseInt(document.getElementById('cooldown').value),
-                speed_open: parseFloat(document.getElementById('speed-open').value),
-                speed_close: parseFloat(document.getElementById('speed-close').value),
-                running: true
             };
 
             // Validate
@@ -608,18 +633,89 @@
                 return;
             }
 
-            // Save to localStorage
-            localStorage.setItem(`speedbot_${symbol}`, JSON.stringify(config));
-            updateButtonStates(true);
-            showStatus('Speed Bot started!', 'success');
+            try {
+                const response = await fetch('/api/speedbot/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
+                updateButtonStates(true);
+                showStatus('Speed Bot started!', 'success');
+                startStatusPolling();
+            } catch (e) {
+                showStatus(`Error: ${e.message}`, 'error');
+            }
         }
 
-        function stopBot() {
-            const config = JSON.parse(localStorage.getItem(`speedbot_${symbol}`) || '{}');
-            config.running = false;
-            localStorage.setItem(`speedbot_${symbol}`, JSON.stringify(config));
-            updateButtonStates(false);
-            showStatus('Speed Bot stopped', 'info');
+        async function stopBot() {
+            try {
+                const response = await fetch(`/api/speedbot/stop?symbol=${symbol}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
+                updateButtonStates(false);
+                showStatus('Speed Bot stopped', 'info');
+                stopStatusPolling();
+            } catch (e) {
+                showStatus(`Error: ${e.message}`, 'error');
+            }
+        }
+
+        async function updateBotStatus() {
+            try {
+                const response = await fetch(`/api/speedbot/status?symbol=${symbol}`);
+                const status = await response.json();
+
+                const card = document.getElementById('bot-status-card');
+                const signalText = document.getElementById('bot-signal-text');
+                const positionInfo = document.getElementById('bot-position-info');
+
+                if (status.running) {
+                    card.style.display = 'block';
+                    signalText.textContent = status.signal || 'Scanning market...';
+
+                    // Show position info if active
+                    if (status.position && status.position.size > 0) {
+                        positionInfo.style.display = 'block';
+                        document.getElementById('bot-position-side').textContent = status.position.side;
+                        document.getElementById('bot-position-size').textContent = status.position.size.toFixed(4);
+                        document.getElementById('bot-entry-price').textContent = `$${status.position.entry_price.toFixed(2)}`;
+
+                        const pnl = status.position.unrealized_pnl || 0;
+                        const pnlEl = document.getElementById('bot-pnl');
+                        pnlEl.textContent = `$${pnl.toFixed(2)}`;
+                        pnlEl.style.color = pnl >= 0 ? '#4ade80' : '#f87171';
+                    } else {
+                        positionInfo.style.display = 'none';
+                    }
+                } else {
+                    card.style.display = 'none';
+                }
+            } catch (e) {
+                console.error('Failed to fetch bot status', e);
+            }
+        }
+
+        function startStatusPolling() {
+            updateBotStatus(); // Initial update
+            statusPollingInterval = setInterval(updateBotStatus, 2000); // Poll every 2 seconds
+        }
+
+        function stopStatusPolling() {
+            if (statusPollingInterval) {
+                clearInterval(statusPollingInterval);
+                statusPollingInterval = null;
+            }
+            document.getElementById('bot-status-card').style.display = 'none';
         }
 
         function updateButtonStates(running) {
@@ -671,11 +767,13 @@
         document.addEventListener('DOMContentLoaded', function () {
             initChart();
             updateMarketStats();
-            loadConfig();
 
             // Button handlers
             document.getElementById('start-bot-btn').addEventListener('click', startBot);
             document.getElementById('stop-bot-btn').addEventListener('click', stopBot);
+
+            // Check if bot is running and start polling
+            updateBotStatus();
 
             // Update chart every 2 seconds
             setInterval(updateChart, 2000);

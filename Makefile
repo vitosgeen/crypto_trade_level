@@ -39,6 +39,8 @@ stop:
 		echo "No bot.pid file found."; \
 	fi
 
+restart: stop start
+
 force-stop:
 	@echo "Force stopping all bot processes..."
 	@# Kill process holding the port first
