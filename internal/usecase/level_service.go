@@ -201,7 +201,8 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 				if distance < 0 {
 					distance = -distance
 				}
-				if distance < 0.01 { // 1%
+				const strictZoneThreshold = 0.01 // 1%
+				if distance < strictZoneThreshold {
 					inStrictZone = true
 					break
 				}

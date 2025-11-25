@@ -341,14 +341,46 @@ func (s *Server) handleCoinDetail(w http.ResponseWriter, r *http.Request) {
 // Speed Bot API Handlers
 
 func (s *Server) handleStartSpeedBot(w http.ResponseWriter, r *http.Request) {
-	var config usecase.SpeedBotConfig
-	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+	// Decode into a temporary struct to handle cooldown as integer ms
+	type SpeedBotConfigRequest struct {
+		Symbol       string  `json:"symbol"`
+		PositionSize float64 `json:"position_size"`
+		Leverage     int     `json:"leverage"`
+		MarginType   string  `json:"margin_type"`
+		CooldownMs   int64   `json:"cooldown"` // Read as integer ms
+	}
+
+	var req SpeedBotConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Convert cooldown from milliseconds to duration
-	config.Cooldown = time.Duration(config.Cooldown) * time.Millisecond
+	// Validate required fields
+	if req.Symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+	if req.PositionSize <= 0 {
+		http.Error(w, "PositionSize must be greater than 0", http.StatusBadRequest)
+		return
+	}
+	if req.Leverage <= 0 {
+		http.Error(w, "Leverage must be greater than 0", http.StatusBadRequest)
+		return
+	}
+	if req.MarginType == "" {
+		http.Error(w, "MarginType is required", http.StatusBadRequest)
+		return
+	}
+
+	config := usecase.SpeedBotConfig{
+		Symbol:       req.Symbol,
+		PositionSize: req.PositionSize,
+		Leverage:     req.Leverage,
+		MarginType:   req.MarginType,
+		Cooldown:     time.Duration(req.CooldownMs) * time.Millisecond,
+	}
 
 	if err := s.speedBotService.StartBot(r.Context(), config); err != nil {
 		s.logger.Error("Failed to start speed bot", zap.Error(err))

@@ -135,16 +135,42 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 
 		s.mu.Lock() // Re-acquire lock
 		if err == nil {
-			// Replace old trades with fresh ones
-			s.trades[symbol] = nil
-			for _, t := range recentTrades {
-				s.trades[symbol] = append(s.trades[symbol], Trade{
-					Symbol: t.Symbol,
-					Side:   t.Side,
-					Size:   t.Size,
-					Price:  t.Price,
-					Time:   time.UnixMilli(t.Time),
-				})
+			// Double-check if we still need to refresh (another goroutine might have done it)
+			if len(s.trades[symbol]) > 0 {
+				// Check timestamp of latest trade
+				lastTradeTime := s.trades[symbol][len(s.trades[symbol])-1].Time
+				if s.timeNow().Sub(lastTradeTime) < 60*time.Second {
+					// Already refreshed, proceed to calculation
+					// We need to break out of the update block, but we are inside if err == nil.
+					// We can just set err = nil and skip the update loop?
+					// Or better, wrap the update logic in an else or just use a flag.
+					// Let's just use a goto or restructure.
+					// Restructuring is cleaner.
+				} else {
+					// Replace old trades with fresh ones
+					s.trades[symbol] = nil
+					for _, t := range recentTrades {
+						s.trades[symbol] = append(s.trades[symbol], Trade{
+							Symbol: t.Symbol,
+							Side:   t.Side,
+							Size:   t.Size,
+							Price:  t.Price,
+							Time:   time.UnixMilli(t.Time),
+						})
+					}
+				}
+			} else {
+				// Replace old trades with fresh ones
+				s.trades[symbol] = nil
+				for _, t := range recentTrades {
+					s.trades[symbol] = append(s.trades[symbol], Trade{
+						Symbol: t.Symbol,
+						Side:   t.Side,
+						Size:   t.Size,
+						Price:  t.Price,
+						Time:   time.UnixMilli(t.Time),
+					})
+				}
 			}
 		}
 	}

@@ -34,6 +34,7 @@ type SpeedBot struct {
 	lastCloseTime time.Time
 	running       bool
 	stopChan      chan struct{}
+	cancel        context.CancelFunc
 	mu            sync.Mutex
 }
 
@@ -77,7 +78,10 @@ func (s *SpeedBotService) StartBot(ctx context.Context, config SpeedBotConfig) e
 
 	// Start bot loop with background context (not request context!)
 	// The request context expires after the HTTP response is sent
-	go bot.run(context.Background())
+	// Use a cancellable context derived from background
+	botCtx, cancel := context.WithCancel(context.Background())
+	bot.cancel = cancel
+	go bot.run(botCtx)
 
 	s.logger.Info("Speed bot started", zap.String("symbol", config.Symbol))
 	return nil
@@ -139,13 +143,18 @@ func (b *SpeedBot) stop() {
 
 	if b.running {
 		b.running = false
+		if b.cancel != nil {
+			b.cancel()
+		}
 		close(b.stopChan)
 	}
 }
 
 func (b *SpeedBot) evaluate(ctx context.Context) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+
+	// No lock needed for reading config as it is immutable after start
+	// b.mu.Lock()
+	// defer b.mu.Unlock()
 
 	// Get market stats
 	stats, err := b.marketService.GetMarketStats(ctx, b.config.Symbol)
@@ -254,11 +263,13 @@ func (b *SpeedBot) shouldClose(stats *MarketStats, currentSide domain.Side) bool
 
 func (b *SpeedBot) getStatus(ctx context.Context) (*BotStatus, error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
+	running := b.running
+	inCooldown := time.Since(b.lastCloseTime) < b.config.Cooldown
+	b.mu.Unlock()
 
 	status := &BotStatus{
-		Running:    b.running,
-		InCooldown: time.Since(b.lastCloseTime) < b.config.Cooldown,
+		Running:    running,
+		InCooldown: inCooldown,
 	}
 
 	// Get current position
