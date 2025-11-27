@@ -146,12 +146,14 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 
 // Enhanced MockExchange
 type MockExchangeForService struct {
-	BuyCalled     bool
-	SellCalled    bool
-	CloseCalled   bool
-	LastStopLoss  float64
-	CloseError    error
+	BuyCalled    bool
+	SellCalled   bool
+	CloseCalled  bool
+	LastStopLoss float64
+	CloseError   error
+
 	TradeCallback func(symbol string, side string, size float64, price float64)
+	Position      *domain.Position
 }
 
 func (m *MockExchangeForService) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
@@ -172,6 +174,9 @@ func (m *MockExchangeForService) ClosePosition(ctx context.Context, symbol strin
 	return m.CloseError
 }
 func (m *MockExchangeForService) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
+	if m.Position != nil {
+		return m.Position, nil
+	}
 	return &domain.Position{Symbol: symbol, Size: 0.1, Side: domain.SideLong, EntryPrice: 100}, nil // Default Long for Exit Test
 }
 func (m *MockExchangeForService) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
@@ -505,5 +510,76 @@ func TestLevelService_CheckSafety(t *testing.T) {
 
 	if !mockEx.CloseCalled {
 		t.Error("Expected Safety Check to FAIL (Close) when Price < Level for Long")
+	}
+}
+
+func TestLevelService_TakeProfit(t *testing.T) {
+	// Setup
+	level := &domain.Level{
+		ID:            "level-tp",
+		Symbol:        "BTCUSDT",
+		Exchange:      "bybit",
+		LevelPrice:    10000,
+		BaseSize:      0.1,
+		TakeProfitPct: 0.02, // 2%
+	}
+	tiers := &domain.SymbolTiers{
+		Tier1Pct: 0.005,
+		Tier2Pct: 0.010,
+		Tier3Pct: 0.015,
+	}
+
+	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
+	mockTradeRepo := &MockTradeRepo{}
+	mockEx := &MockExchangeForService{}
+
+	marketService := usecase.NewMarketService(mockEx)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
+	ctx := context.Background()
+	service.UpdateCache(ctx)
+
+	// 1. Long Position
+	// Entry 10000. TP 2% -> 10200.
+	mockEx.Position = &domain.Position{
+		Symbol:     "BTCUSDT",
+		Side:       domain.SideLong,
+		Size:       0.1,
+		EntryPrice: 10000,
+	}
+
+	// Price 10100 (Below TP)
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10100)
+	if mockEx.CloseCalled {
+		t.Error("Expected NO Close when Price < TP")
+	}
+
+	// Price 10200 (Hit TP)
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10200)
+	if !mockEx.CloseCalled {
+		t.Error("Expected Close when Price >= TP")
+	}
+
+	// Reset
+	mockEx.CloseCalled = false
+
+	// 2. Short Position
+	// Entry 10000. TP 2% -> 9800.
+	mockEx.Position = &domain.Position{
+		Symbol:     "BTCUSDT",
+		Side:       domain.SideShort,
+		Size:       0.1,
+		EntryPrice: 10000,
+	}
+
+	// Price 9900 (Above TP)
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 9900)
+	if mockEx.CloseCalled {
+		t.Error("Expected NO Close when Price > TP (Short)")
+	}
+
+	// Price 9800 (Hit TP)
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 9800)
+	if !mockEx.CloseCalled {
+		t.Error("Expected Close when Price <= TP (Short)")
 	}
 }

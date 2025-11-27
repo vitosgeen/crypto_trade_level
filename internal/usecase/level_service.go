@@ -190,10 +190,65 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		}
 	}
 
-	if !speedCloseDisabled {
-		// Check if we have an open position
-		pos, err := s.exchange.GetPosition(ctx, symbol)
-		if err == nil && pos.Size > 0 {
+	// Check Position for Exit Logic (TP and Sentiment)
+	pos, err := s.exchange.GetPosition(ctx, symbol)
+	if err == nil && pos.Size > 0 {
+		// --- TAKE PROFIT LOGIC ---
+		// Find relevant level (closest to entry)
+		var tpLevel *domain.Level
+		minDiff := 1e9
+		for _, l := range relevantLevels {
+			diff := pos.EntryPrice - l.LevelPrice
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff < minDiff {
+				minDiff = diff
+				tpLevel = l
+			}
+		}
+
+		if tpLevel != nil && tpLevel.TakeProfitPct > 0 {
+			shouldTP := false
+			if pos.Side == domain.SideLong {
+				tpPrice := tpLevel.LevelPrice * (1 + tpLevel.TakeProfitPct)
+				if price >= tpPrice {
+					log.Printf("TAKE PROFIT: LONG on %s. Price %f >= TP %f. Closing...", symbol, price, tpPrice)
+					shouldTP = true
+				}
+			} else if pos.Side == domain.SideShort {
+				tpPrice := tpLevel.LevelPrice * (1 - tpLevel.TakeProfitPct)
+				if price <= tpPrice {
+					log.Printf("TAKE PROFIT: SHORT on %s. Price %f <= TP %f. Closing...", symbol, price, tpPrice)
+					shouldTP = true
+				}
+			}
+
+			if shouldTP {
+				if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
+					log.Printf("Failed to close position on TP: %v", err)
+				} else {
+					// Reset State
+					for _, l := range relevantLevels {
+						s.engine.ResetState(l.ID)
+					}
+					// Log Trade
+					s.tradeRepo.SaveTrade(ctx, &domain.Order{
+						Exchange:  exchangeName,
+						Symbol:    symbol,
+						LevelID:   "take-profit",
+						Side:      pos.Side,
+						Size:      0,
+						Price:     price,
+						CreatedAt: time.Now(),
+					})
+					return nil // Stop processing
+				}
+			}
+		}
+
+		// --- SENTIMENT-BASED EXIT LOGIC ---
+		if !speedCloseDisabled {
 			// Determine if in strict zone (within 1% of any level)
 			inStrictZone := false
 			for _, l := range relevantLevels {
@@ -210,7 +265,6 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 
 			if inStrictZone {
 				sentimentThreshold = 0.3
-				// log.Printf("SENTIMENT: Strict Zone for %s. Threshold: %f", symbol, sentimentThreshold)
 			}
 
 			// Check Exit Trigger

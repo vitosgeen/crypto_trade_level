@@ -13,8 +13,9 @@ type Level struct {
 	MarginType        string // "isolated" or "cross"
 	CoolDownMs        int64
 	StopLossAtBase    bool
-	StopLossMode      string // "exchange" or "app"
-	DisableSpeedClose bool   // Disable sentiment/speed-based position closing
+	StopLossMode      string  // "exchange" or "app"
+	DisableSpeedClose bool    // Disable sentiment/speed-based position closing
+	TakeProfitPct     float64 // Take profit percentage (e.g. 0.02 for 2%)
 	Source            string
 	CreatedAt         time.Time
 }
