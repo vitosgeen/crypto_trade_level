@@ -32,10 +32,33 @@ func (m *MockExchange) GetCurrentPrice(ctx context.Context, symbol string) (floa
 }
 func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
 	m.BuyCalled = true
+	// Simulate Position Update
+	if m.Position == nil {
+		m.Position = &domain.Position{
+			Symbol:     symbol,
+			Side:       domain.SideLong,
+			Size:       size,
+			EntryPrice: m.Price, // Use current price as entry
+		}
+	} else {
+		// Add to position (simplified average entry price logic omitted for mock unless needed)
+		m.Position.Size += size
+	}
 	return nil
 }
 func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
 	m.SellCalled = true
+	// Simulate Position Update
+	if m.Position == nil {
+		m.Position = &domain.Position{
+			Symbol:     symbol,
+			Side:       domain.SideShort,
+			Size:       size,
+			EntryPrice: m.Price,
+		}
+	} else {
+		m.Position.Size += size
+	}
 	return nil
 }
 func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error {

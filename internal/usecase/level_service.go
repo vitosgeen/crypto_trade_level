@@ -145,9 +145,9 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	tiers := s.tiersCache[symbol]
 	s.mu.Unlock()
 
-	if !ok {
-		return nil
-	}
+	// if !ok {
+	// 	return nil
+	// }
 
 	if len(levels) == 0 {
 		return nil
@@ -193,9 +193,13 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	// Check Position for Exit Logic (TP and Sentiment)
 	pos, err := s.exchange.GetPosition(ctx, symbol)
 	if err == nil && pos.Size > 0 {
-		// --- TAKE PROFIT LOGIC ---
+		// --- STOP LOSS AT BASE LOGIC ---
 		// Find relevant level (closest to entry)
-		var tpLevel *domain.Level
+		// We already found tpLevel, let's reuse or find again if needed.
+		// Actually, we need to check ALL relevant levels or just the closest?
+		// Usually just the one we are trading against.
+		// Let's reuse tpLevel logic but rename to relevantLevel for clarity.
+		var activeLevel *domain.Level
 		minDiff := 1e9
 		for _, l := range relevantLevels {
 			diff := pos.EntryPrice - l.LevelPrice
@@ -204,45 +208,106 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 			}
 			if diff < minDiff {
 				minDiff = diff
-				tpLevel = l
+				activeLevel = l
 			}
 		}
 
-		if tpLevel != nil && tpLevel.TakeProfitPct > 0 {
-			shouldTP := false
-			if pos.Side == domain.SideLong {
-				tpPrice := tpLevel.LevelPrice * (1 + tpLevel.TakeProfitPct)
-				if price >= tpPrice {
-					log.Printf("TAKE PROFIT: LONG on %s. Price %f >= TP %f. Closing...", symbol, price, tpPrice)
-					shouldTP = true
+		if activeLevel != nil {
+			// Check TP
+			if activeLevel.TakeProfitPct > 0 {
+				shouldTP := false
+				if pos.Side == domain.SideLong {
+					tpPrice := activeLevel.LevelPrice * (1 + activeLevel.TakeProfitPct)
+					if price >= tpPrice {
+						log.Printf("TAKE PROFIT: LONG on %s. Price %f >= TP %f. Closing...", symbol, price, tpPrice)
+						shouldTP = true
+					}
+				} else if pos.Side == domain.SideShort {
+					tpPrice := activeLevel.LevelPrice * (1 - activeLevel.TakeProfitPct)
+					if price <= tpPrice {
+						log.Printf("TAKE PROFIT: SHORT on %s. Price %f <= TP %f. Closing...", symbol, price, tpPrice)
+						shouldTP = true
+					}
 				}
-			} else if pos.Side == domain.SideShort {
-				tpPrice := tpLevel.LevelPrice * (1 - tpLevel.TakeProfitPct)
-				if price <= tpPrice {
-					log.Printf("TAKE PROFIT: SHORT on %s. Price %f <= TP %f. Closing...", symbol, price, tpPrice)
-					shouldTP = true
+
+				if shouldTP {
+					if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
+						log.Printf("Failed to close position on TP: %v", err)
+					} else {
+						for _, l := range relevantLevels {
+							s.engine.ResetState(l.ID)
+						}
+						s.tradeRepo.SaveTrade(ctx, &domain.Order{
+							Exchange:  exchangeName,
+							Symbol:    symbol,
+							LevelID:   "take-profit",
+							Side:      pos.Side,
+							Size:      0,
+							Price:     price,
+							CreatedAt: time.Now(),
+						})
+						return nil
+					}
 				}
 			}
 
-			if shouldTP {
-				if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
-					log.Printf("Failed to close position on TP: %v", err)
-				} else {
-					// Reset State
+			// Check Stop Loss at Base
+			if activeLevel.StopLossAtBase {
+				shouldSL := false
+				if pos.Side == domain.SideLong {
+					// Long: Close if Price <= LevelPrice
+					if price <= activeLevel.LevelPrice {
+						log.Printf("STOP LOSS (Base): LONG on %s. Price %f <= Level %f. Closing...", symbol, price, activeLevel.LevelPrice)
+						shouldSL = true
+					}
+				} else if pos.Side == domain.SideShort {
+					// Short: Close if Price >= LevelPrice
+					if price >= activeLevel.LevelPrice {
+						log.Printf("STOP LOSS (Base): SHORT on %s. Price %f >= Level %f. Closing...", symbol, price, activeLevel.LevelPrice)
+						shouldSL = true
+					}
+				}
+
+				if shouldSL {
+					// Calculate PnL before closing
+					var realizedPnL float64
+					if pos.Side == domain.SideLong {
+						realizedPnL = (price - pos.EntryPrice) * pos.Size
+					} else {
+						realizedPnL = (pos.EntryPrice - price) * pos.Size
+					}
+					log.Printf("AUDIT: SL (Base) Closing. Symbol: %s. Entry: %f. Exit: %f. PnL: %f", symbol, pos.EntryPrice, price, realizedPnL)
+
+					// Attempt to close position
+					err := s.exchange.ClosePosition(ctx, symbol)
+					if err != nil {
+						log.Printf("Failed to close position on SL: %v", err)
+						// Proceed to reset state anyway to avoid getting stuck
+					}
+
 					for _, l := range relevantLevels {
+						// Update State with Win/Loss
+						s.engine.UpdateState(l.ID, func(ls *LevelState) {
+							if realizedPnL > 0 {
+								ls.ConsecutiveWins++
+								log.Printf("AUDIT: Win recorded for Level %s. Consecutive Wins: %d", l.ID, ls.ConsecutiveWins)
+							} else {
+								ls.ConsecutiveWins = 0
+								log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", l.ID)
+							}
+						})
 						s.engine.ResetState(l.ID)
 					}
-					// Log Trade
 					s.tradeRepo.SaveTrade(ctx, &domain.Order{
 						Exchange:  exchangeName,
 						Symbol:    symbol,
-						LevelID:   "take-profit",
+						LevelID:   "stop-loss-base",
 						Side:      pos.Side,
 						Size:      0,
 						Price:     price,
 						CreatedAt: time.Now(),
 					})
-					return nil // Stop processing
+					return nil
 				}
 			}
 		}
@@ -299,6 +364,10 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 				}
 			}
 		}
+	}
+
+	if !ok {
+		return nil
 	}
 
 	for _, level := range relevantLevels {
@@ -429,6 +498,7 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 			Price:     currPrice,
 			CreatedAt: time.Now(),
 		}
+
 		if err := s.tradeRepo.SaveTrade(ctx, order); err != nil {
 			log.Printf("Failed to save trade: %v", err)
 		}

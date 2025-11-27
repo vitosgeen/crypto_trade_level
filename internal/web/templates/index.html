@@ -1,74 +1,244 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
-    <title>Level Trader Bot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Level Trader Bot - Dashboard</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: sans-serif;
-            padding: 20px;
-            background: #f0f2f5;
+        :root {
+            --bg-color: #0a0b1e;
+            --text-color: #e0e0e0;
+            --text-muted: #a0a0a0;
+            --accent-color: #00ff88;
+            --accent-hover: #00cc6a;
+            --secondary-color: #7000ff;
+            --card-bg: #151632;
+            --nav-bg: rgba(10, 11, 30, 0.95);
+            --border-color: rgba(255, 255, 255, 0.05);
+            --input-bg: #0f1025;
+            --success: #28a745;
+            --danger: #dc3545;
+            --warning: #ffc107;
+            --info: #007bff;
         }
 
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding-top: 80px;
+            /* Space for fixed nav */
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            padding: 1rem 2rem;
+            background: var(--nav-bg);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            text-decoration: none;
+            letter-spacing: 1px;
+        }
+
+        .nav-links a {
+            color: var(--text-color);
+            text-decoration: none;
+            margin-left: 2rem;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent-color);
+        }
+
+        .cta-button {
+            background: linear-gradient(45deg, var(--accent-color), var(--secondary-color));
+            color: #000;
+            padding: 0.5rem 1.2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
+        }
+
+        /* Layout */
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+
+        @media (min-width: 1200px) {
+            .container {
+                grid-template-columns: 350px 1fr;
+            }
+
+            .full-width {
+                grid-column: 1 / -1;
+            }
         }
 
         .card {
-            background: white;
+            background: var(--card-bg);
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: var(--text-color);
+            margin-bottom: 15px;
+        }
+
+        h2 {
+            font-size: 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
             margin-bottom: 20px;
+            color: var(--accent-color);
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        th,
-        td {
-            text-align: left;
-            padding: 10px;
-            border-bottom: 1px solid #eee;
-        }
-
+        /* Forms */
         input,
         select {
-            padding: 8px;
-            margin-right: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-color);
+            font-size: 0.9rem;
         }
 
-        button {
-            padding: 8px 16px;
-            background: #007bff;
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        button[type="submit"] {
+            width: 100%;
+            background: var(--info);
             color: white;
+            padding: 10px;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
         }
 
-        button:hover {
+        button[type="submit"]:hover {
             background: #0056b3;
         }
 
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .checkbox-wrapper input {
+            width: auto;
+            margin: 0;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px;
+            color: var(--text-muted);
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-color);
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
         .delete-btn {
-            background: #dc3545;
+            background: rgba(220, 53, 69, 0.2);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
         }
 
         .delete-btn:hover {
-            background: #a71d2a;
+            background: var(--danger);
+            color: white;
         }
 
-        /* Gauge Styles */
+        /* Gauges */
+        .gauges-grid {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
         .gauge-container {
             display: flex;
             flex-direction: column;
@@ -77,8 +247,8 @@
 
         .gauge {
             position: relative;
-            width: 200px;
-            height: 100px;
+            width: 160px;
+            height: 80px;
             overflow: hidden;
         }
 
@@ -86,11 +256,10 @@
             position: absolute;
             top: 0;
             left: 0;
-            width: 200px;
-            height: 200px;
+            width: 160px;
+            height: 160px;
             border-radius: 50%;
-            background: conic-gradient(from 270deg, #dc3545 0deg 90deg, #28a745 90deg 180deg, transparent 180deg);
-            /* Mask bottom half */
+            background: conic-gradient(from 270deg, var(--danger) 0deg 90deg, var(--success) 90deg 180deg, transparent 180deg);
             clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
         }
 
@@ -99,11 +268,10 @@
             bottom: 0;
             left: 50%;
             width: 4px;
-            height: 90px;
-            background: #333;
+            height: 70px;
+            background: var(--text-color);
             transform-origin: bottom center;
             transform: rotate(-90deg);
-            /* -90=Left, 90=Right */
             transition: transform 0.5s cubic-bezier(0.4, 0.0, 0.2, 1);
             z-index: 2;
             border-radius: 2px;
@@ -111,11 +279,11 @@
 
         .gauge-center {
             position: absolute;
-            bottom: -10px;
+            bottom: -8px;
             left: 50%;
-            width: 20px;
-            height: 20px;
-            background: #333;
+            width: 16px;
+            height: 16px;
+            background: var(--text-color);
             border-radius: 50%;
             transform: translateX(-50%);
             z-index: 3;
@@ -124,213 +292,286 @@
         .gauge-labels {
             display: flex;
             justify-content: space-between;
-            width: 200px;
+            width: 160px;
             margin-top: 5px;
-            font-weight: bold;
+            font-size: 0.8rem;
+            font-weight: 600;
         }
 
         .gauge-value {
             margin-top: 5px;
-            font-family: monospace;
-            font-size: 1.1em;
+            font-family: 'Inter', monospace;
+            font-size: 1rem;
+            color: var(--text-color);
+        }
+
+        /* Chart */
+        #levelChart {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        /* Utilities */
+        .text-success {
+            color: var(--success);
+        }
+
+        .text-danger {
+            color: var(--danger);
+        }
+
+        .text-muted {
+            color: var(--text-muted);
+        }
+
+        .bg-success-subtle {
+            background-color: rgba(40, 167, 69, 0.2);
+        }
+
+        .bg-danger-subtle {
+            background-color: rgba(220, 53, 69, 0.2);
+        }
+
+        .flex-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .flex-1 {
+            flex: 1;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <h1>Level Trader Bot</h1>
 
+    <nav>
+        <a href="/" class="logo">CRYPTOBOT</a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/speed-bot">Speed Bot</a>
+            <a href="/dashboard" style="color: var(--accent-color);">Dashboard</a>
+        </div>
+        <a href="/dashboard" class="cta-button">Launch App</a>
+    </nav>
+
+    <div class="container">
+        <!-- Left Column: Controls -->
         <div class="card">
             <h2>Add Level</h2>
             <form hx-post="/levels" hx-target="#levels-table">
-                <input type="text" name="exchange" placeholder="Exchange (bybit)" value="bybit" required>
-                <input type="text" name="symbol" placeholder="Symbol (BTCUSDT)" required>
+                <div class="flex-row">
+                    <input type="text" name="exchange" placeholder="Exchange" value="bybit" required class="flex-1">
+                    <input type="text" name="symbol" placeholder="Symbol (BTCUSDT)" required class="flex-1">
+                </div>
+
                 <input type="number" step="0.000001" name="level_price" id="input-level-price" placeholder="Level Price"
                     required>
-                <input type="number" step="0.001" name="base_size" placeholder="Base Size" required>
-                <input type="number" name="leverage" placeholder="Leverage" value="10" required>
+
+                <div class="flex-row">
+                    <input type="number" step="0.001" name="base_size" placeholder="Base Size" required class="flex-1">
+                    <input type="number" name="leverage" placeholder="Lev" value="10" required style="width: 80px;">
+                </div>
+
                 <select name="margin_type">
                     <option value="isolated">Isolated</option>
                     <option value="cross">Cross</option>
                 </select>
-                <input type="number" name="cool_down_ms" placeholder="Cooldown (ms)" value="5000" required>
-                <input type="number" step="0.1" name="take_profit_pct" placeholder="Take Profit % (2.0)" value="2.0"
-                    required>
-                <div style="margin-top: 10px; display: flex; align-items: flex-start; gap: 10px;">
-                    <label style="margin-top: 5px;">Tiers (%):</label>
-                    <div>
-                        <input type="number" step="0.01" name="tier1" id="input-tier1" placeholder="Tier 1 (0.5)"
-                            value="0.5" required style="width: 80px;">
-                        <div id="tip-tier1" style="font-size: 0.8em; color: #666; margin-top: 2px;"></div>
-                    </div>
-                    <div>
-                        <input type="number" step="0.01" name="tier2" id="input-tier2" placeholder="Tier 2 (0.3)"
-                            value="0.3" required style="width: 80px;">
-                        <div id="tip-tier2" style="font-size: 0.8em; color: #666; margin-top: 2px;"></div>
-                    </div>
-                    <div>
-                        <input type="number" step="0.01" name="tier3" id="input-tier3" placeholder="Tier 3 (0.15)"
-                            value="0.15" required style="width: 80px;">
-                        <div id="tip-tier3" style="font-size: 0.8em; color: #666; margin-top: 2px;"></div>
-                    </div>
-                </div>
-                <div class="mb-4">
-                    <label class="flex items-center space-x-2">
-                        <input type="checkbox" name="stop_loss_at_base" class="form-checkbox text-blue-500">
-                        <span class="text-gray-300">Stop Loss at Base</span>
-                    </label>
+
+                <div class="flex-row">
+                    <input type="number" name="cool_down_ms" placeholder="Cooldown (ms)" value="5000" required
+                        class="flex-1">
+                    <input type="number" step="0.1" name="take_profit_pct" placeholder="TP %" value="2.0" required
+                        class="flex-1">
                 </div>
 
-                <div class="mb-4">
-                    <label class="block text-gray-400 text-sm mb-2">Stop Loss Mode</label>
-                    <select name="stop_loss_mode"
-                        class="w-full bg-gray-700 text-white p-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none">
-                        <option value="exchange">Exchange (Order)</option>
-                        <option value="app">App (Programmatic)</option>
-                    </select>
+                <label>Tiers (%):</label>
+                <div class="flex-row" style="align-items: flex-start;">
+                    <div class="flex-1">
+                        <input type="number" step="0.01" name="tier1" id="input-tier1" placeholder="T1 (0.5)"
+                            value="0.5" required>
+                        <div id="tip-tier1" style="font-size: 0.75em; margin-top: -8px; margin-bottom: 8px;"></div>
+                    </div>
+                    <div class="flex-1">
+                        <input type="number" step="0.01" name="tier2" id="input-tier2" placeholder="T2 (0.3)"
+                            value="0.3" required>
+                        <div id="tip-tier2" style="font-size: 0.75em; margin-top: -8px; margin-bottom: 8px;"></div>
+                    </div>
+                    <div class="flex-1">
+                        <input type="number" step="0.01" name="tier3" id="input-tier3" placeholder="T3 (0.15)"
+                            value="0.15" required>
+                        <div id="tip-tier3" style="font-size: 0.75em; margin-top: -8px; margin-bottom: 8px;"></div>
+                    </div>
                 </div>
 
-                <div class="flex items-center space-x-2">
-                    <input type="checkbox" name="disable_speed_close" class="form-checkbox text-blue-500">
-                    <label class="text-sm text-gray-300">Disable Speed-Based Close</label>
+                <div class="checkbox-wrapper">
+                    <input type="checkbox" name="stop_loss_at_base" id="sl-base">
+                    <label for="sl-base" style="margin:0; cursor:pointer;">Stop Loss at Base</label>
+                </div>
+
+                <label>Stop Loss Mode</label>
+                <select name="stop_loss_mode">
+                    <option value="exchange">Exchange (Order)</option>
+                    <option value="app">App (Programmatic)</option>
+                </select>
+
+                <div class="checkbox-wrapper">
+                    <input type="checkbox" name="disable_speed_close" id="disable-speed">
+                    <label for="disable-speed" style="margin:0; cursor:pointer;">Disable Speed-Based Close</label>
                 </div>
 
                 <button type="submit" style="margin-top: 10px;">Add Level</button>
             </form>
         </div>
 
-        <div class="card">
-            <span style="color: #000;">━</span> Base Level |
-            <span style="color: #666;">- - -</span> Tiers
-        </div>
-    </div>
+        <!-- Right Column: Market Stats & Chart -->
+        <div style="display: flex; flex-direction: column; gap: 20px;">
 
-    <div class="card">
-        <h2>Market Speed & Depth</h2>
-        <div style="display: flex; justify-content: space-around; flex-wrap: wrap; gap: 20px;">
-            <!-- Gauge 1: Trade Speed -->
-            <div class="gauge-container">
-                <h3 style="text-align: center; margin-bottom: 10px;">Trade Volume (60s)</h3>
-                <div class="gauge">
-                    <div class="gauge-bg"></div>
-                    <div class="gauge-needle" id="speed-needle"></div>
-                    <div class="gauge-center"></div>
-                </div>
-                <div class="gauge-labels">
-                    <span style="color: #dc3545;">Sell</span>
-                    <span style="color: #28a745;">Buy</span>
-                </div>
-                <div class="gauge-value" id="speed-value">0 / 0</div>
-            </div>
-
-            <!-- Gauge 2: Order Book Depth -->
-            <div class="gauge-container">
-                <h3 style="text-align: center; margin-bottom: 10px;">Order Book Depth</h3>
-                <div class="gauge">
-                    <div class="gauge-bg"></div>
-                    <div class="gauge-needle" id="depth-needle"></div>
-                    <div class="gauge-center"></div>
-                </div>
-                <div class="gauge-labels">
-                    <span style="color: #dc3545;">Ask</span>
-                    <span style="color: #28a745;">Bid</span>
-                </div>
-                <div class="gauge-value" id="depth-value">0 / 0</div>
-            </div>
-
-            <!-- Gauge 3: Divergence -->
-            <div class="gauge-container">
-                <h3 style="text-align: center; margin-bottom: 10px;">Sentiment Divergence</h3>
-                <div class="gauge">
-                    <div class="gauge-bg"
-                        style="background: conic-gradient(from 270deg, #ffc107 0deg 90deg, #007bff 90deg 180deg, transparent 180deg);">
+            <!-- Market Stats -->
+            <div class="card">
+                <h2>Market Speed & Depth</h2>
+                <div class="gauges-grid">
+                    <!-- Gauge 1: Trade Speed -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Trade Volume (60s)
+                        </h3>
+                        <div class="gauge">
+                            <div class="gauge-bg"></div>
+                            <div class="gauge-needle" id="speed-needle"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge-labels">
+                            <span class="text-danger">Sell</span>
+                            <span class="text-success">Buy</span>
+                        </div>
+                        <div class="gauge-value" id="speed-value">0 / 0</div>
                     </div>
-                    <div class="gauge-needle" id="div-needle"></div>
-                    <div class="gauge-center"></div>
+
+                    <!-- Gauge 2: Order Book Depth -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Order Book Depth
+                        </h3>
+                        <div class="gauge">
+                            <div class="gauge-bg"></div>
+                            <div class="gauge-needle" id="depth-needle"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge-labels">
+                            <span class="text-danger">Ask</span>
+                            <span class="text-success">Bid</span>
+                        </div>
+                        <div class="gauge-value" id="depth-value">0 / 0</div>
+                    </div>
+
+                    <!-- Gauge 3: Divergence -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Sentiment
+                            Divergence</h3>
+                        <div class="gauge">
+                            <div class="gauge-bg"
+                                style="background: conic-gradient(from 270deg, var(--warning) 0deg 90deg, var(--info) 90deg 180deg, transparent 180deg);">
+                            </div>
+                            <div class="gauge-needle" id="div-needle"></div>
+                            <div class="gauge-center"></div>
+                        </div>
+                        <div class="gauge-labels">
+                            <span style="color: var(--warning);">Bearish</span>
+                            <span style="color: var(--info);">Bullish</span>
+                        </div>
+                        <div class="gauge-value" id="div-value">0.00</div>
+                    </div>
                 </div>
-                <div class="gauge-labels">
-                    <span style="color: #ffc107;">Bearish Div</span>
-                    <span style="color: #007bff;">Bullish Div</span>
+            </div>
+
+            <!-- Chart Section -->
+            <div class="card" id="chart-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 style="margin: 0; border: none;">Price Chart</h2>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label for="level-selector" style="margin: 0;">Level:</label>
+                        <select id="level-selector" onchange="changeLevel()"
+                            style="width: auto; margin: 0; padding: 5px;">
+                            <option value="" selected disabled>Select a level...</option>
+                            {{range .Levels}}
+                            <option value="{{.Symbol}}-{{.LevelPrice}}">{{.Exchange}} - {{.Symbol}} - {{.LevelPrice}}
+                            </option>
+                            {{end}}
+                        </select>
+                    </div>
                 </div>
-                <div class="gauge-value" id="div-value">0.00</div>
+                <div id="levelChart" style="width: 100%; height: 400px;"></div>
+                <div style="margin-top: 10px; font-size: 0.85rem; color: var(--text-muted); text-align: center;">
+                    <span style="color: #000; background: #fff; padding: 0 4px; border-radius: 2px;">━</span> Base Level
+                    |
+                    <span style="color: var(--text-muted); border-bottom: 1px dashed var(--text-muted);">---</span>
+                    Tiers
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Full Width: Active Levels -->
+        <div class="card full-width">
+            <h2>Active Levels</h2>
+            <div id="levels-table" hx-get="/levels" hx-trigger="every 2s">
+                {{ template "levels_table" .Levels }}
             </div>
         </div>
-    </div>
 
-    <div class="card">
-        <h2>Select Level</h2>
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <label for="level-selector">Level:</label>
-            <select id="level-selector" onchange="changeLevel()"
-                style="padding: 8px; border-radius: 4px; border: 1px solid #ddd; min-width: 200px;">
-                <option value="" selected disabled>Select a level...</option>
-                {{range .Levels}}
-                <option value="{{.Symbol}}-{{.LevelPrice}}">{{.Exchange}} - {{.Symbol}} - {{.LevelPrice}}</option>
-                {{end}}
-            </select>
+        <!-- Full Width: Active Positions -->
+        <div class="card full-width">
+            <h2>Active Positions</h2>
+            <div id="positions-table" hx-get="/positions" hx-trigger="load, every 5s">
+                <!-- Loaded via HTMX -->
+            </div>
         </div>
-    </div>
 
-    <div class="card" id="chart-card">
-        <h2>Price Chart</h2>
-        <div id="levelChart" style="width: 100%; height: 400px;"></div>
-    </div>
-
-    <div class="card">
-        <h2>Active Levels</h2>
-        <div id="levels-table" hx-get="/levels" hx-trigger="every 2s">
-            {{ template "levels_table" .Levels }}
+        <!-- Full Width: Recent Trades -->
+        <div class="card full-width">
+            <h2>Recent Trades</h2>
+            <div hx-get="/trades" hx-trigger="every 5s">
+                <!-- Initial load or empty -->
+            </div>
         </div>
     </div>
 
     <script>
         let chart = null;
         let candleSeries = null;
-        let liquiditySeries = null; // New series for background lines
+        let liquiditySeries = null;
         let selectedLevelId = null;
         let currentPriceLines = [];
 
         function initChart() {
-            console.log("Initializing Chart...");
             const chartContainer = document.getElementById('levelChart');
-            if (!chartContainer) {
-                console.error("Chart container not found!");
-                return;
-            }
+            if (!chartContainer) return;
 
-            // Clear previous content
             chartContainer.innerHTML = '';
 
-            if (typeof LightweightCharts === 'undefined') {
-                console.error("LightweightCharts library not loaded!");
-                return;
-            }
+            if (typeof LightweightCharts === 'undefined') return;
 
             try {
                 chart = LightweightCharts.createChart(chartContainer, {
-                    width: chartContainer.clientWidth || 800, // Fallback width
+                    width: chartContainer.clientWidth,
                     height: 400,
                     layout: {
-                        background: { type: 'solid', color: 'white' },
-                        textColor: 'black',
+                        background: { type: 'solid', color: '#151632' },
+                        textColor: '#e0e0e0',
                     },
                     grid: {
-                        vertLines: { color: '#eee' },
-                        horzLines: { color: '#eee' },
+                        vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                        horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
                     },
                     rightPriceScale: {
-                        borderColor: '#d1d4dc',
+                        borderColor: 'rgba(255, 255, 255, 0.1)',
                     },
                     timeScale: {
-                        borderColor: '#d1d4dc',
+                        borderColor: 'rgba(255, 255, 255, 0.1)',
                         timeVisible: true,
                         secondsVisible: false,
                     },
                 });
 
-                // 1. Create Liquidity Series FIRST (so it renders behind)
-                // We use a LineSeries but make it invisible
                 liquiditySeries = chart.addLineSeries({
                     color: 'transparent',
                     lineWidth: 0,
@@ -344,13 +585,12 @@
                     },
                 });
 
-                // 2. Create Candle Series SECOND (so it renders on top)
                 candleSeries = chart.addCandlestickSeries({
-                    upColor: '#26a69a',
-                    downColor: '#ef5350',
+                    upColor: '#00ff88',
+                    downColor: '#dc3545',
                     borderVisible: false,
-                    wickUpColor: '#26a69a',
-                    wickDownColor: '#ef5350',
+                    wickUpColor: '#00ff88',
+                    wickDownColor: '#dc3545',
                     priceFormat: {
                         type: 'price',
                         precision: 6,
@@ -358,9 +598,6 @@
                     },
                 });
 
-                console.log("Chart initialized. Series:", candleSeries);
-
-                // Handle resize
                 window.addEventListener('resize', () => {
                     if (chart && chartContainer) {
                         chart.applyOptions({ width: chartContainer.clientWidth });
@@ -368,9 +605,6 @@
                 });
             } catch (e) {
                 console.error("Error initializing chart:", e);
-                chart = null;
-                candleSeries = null;
-                liquiditySeries = null;
             }
         }
 
@@ -383,46 +617,30 @@
         async function updateChart() {
             if (!chart) {
                 initChart();
-                if (!chart) {
-                    console.warn("Chart init failed, skipping update");
-                    return;
-                }
+                if (!chart) return;
             }
 
             if (!candleSeries || !liquiditySeries) {
-                console.error("Series is null, re-initializing...");
-                // Try to recover?
                 initChart();
                 if (!candleSeries) return;
             }
 
-            // Get data from the levels table to find selected level details
             const table = document.querySelector('#levels-table table');
             if (!table) return;
 
             const rows = table.querySelectorAll('tbody tr');
-            if (rows.length === 0) return;
 
-            // Populate selector logic (same as before)
+            // Selector logic
             const selector = document.getElementById('level-selector');
-            if (!selector) {
-                if (typeof updateChartRetryCount !== 'undefined' && updateChartRetryCount < 5) {
-                    updateChartRetryCount++;
-                    console.warn(`Level selector not found, retrying (${updateChartRetryCount}/5)...`);
-                    setTimeout(updateChart, 500);
-                } else {
-                    console.error("Level selector not found after retries");
-                }
-                return;
-            }
-            if (typeof updateChartRetryCount !== 'undefined') updateChartRetryCount = 0;
+            if (!selector) return;
 
             const currentOptions = Array.from(selector.options).map(o => o.value);
-            const availableLevels = [];
             const activeIds = [];
+            const availableLevels = [];
 
             rows.forEach((row) => {
                 const cells = row.querySelectorAll('td');
+                if (cells.length < 3) return;
                 const symbol = cells[1].textContent.trim();
                 const levelPrice = parseFloat(cells[2].textContent);
                 const id = `${symbol}-${levelPrice}`;
@@ -437,23 +655,21 @@
                 }
             });
 
-            // Cleanup options
             Array.from(selector.options).forEach(option => {
                 if (option.value && !activeIds.includes(option.value)) {
                     selector.removeChild(option);
                 }
             });
 
-            // Default selection
             if ((!selectedLevelId || !activeIds.includes(selectedLevelId)) && availableLevels.length > 0) {
                 selectedLevelId = availableLevels[0].id;
                 selector.value = selectedLevelId;
             }
 
-            // Find target row
             let targetRow = null;
             rows.forEach(row => {
                 const cells = row.querySelectorAll('td');
+                if (cells.length < 3) return;
                 const symbol = cells[1].textContent.trim();
                 const levelPrice = parseFloat(cells[2].textContent);
                 const id = `${symbol}-${levelPrice}`;
@@ -468,15 +684,11 @@
             const symbol = cells[1].textContent.trim();
             const levelPrice = parseFloat(cells[2].textContent);
 
-            // Fetch Candles
             try {
                 const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`);
                 const candles = await response.json();
                 if (candles && candles.length > 0) {
-                    // Ensure candles are sorted by time (ascending)
                     candles.sort((a, b) => a.time - b.time);
-
-                    // Deduplicate candles by time
                     const uniqueCandles = [];
                     const seenTimes = new Set();
                     for (const c of candles) {
@@ -485,20 +697,13 @@
                             uniqueCandles.push(c);
                         }
                     }
-
                     candleSeries.setData(uniqueCandles);
-
-                    // Sync liquiditySeries with same data (using close price)
-                    // This ensures it shares the same scale and range
                     const lineData = uniqueCandles.map(c => ({ time: c.time, value: c.close }));
                     liquiditySeries.setData(lineData);
 
-                    // Only auto-scale if symbol changed or first load
                     if (window.lastChartSymbol !== symbol) {
                         chart.timeScale().fitContent();
-                        chart.priceScale('right').applyOptions({
-                            autoScale: true,
-                        });
+                        chart.priceScale('right').applyOptions({ autoScale: true });
                         window.lastChartSymbol = symbol;
                     }
                 }
@@ -506,21 +711,7 @@
                 console.error("Failed to fetch candles", e);
             }
 
-            // Update Price Lines (Level and Tiers)
-            // We will track active lines to avoid clearing/re-adding if not needed.
-            // However, LightweightCharts doesn't support updating PriceLine properties easily.
-            // But for Liquidity lines, we can diff the data.
-            // For Level/Tiers, they change rarely (only if user edits).
-
-            // Strategy:
-            // 1. Level/Tiers: Clear and re-add ONLY if level details changed (price/tiers).
-            // 2. Liquidity: Fetch, diff with current. If different, clear and re-add ONLY liquidity lines.
-
-            // For simplicity in this MVP, let's separate the arrays.
-            // currentLevelLines (Base + Tiers)
-            // currentLiquidityLines (Order Book)
-
-            // Parse Tiers from the nested table in cell 4
+            // Tiers
             const tierCell = cells[4];
             const nestedTable = tierCell.querySelector('table');
             let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
@@ -528,13 +719,11 @@
             if (nestedTable) {
                 const nestedRows = nestedTable.querySelectorAll('tr');
                 if (nestedRows.length >= 2) {
-                    // Long Tiers (Row 0)
                     const longCells = nestedRows[0].querySelectorAll('td');
                     longTier1 = parseFloat(longCells[1].textContent);
                     longTier2 = parseFloat(longCells[2].textContent);
                     longTier3 = parseFloat(longCells[3].textContent);
 
-                    // Short Tiers (Row 1)
                     const shortCells = nestedRows[1].querySelectorAll('td');
                     shortTier1 = parseFloat(shortCells[1].textContent);
                     shortTier2 = parseFloat(shortCells[2].textContent);
@@ -542,9 +731,7 @@
                 }
             }
 
-            // Fallback if parsing fails (shouldn't happen if table structure is correct)
             if (!longTier1) {
-                console.warn("Failed to parse tiers from table, using defaults");
                 longTier1 = levelPrice * (1 + 0.005);
                 longTier2 = levelPrice * (1 + 0.003);
                 longTier3 = levelPrice * (1 + 0.0015);
@@ -553,7 +740,6 @@
                 shortTier3 = levelPrice * (1 - 0.0015);
             }
 
-            // Check if level details changed
             const levelDetails = {
                 price: levelPrice,
                 long: [longTier1, longTier2, longTier3],
@@ -562,23 +748,20 @@
             const levelDetailsJson = JSON.stringify(levelDetails);
 
             if (window.lastLevelDetails !== levelDetailsJson) {
-                // Clear old Level/Tier lines
                 if (window.currentLevelLines) {
                     window.currentLevelLines.forEach(line => candleSeries.removePriceLine(line));
                 }
                 window.currentLevelLines = [];
 
-                // Add Base Level
                 window.currentLevelLines.push(candleSeries.createPriceLine({
                     price: levelPrice,
-                    color: '#000000',
+                    color: '#ffffff',
                     lineWidth: 2,
                     lineStyle: LightweightCharts.LineStyle.Solid,
                     axisLabelVisible: true,
-                    title: 'Base Level',
+                    title: 'Base',
                 }));
 
-                // Add Tier Lines
                 const addTierLine = (price, label, color) => {
                     window.currentLevelLines.push(candleSeries.createPriceLine({
                         price: price,
@@ -590,9 +773,9 @@
                     }));
                 };
 
-                addTierLine(longTier1, 'L-T1', '#28a745');
-                addTierLine(longTier2, 'L-T2', '#28a745');
-                addTierLine(longTier3, 'L-T3', '#28a745');
+                addTierLine(longTier1, 'L-T1', '#00ff88');
+                addTierLine(longTier2, 'L-T2', '#00ff88');
+                addTierLine(longTier3, 'L-T3', '#00ff88');
 
                 addTierLine(shortTier1, 'S-T1', '#dc3545');
                 addTierLine(shortTier2, 'S-T2', '#dc3545');
@@ -601,44 +784,37 @@
                 window.lastLevelDetails = levelDetailsJson;
             }
 
-            // Fetch and Render Liquidity Clusters
+            // Liquidity
             try {
                 const liqResp = await fetch(`/api/liquidity?symbol=${symbol}`);
                 const clusters = await liqResp.json();
                 const clustersJson = JSON.stringify(clusters);
 
                 if (window.lastLiquidityJson !== clustersJson) {
-                    // Clear old Liquidity lines from LIQUIDITY SERIES
                     if (window.currentLiquidityLines) {
                         window.currentLiquidityLines.forEach(line => liquiditySeries.removePriceLine(line));
                     }
                     window.currentLiquidityLines = [];
 
                     if (clusters && clusters.length > 0) {
-                        // Find max volume for scaling
                         const maxVol = Math.max(...clusters.map(c => c.volume));
-
                         clusters.forEach(c => {
-                            // Intensity Clamping: clamp(size/max_size, 0..1)
                             let opacity = 0.0;
                             if (maxVol > 0) {
                                 opacity = c.volume / maxVol;
                                 if (opacity > 1.0) opacity = 1.0;
                                 if (opacity < 0.0) opacity = 0.0;
                             }
-
-                            // Ensure minimum visibility for anything returned by backend
                             if (opacity < 0.1) opacity = 0.1;
 
                             const color = c.type === 'bid'
-                                ? `rgba(0, 255, 0, ${opacity.toFixed(2)})`
-                                : `rgba(255, 105, 180, ${opacity.toFixed(2)})`; // Pink for Asks
+                                ? `rgba(0, 255, 136, ${opacity.toFixed(2)})`
+                                : `rgba(220, 53, 69, ${opacity.toFixed(2)})`;
 
-                            // Add to LIQUIDITY SERIES (Background)
                             window.currentLiquidityLines.push(liquiditySeries.createPriceLine({
                                 price: c.price,
                                 color: color,
-                                lineWidth: 2, // Fixed width
+                                lineWidth: 2,
                                 lineStyle: LightweightCharts.LineStyle.Solid,
                                 axisLabelVisible: false,
                                 title: '',
@@ -652,23 +828,17 @@
             }
         }
 
-        // Update chart when levels table updates
         document.body.addEventListener('htmx:afterSwap', function (event) {
             if (event.detail.target.id === 'levels-table') {
                 updateChart();
             }
         });
 
-        // Initial render
         document.addEventListener('DOMContentLoaded', function () {
             setTimeout(updateChart, 500);
+            setTimeout(updateTierTips, 100);
         });
 
-        // Retry mechanism for updateChart if selector is missing
-        let updateChartRetryCount = 0;
-
-
-        // Tier Tips Logic
         function updateTierTips() {
             const priceInput = document.getElementById('input-level-price');
             if (!priceInput) return;
@@ -690,32 +860,21 @@
                 const longPrice = price * (1 + pct / 100);
                 const shortPrice = price * (1 - pct / 100);
 
-                tip.innerHTML = `<span style="color:#28a745" title="Long (Above)">L:${longPrice.toFixed(6)}</span><br><span style="color:#dc3545" title="Short (Below)">S:${shortPrice.toFixed(6)}</span>`;
+                tip.innerHTML = `<span class="text-success" title="Long">L:${longPrice.toFixed(6)}</span> | <span class="text-danger" title="Short">S:${shortPrice.toFixed(6)}</span>`;
             });
         }
 
-        // Add listeners
         const priceInput = document.getElementById('input-level-price');
-        if (priceInput) {
-            priceInput.addEventListener('input', updateTierTips);
-            // Also update on load if value exists
-            updateTierTips();
-        }
+        if (priceInput) priceInput.addEventListener('input', updateTierTips);
         ['tier1', 'tier2', 'tier3'].forEach(tier => {
             const input = document.getElementById(`input-${tier}`);
             if (input) input.addEventListener('input', updateTierTips);
         });
 
-        // Call once on init
-        setTimeout(updateTierTips, 100);
-
-        // Market Stats Logic
         async function updateMarketStats() {
             const selector = document.getElementById('level-selector');
-            // Use selected level symbol or default
             let symbol = "BTCUSDT";
             if (selector && selector.value) {
-                // value is symbol-price, extract symbol
                 const lastHyphen = selector.value.lastIndexOf('-');
                 if (lastHyphen > 0) symbol = selector.value.substring(0, lastHyphen);
             }
@@ -724,58 +883,28 @@
                 const resp = await fetch(`/api/market-stats?symbol=${symbol}`);
                 const stats = await resp.json();
 
-                // Update Speed Gauge
-                // Ratio: Buy / (Buy + Sell). 0 = Full Sell (-90deg), 1 = Full Buy (90deg)
                 const totalSpeed = stats.speed_buy + stats.speed_sell;
                 let speedRatio = 0.5;
-                if (totalSpeed > 0) {
-                    speedRatio = stats.speed_buy / totalSpeed;
-                }
-                // Map 0..1 to -90..90
+                if (totalSpeed > 0) speedRatio = stats.speed_buy / totalSpeed;
                 const speedDeg = (speedRatio * 180) - 90;
                 const speedNeedle = document.getElementById('speed-needle');
                 if (speedNeedle) speedNeedle.style.transform = `rotate(${speedDeg}deg)`;
-
                 const speedValue = document.getElementById('speed-value');
                 if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(2)} / ${stats.speed_buy.toFixed(2)}`;
 
-
-                // Update Depth Gauge
-                // Ratio: Bid / (Bid + Ask). 0 = Full Ask (-90deg), 1 = Full Bid (90deg)
-                // Wait, usually Left=Ask (Sell pressure), Right=Bid (Buy pressure).
-                // If Bid is high, price goes UP (Right). If Ask is high, price goes DOWN (Left).
-                // So Bid Ratio -> Right.
                 const totalDepth = stats.depth_bid + stats.depth_ask;
                 let depthRatio = 0.5;
-                if (totalDepth > 0) {
-                    depthRatio = stats.depth_bid / totalDepth;
-                }
+                if (totalDepth > 0) depthRatio = stats.depth_bid / totalDepth;
                 const depthDeg = (depthRatio * 180) - 90;
                 const depthNeedle = document.getElementById('depth-needle');
                 if (depthNeedle) depthNeedle.style.transform = `rotate(${depthDeg}deg)`;
-
                 const depthValue = document.getElementById('depth-value');
                 if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)} / ${stats.depth_bid.toFixed(2)}`;
 
-                // Update Divergence Gauge
-                // Divergence = TradeSentiment - DepthSentiment
-                // TradeSentiment = speedRatio (0..1, 1=Buy)
-                // DepthSentiment = depthRatio (0..1, 1=Bid/Buy)
-                // Div = speedRatio - depthRatio
-                // Range: -1 (Max Sell Speed, Max Buy Depth) to +1 (Max Buy Speed, Max Sell Depth)
-                // Wait, if Speed=Buy(1) and Depth=Buy(1), Div=0 (Agreement).
-                // If Speed=Buy(1) and Depth=Sell(0), Div=1 (Bullish Divergence? Price moving up despite sell wall?)
-                // Let's define:
-                // Bullish Div: High Buy Speed vs Low Buy Depth (Sell Wall eating) -> Speed(1) - Depth(0) = 1
-                // Bearish Div: High Sell Speed vs Low Sell Depth (Buy Wall eating) -> Speed(0) - Depth(1) = -1
-
                 const divergence = speedRatio - depthRatio;
-                // Map -1..1 to -90..90
                 const divDeg = divergence * 90;
-
                 const divNeedle = document.getElementById('div-needle');
                 if (divNeedle) divNeedle.style.transform = `rotate(${divDeg}deg)`;
-
                 const divValue = document.getElementById('div-value');
                 if (divValue) divValue.textContent = divergence.toFixed(2);
 
@@ -784,31 +913,30 @@
             }
         }
 
-        // Update stats every 1s
         setInterval(updateMarketStats, 1000);
-        // Also update when level changes
         const levelSelector = document.getElementById('level-selector');
-        if (levelSelector) {
-            levelSelector.addEventListener('change', updateMarketStats);
+        if (levelSelector) levelSelector.addEventListener('change', updateMarketStats);
+
+        function selectLevel(levelId) {
+            const selector = document.getElementById('level-selector');
+            if (selector) {
+                // Check if option exists, if not, it might be added by updateChart logic later, 
+                // but usually it should be there if it's in the table.
+                // However, the selector options are populated by updateChart based on the table rows.
+                // So we can just set the value.
+                selector.value = levelId;
+                // Trigger change event manually
+                const event = new Event('change');
+                selector.dispatchEvent(event);
+
+                // Scroll chart into view
+                const chartCard = document.getElementById('chart-card');
+                if (chartCard) {
+                    chartCard.scrollIntoView({ behavior: 'smooth' });
+                }
+            }
         }
     </script>
-
-
-
-    <div class="card">
-        <h2>Active Positions</h2>
-        <div id="positions-table" hx-get="/positions" hx-trigger="load, every 5s">
-            <!-- Loaded via HTMX -->
-        </div>
-    </div>
-
-    <div class="card">
-        <h2>Recent Trades</h2>
-        <div hx-get="/trades" hx-trigger="every 5s">
-            <!-- Initial load or empty -->
-        </div>
-    </div>
-    </div>
 </body>
 
 </html>
@@ -833,37 +961,42 @@
         {{ range . }}
         <tr>
             <td>{{ .Exchange }}</td>
-            <td><strong>{{ .Symbol }}</strong></td>
+            <td onclick="selectLevel('{{.Symbol}}-{{.LevelPrice}}')" style="cursor: pointer; transition: color 0.2s;"
+                title="Click to view on chart">
+                <strong style="color: var(--accent-color);">{{ .Symbol }}</strong>
+            </td>
             <td>{{ printf "%.6f" .LevelPrice }}</td>
             <td>{{ printf "%.6f" .CurrentPrice }}</td>
             <td>
-                <table style="width: 100%; font-size: 0.9em;">
-                    <tr>
-                        <td style="font-weight: bold; color: #28a745; padding: 2px;">LONG</td>
-                        <td style="background-color: #d4edda; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
-                            .LongTiers 0) }}</td>
-                        <td style="background-color: #d4edda; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
-                            .LongTiers 1) }}</td>
-                        <td style="background-color: #d4edda; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
-                            .LongTiers 2) }}</td>
-                    </tr>
-                    <tr>
-                        <td style="font-weight: bold; color: #dc3545; padding: 2px;">SHORT</td>
-                        <td style="background-color: #f8d7da; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
-                            .ShortTiers 0) }}</td>
-                        <td style="background-color: #f8d7da; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
-                            .ShortTiers 1) }}</td>
-                        <td style="background-color: #f8d7da; font-weight: bold; padding: 2px;">{{ printf "%.6f" (index
-                            .ShortTiers 2) }}</td>
-                    </tr>
-                </table>
+                <div style="font-size: 0.85em; display: grid; grid-template-columns: auto 1fr; gap: 5px;">
+                    <span class="text-success" style="font-weight: bold;">LONG</span>
+                    <div style="display: flex; gap: 5px;">
+                        <span class="bg-success-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
+                            (index .LongTiers 0) }}</span>
+                        <span class="bg-success-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
+                            (index .LongTiers 1) }}</span>
+                        <span class="bg-success-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
+                            (index .LongTiers 2) }}</span>
+                    </div>
+                    <span class="text-danger" style="font-weight: bold;">SHORT</span>
+                    <div style="display: flex; gap: 5px;">
+                        <span class="bg-danger-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
+                            (index .ShortTiers 0) }}</span>
+                        <span class="bg-danger-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
+                            (index .ShortTiers 1) }}</span>
+                        <span class="bg-danger-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
+                            (index .ShortTiers 2) }}</span>
+                    </div>
+                </div>
             </td>
             <td>{{ .BaseSize }}</td>
             <td>{{ .Leverage }}x</td>
-            <td style="font-weight: bold; color: {{ if eq .MarginType " isolated" }}#007bff{{ else }}#6c757d{{ end }};">
+            <td style="color: {{ if eq .MarginType " isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
+                font-weight: bold;">
                 {{ .MarginType }}</td>
             <td>{{ .CoolDownMs }}ms</td>
-            <td>{{ if .StopLossAtBase }}<span style="color: red; font-weight: bold;">YES</span>{{ else }}NO{{ end }}
+            <td>{{ if .StopLossAtBase }}<span class="text-danger" style="font-weight: bold;">YES</span>{{ else }}NO{{
+                end }}
             </td>
             <td>
                 <button class="delete-btn" hx-delete="/levels/{{ .ID }}" hx-target="#levels-table">Delete</button>
@@ -888,9 +1021,10 @@
     <tbody>
         {{ range . }}
         <tr>
-            <td>{{ .CreatedAt.Format "15:04:05" }}</td>
+            <td class="text-muted">{{ .CreatedAt.Format "15:04:05" }}</td>
             <td>{{ .Symbol }}</td>
-            <td>{{ .Side }}</td>
+            <td style="color: {{ if eq .Side " Buy" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
+                bold;">{{ .Side }}</td>
             <td>{{ .Size }}</td>
             <td>{{ printf "%.6f" .Price }}</td>
         </tr>
@@ -917,21 +1051,25 @@
         {{ if . }}
         {{ range . }}
         <tr>
-            <td>{{ .Symbol }}</td>
-            <td>{{ .Side }}</td>
+            <td><strong style="color: var(--accent-color);">{{ .Symbol }}</strong></td>
+            <td style="color: {{ if eq .Side " Buy" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
+                bold;">{{ .Side }}</td>
             <td>{{ .Size }}</td>
             <td>{{ printf "%.6f" .EntryPrice }}</td>
             <td>{{ printf "%.6f" .CurrentPrice }}</td>
-            <td style="color: {{ if gt .UnrealizedPnL 0.0 }}green{{ else }}red{{ end }};">{{ printf "%.6f"
-                .UnrealizedPnL }}</td>
+            <td
+                style="color: {{ if gt .UnrealizedPnL 0.0 }}var(--success){{ else }}var(--danger){{ end }}; font-weight: bold;">
+                {{ printf "%.6f" .UnrealizedPnL }}</td>
             <td>{{ .Leverage }}</td>
-            <td style="font-weight: bold; color: {{ if eq .MarginType " isolated" }}#007bff{{ else }}#6c757d{{ end }};">
+            <td style="color: {{ if eq .MarginType " isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
+                font-weight: bold;">
                 {{ .MarginType }}</td>
         </tr>
         {{ end }}
         {{ else }}
         <tr>
-            <td colspan="8">No active positions</td>
+            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 20px;">No active positions
+            </td>
         </tr>
         {{ end }}
     </tbody>

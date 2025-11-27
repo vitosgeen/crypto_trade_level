@@ -112,32 +112,34 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 	service.UpdateCache(ctx)
 
 	// 1. Trigger Open (Tier 1)
-	// Prev: 10000 (Init), Curr: 10060
-	// We need to feed ticks.
-	// First tick to init lastPrice
-	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10000)
+	// Long Entry: Price falls from above Tier 1 (10050)
+	// Init at 10100
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10100)
 
-	// Second tick to trigger Open
+	// Second tick to trigger Open (Cross 10050 Downward)
 	mockEx.BuyCalled = false
-	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10060)
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10040)
 
 	if !mockEx.BuyCalled {
 		t.Fatal("Expected Buy on Tier 1")
 	}
 
 	// 2. Trigger Close (Base Level)
-	// Prev: 10060, Curr: 10000
+	// Price falls to 10000
 	// Mock ClosePosition to FAIL
 	mockEx.CloseError = errors.New("position not found")
 
 	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10000)
 
 	// 3. Trigger Open Again (Re-entry)
-	// Prev: 10000, Curr: 10060
+	// Must reset price above Tier 1 first to trigger "Cross Down"
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10100)
+
 	mockEx.BuyCalled = false // Reset
 	mockEx.CloseError = nil
 
-	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10060)
+	// Trigger Open (Cross 10050 Downward)
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10040)
 
 	if !mockEx.BuyCalled {
 		t.Fatal("Expected Buy (Re-entry) after failed Close. State should have been reset.")
@@ -233,10 +235,9 @@ func TestLevelService_StopLossMode(t *testing.T) {
 
 	// Case 1: Exchange Mode
 	// Trigger Long Entry at Tier 1 (10050)
-	// Price crosses 10050 upwards -> Buy
-	// SL should be LevelPrice (10000)
-	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10000) // At Level
-	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10060) // Cross Tier 1
+	// Price falls from above Tier 1
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10100) // Above
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10040) // Cross 10050 Downward
 
 	if !mockEx.BuyCalled {
 		t.Error("Expected Buy for Exchange Mode")
@@ -251,10 +252,9 @@ func TestLevelService_StopLossMode(t *testing.T) {
 
 	// Case 2: App Mode
 	// Trigger Long Entry at Tier 1 (2010)
-	// Price crosses 2010 upwards -> Buy
-	// SL should be 0
-	service.ProcessTick(ctx, "bybit", "ETHUSDT", 2000) // At Level
-	service.ProcessTick(ctx, "bybit", "ETHUSDT", 2012) // Cross Tier 1
+	// Price falls from above Tier 1
+	service.ProcessTick(ctx, "bybit", "ETHUSDT", 2020) // Above
+	service.ProcessTick(ctx, "bybit", "ETHUSDT", 2005) // Cross 2010 Downward
 
 	if !mockEx.BuyCalled {
 		t.Error("Expected Buy for App Mode")
@@ -581,5 +581,52 @@ func TestLevelService_TakeProfit(t *testing.T) {
 	service.ProcessTick(ctx, "bybit", "BTCUSDT", 9800)
 	if !mockEx.CloseCalled {
 		t.Error("Expected Close when Price <= TP (Short)")
+	}
+}
+
+func TestLevelService_StopLossAtBase_Restart(t *testing.T) {
+	// Setup
+	level := &domain.Level{
+		ID:             "level-sl-restart",
+		Symbol:         "BTCUSDT",
+		Exchange:       "bybit",
+		LevelPrice:     10000,
+		BaseSize:       0.1,
+		StopLossAtBase: true,
+	}
+	tiers := &domain.SymbolTiers{
+		Tier1Pct: 0.005,
+		Tier2Pct: 0.010,
+		Tier3Pct: 0.015,
+	}
+
+	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
+	mockTradeRepo := &MockTradeRepo{}
+	mockEx := &MockExchangeForService{}
+
+	marketService := usecase.NewMarketService(mockEx)
+	// New Service -> Fresh Engine State (ActiveSide is empty)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
+	ctx := context.Background()
+	service.UpdateCache(ctx)
+
+	// 1. Simulate Existing LONG Position (from before restart)
+	mockEx.Position = &domain.Position{
+		Symbol:     "BTCUSDT",
+		Side:       domain.SideLong,
+		Size:       0.1,
+		EntryPrice: 10050, // Entered above level
+	}
+
+	// 2. Price Drops BELOW Level (9990)
+	// DetermineSide will return SideShort.
+	// Engine has no ActiveSide.
+	// Engine will treat this as Short Zone check.
+	// Short SL check: Price >= Level? 9990 >= 10000 -> False.
+	// BUG: It won't close.
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 9990)
+
+	if !mockEx.CloseCalled {
+		t.Error("Expected Close when Price < Level for Long Position (Restart Scenario)")
 	}
 }
