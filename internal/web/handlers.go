@@ -141,6 +141,12 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	tier2 = tier2 / 100
 	tier3 = tier3 / 100
 
+	takeProfitPct, _ := strconv.ParseFloat(r.FormValue("take_profit_pct"), 64)
+	if takeProfitPct == 0 {
+		takeProfitPct = 2.0 // Default
+	}
+	takeProfitPct = takeProfitPct / 100
+
 	exchange := r.FormValue("exchange")
 	symbol := r.FormValue("symbol")
 	marginType := r.FormValue("margin_type")
@@ -163,6 +169,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		StopLossAtBase:    stopLossAtBase,
 		StopLossMode:      stopLossMode,
 		DisableSpeedClose: disableSpeedClose,
+		TakeProfitPct:     takeProfitPct,
 		Source:            "manual-web",
 		CreatedAt:         time.Now(),
 	}

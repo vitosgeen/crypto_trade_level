@@ -86,6 +86,8 @@ func (h *TestScenarioHelper) SetupLevel(price float64, stopLossAtBase bool) {
 }
 
 func (h *TestScenarioHelper) Tick(price float64) {
+	time.Sleep(time.Millisecond) // Ensure unique timestamps
+	h.mockEx.Price = price       // Update mock exchange price
 	if err := h.svc.ProcessTick(h.ctx, h.exchange, h.symbol, price); err != nil {
 		h.t.Fatalf("ProcessTick failed: %v", err)
 	}
@@ -105,9 +107,6 @@ func (h *TestScenarioHelper) AssertLastTrade(side domain.Side, size float64) {
 	trades, err := h.store.ListTrades(h.ctx, 100)
 	if err != nil {
 		h.t.Fatalf("Failed to list trades: %v", err)
-	}
-	if len(trades) == 0 {
-		h.t.Fatal("No trades found")
 	}
 	last := trades[0] // ListTrades returns DESC order
 	if last.Side != side {
@@ -313,6 +312,7 @@ func TestScenario_C4_CloseShort_Reopen_ReverseDown(t *testing.T) {
 	h.Tick(10000) // Close
 	h.AssertTradeCount(2)
 
+	h.Tick(9900) // Reset below T1
 	h.Tick(9960) // Reverse Down -> Cross T1 again -> Open
 	h.AssertTradeCount(3)
 	h.AssertLastTrade(domain.SideShort, 0.1)
@@ -465,6 +465,7 @@ func TestScenario_F4_CloseLong_Reopen_ReverseUp(t *testing.T) {
 	h.Tick(10000) // Close
 	h.AssertTradeCount(2)
 
+	h.Tick(10100) // Reset above T1
 	h.Tick(10040) // Reverse Up -> Cross T1 again -> Open
 	h.AssertTradeCount(3)
 	h.AssertLastTrade(domain.SideLong, 0.1)
@@ -543,7 +544,8 @@ func TestScenario_H1_Multiplier_Reset_OnClose(t *testing.T) {
 	h.AssertLastTrade(domain.SideShort, 0)
 
 	// 3. Re-Open Short T1
-	h.Tick(9960)
+	h.Tick(9900) // Reset below T1
+	h.Tick(9960) // Cross T1 Up -> Open
 	// Should be base size (0.1), not multiplied
 	h.AssertLastTrade(domain.SideShort, 0.1)
 }
@@ -657,6 +659,7 @@ func TestScenario_H2_Multiplier_Double_OnProfit(t *testing.T) {
 	h.mockEx.SetPosition(h.symbol, domain.SideShort, 0.1, 10100)
 
 	// 3. Trigger Close (Hit Base 10000)
+	time.Sleep(1100 * time.Millisecond) // Wait for cache expiry (1s) so service sees the manipulated position
 	h.Tick(10000)
 	h.AssertLastTrade(domain.SideShort, 0) // Close
 

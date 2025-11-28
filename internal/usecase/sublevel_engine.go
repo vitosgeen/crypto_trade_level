@@ -90,29 +90,6 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		return ActionNone, 0
 	}
 
-	// Check Stop Loss at Base
-	// We use ActiveSide if available to detect crossing even if current side flipped
-	if level.StopLossAtBase {
-		checkSide := side
-		if state.ActiveSide != "" {
-			checkSide = state.ActiveSide
-		}
-
-		if checkSide == domain.SideShort {
-			// Short (Below Level). Close if Price is AT or ABOVE Level.
-			if currPrice >= level.LevelPrice {
-				log.Printf("AUDIT: Stop Loss (Base) Triggered (Short). Level %s. Price %f. Base: %f", level.ID, currPrice, level.LevelPrice)
-				return ActionClose, 0
-			}
-		} else { // domain.SideLong
-			// Long (Above Level). Close if Price is AT or BELOW Level.
-			if currPrice <= level.LevelPrice {
-				log.Printf("AUDIT: Stop Loss (Base) Triggered (Long). Level %s. Price %f. Base: %f", level.ID, currPrice, level.LevelPrice)
-				return ActionClose, 0
-			}
-		}
-	}
-
 	// Determine Trigger Logic based on Side
 	// Triggers are now BIDIRECTIONAL per updated spec.
 	// Long: Trigger on Cross Down (Dip) OR Cross Up (Breakout/Trend)
@@ -180,9 +157,14 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// Helper to check crossing
-	crosses := func(p1, p2, boundary float64) bool {
-		return (p1 < boundary && p2 >= boundary) || (p1 > boundary && p2 <= boundary)
+	// Helper to check crossing with direction
+	// Short (Resistance): Trigger on Rise (Prev < Boundary <= Curr)
+	// Long (Support): Trigger on Fall (Prev > Boundary >= Curr)
+	crossesUp := func(p1, p2, boundary float64) bool {
+		return p1 < boundary && p2 >= boundary
+	}
+	crossesDown := func(p1, p2, boundary float64) bool {
+		return p1 > boundary && p2 <= boundary
 	}
 
 	// Calculate Multiplier based on Consecutive Wins
@@ -197,26 +179,28 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		// Short (Resistance): Tiers are BELOW Level
 		// EXT Spec: "SHORT side (below level) ... Tier1_below = L * (1 - t1)"
 		// YES. Short Zone is Price < Level. Tiers are < Level.
+		// We want to Short when Price RISES to the Tier (Resistance).
+		// So we check crossesUp.
 
 		// Debug Log
 		log.Printf("DEBUG: Eval Short. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
 		// Tier 1
-		if !state.Tier1Triggered && crosses(prevPrice, currPrice, tier1Price) {
+		if !state.Tier1Triggered && crossesUp(prevPrice, currPrice, tier1Price) {
 			log.Printf("AUDIT: Tier 1 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f. Wins: %d. Mult: %f", level.ID, prevPrice, currPrice, tier1Price, state.ConsecutiveWins, multiplier)
 			state.Tier1Triggered = true
 			state.ActiveSide = domain.SideShort
 			triggered = true
 			action = ActionOpen
 			size = level.BaseSize * multiplier
-		} else if !state.Tier2Triggered && crosses(prevPrice, currPrice, tier2Price) {
+		} else if !state.Tier2Triggered && crossesUp(prevPrice, currPrice, tier2Price) {
 			// Tier 2
 			log.Printf("AUDIT: Tier 2 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier2Price)
 			state.Tier2Triggered = true
 			triggered = true
 			action = ActionAddToPosition
 			size = level.BaseSize // Additions are usually base size? Or scaled? Spec implies initial entry scaling. Keeping additions flat for now to manage risk.
-		} else if !state.Tier3Triggered && crosses(prevPrice, currPrice, tier3Price) {
+		} else if !state.Tier3Triggered && crossesUp(prevPrice, currPrice, tier3Price) {
 			// Tier 3
 			log.Printf("AUDIT: Tier 3 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier3Price)
 			state.Tier3Triggered = true
@@ -228,24 +212,26 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		// Long (Support): Tiers are ABOVE Level.
 		// EXT Spec: "LONG side (above level) ... Tier1_above = L * (1 + t1)"
 		// YES. Long Zone is Price > Level. Tiers are > Level.
+		// We want to Long when Price FALLS to the Tier (Support).
+		// So we check crossesDown.
 
 		// Debug Log
 		log.Printf("DEBUG: Eval Long. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
-		if !state.Tier1Triggered && crosses(prevPrice, currPrice, tier1Price) {
+		if !state.Tier1Triggered && crossesDown(prevPrice, currPrice, tier1Price) {
 			log.Printf("AUDIT: Tier 1 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f. Wins: %d. Mult: %f", level.ID, prevPrice, currPrice, tier1Price, state.ConsecutiveWins, multiplier)
 			state.Tier1Triggered = true
 			state.ActiveSide = domain.SideLong
 			triggered = true
 			action = ActionOpen
 			size = level.BaseSize * multiplier
-		} else if !state.Tier2Triggered && crosses(prevPrice, currPrice, tier2Price) {
+		} else if !state.Tier2Triggered && crossesDown(prevPrice, currPrice, tier2Price) {
 			log.Printf("AUDIT: Tier 2 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier2Price)
 			state.Tier2Triggered = true
 			triggered = true
 			action = ActionAddToPosition
 			size = level.BaseSize
-		} else if !state.Tier3Triggered && crosses(prevPrice, currPrice, tier3Price) {
+		} else if !state.Tier3Triggered && crossesDown(prevPrice, currPrice, tier3Price) {
 			log.Printf("AUDIT: Tier 3 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier3Price)
 			state.Tier3Triggered = true
 			triggered = true
