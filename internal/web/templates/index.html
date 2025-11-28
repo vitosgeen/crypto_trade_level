@@ -557,9 +557,11 @@
         let previewPriceLines = [];
         let isShiftPressed = false;
         let lastCrosshairPrice = null;
+        let borderResetTimeout = null;
+        let chartHovered = false;
 
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Shift') {
+            if (e.key === 'Shift' && chartHovered) {
                 isShiftPressed = true;
                 if (lastCrosshairPrice) {
                     updatePreview(lastCrosshairPrice);
@@ -629,6 +631,15 @@
                         minMove: 0.000001,
                     },
                 });
+                chart.timeScale().fitContent();
+
+                const chartElement = chart.chartElement();
+                chartElement.addEventListener('mouseenter', () => chartHovered = true);
+                chartElement.addEventListener('mouseleave', () => {
+                    chartHovered = false;
+                    isShiftPressed = false;
+                    clearPreview();
+                });
 
                 window.addEventListener('resize', () => {
                     if (chart && chartContainer) {
@@ -648,15 +659,14 @@
                             // Visual feedback
                             const originalColor = priceInput.style.borderColor;
                             priceInput.style.borderColor = '#00ff88';
-                            setTimeout(() => {
+
+                            if (borderResetTimeout) clearTimeout(borderResetTimeout);
+                            borderResetTimeout = setTimeout(() => {
                                 priceInput.style.borderColor = originalColor;
                             }, 500);
 
                             // Submit form
-                            const form = document.getElementById('add-level-form');
-                            if (form) {
-                                htmx.trigger('#add-level-form', 'submit');
-                            }
+                            htmx.trigger('#add-level-form', 'submit');
                         }
                     }
                 });
@@ -703,13 +713,13 @@
         }
 
         function clearPreview() {
-            if (previewPriceLines.length > 0) {
-                previewPriceLines.forEach(line => candleSeries.removePriceLine(line));
-                previewPriceLines = [];
-            }
+            if (!candleSeries || previewPriceLines.length === 0) return;
+            previewPriceLines.forEach(line => candleSeries.removePriceLine(line));
+            previewPriceLines = [];
         }
 
         function updatePreview(basePrice) {
+            if (!candleSeries) return;
             clearPreview();
             if (!basePrice) return;
 
@@ -718,9 +728,9 @@
             const t2Input = document.getElementById('input-tier2');
             const t3Input = document.getElementById('input-tier3');
 
-            const t1Pct = t1Input ? parseFloat(t1Input.value) / 100 : 0.005;
-            const t2Pct = t2Input ? parseFloat(t2Input.value) / 100 : 0.003;
-            const t3Pct = t3Input ? parseFloat(t3Input.value) / 100 : 0.0015;
+            const t1Pct = t1Input && !isNaN(parseFloat(t1Input.value)) ? parseFloat(t1Input.value) / 100 : 0.005;
+            const t2Pct = t2Input && !isNaN(parseFloat(t2Input.value)) ? parseFloat(t2Input.value) / 100 : 0.003;
+            const t3Pct = t3Input && !isNaN(parseFloat(t3Input.value)) ? parseFloat(t3Input.value) / 100 : 0.0015;
 
             const longTier1 = basePrice * (1 + t1Pct);
             const longTier2 = basePrice * (1 + t2Pct);
