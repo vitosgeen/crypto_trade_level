@@ -31,10 +31,25 @@ func (m *MockLevelRepo) SaveSymbolTiers(ctx context.Context, tiers *domain.Symbo
 }
 
 // MockTradeRepo
-type MockTradeRepo struct{}
+type MockTradeRepo struct {
+	LastTrade   *domain.Order
+	LastHistory *domain.PositionHistory
+}
 
-func (m *MockTradeRepo) SaveTrade(ctx context.Context, trade *domain.Order) error { return nil }
+func (m *MockTradeRepo) SaveTrade(ctx context.Context, trade *domain.Order) error {
+	m.LastTrade = trade
+	return nil
+}
 func (m *MockTradeRepo) ListTrades(ctx context.Context, limit int) ([]*domain.Order, error) {
+	return nil, nil
+}
+
+func (m *MockTradeRepo) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+	m.LastHistory = history
+	return nil
+}
+
+func (m *MockTradeRepo) ListPositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
 	return nil, nil
 }
 
@@ -628,5 +643,174 @@ func TestLevelService_StopLossAtBase_Restart(t *testing.T) {
 
 	if !mockEx.CloseCalled {
 		t.Error("Expected Close when Price < Level for Long Position (Restart Scenario)")
+	}
+}
+
+func TestLevelService_ManualClose(t *testing.T) {
+	// Setup
+	level := &domain.Level{
+		ID:         "level-manual-close",
+		Symbol:     "BTCUSDT",
+		Exchange:   "bybit",
+		LevelPrice: 10000,
+		BaseSize:   0.1,
+	}
+	tiers := &domain.SymbolTiers{
+		Tier1Pct: 0.005,
+		Tier2Pct: 0.010,
+		Tier3Pct: 0.015,
+	}
+
+	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
+	mockTradeRepo := &MockTradeRepo{}
+	mockEx := &MockExchangeForService{}
+
+	marketService := usecase.NewMarketService(mockEx)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
+	ctx := context.Background()
+	service.UpdateCache(ctx)
+
+	// 1. Simulate Active Position
+	mockEx.Position = &domain.Position{
+		Symbol:     "BTCUSDT",
+		Side:       domain.SideLong,
+		Size:       0.1,
+		EntryPrice: 10000,
+	}
+
+	// 2. Call ClosePosition
+	err := service.ClosePosition(ctx, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("Expected ClosePosition to succeed, got %v", err)
+	}
+
+	// 3. Verify Exchange Close Called
+	if !mockEx.CloseCalled {
+		t.Error("Expected Exchange.ClosePosition to be called")
+	}
+}
+
+func TestLevelService_PnLCalculation(t *testing.T) {
+	// Setup
+	level := &domain.Level{
+		ID:         "level-pnl",
+		Symbol:     "BTCUSDT",
+		Exchange:   "bybit",
+		LevelPrice: 10000,
+		BaseSize:   0.1,
+	}
+	tiers := &domain.SymbolTiers{
+		Tier1Pct: 0.005,
+		Tier2Pct: 0.010,
+		Tier3Pct: 0.015,
+	}
+
+	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
+	mockTradeRepo := &MockTradeRepo{}
+	mockEx := &MockExchangeForService{}
+
+	marketService := usecase.NewMarketService(mockEx)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
+	ctx := context.Background()
+	service.UpdateCache(ctx)
+
+	// 1. Simulate Active LONG Position
+	// Entry: 10000. Size: 0.1.
+	mockEx.Position = &domain.Position{
+		Symbol:     "BTCUSDT",
+		Side:       domain.SideLong,
+		Size:       0.1,
+		EntryPrice: 10000,
+	}
+
+	// 2. Mock Price Update to 11000 (Profit)
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 11000)
+
+	// 3. Call ClosePosition manually
+	// This should trigger PnL calc: (11000 - 10000) * 0.1 = 1000 * 0.1 = 100
+	err := service.ClosePosition(ctx, "BTCUSDT")
+	if err != nil {
+		t.Fatalf("Expected ClosePosition to succeed, got %v", err)
+	}
+
+	// 4. Verify Trade Saved with PnL
+	if mockTradeRepo.LastTrade == nil {
+		t.Fatal("Expected SaveTrade to be called")
+	}
+
+	expectedPnL := (11000.0 - 10000.0) * 0.1 // 100.0
+	// Use a small epsilon for float comparison
+	if mockTradeRepo.LastTrade.RealizedPnL < expectedPnL-0.001 || mockTradeRepo.LastTrade.RealizedPnL > expectedPnL+0.001 {
+		t.Errorf("Expected RealizedPnL %f, got %f", expectedPnL, mockTradeRepo.LastTrade.RealizedPnL)
+	}
+}
+
+func TestLevelService_PositionHistory(t *testing.T) {
+	// Setup
+	level := &domain.Level{
+		ID:         "level-history",
+		Symbol:     "ETHUSDT",
+		Exchange:   "bybit",
+		LevelPrice: 2000,
+		BaseSize:   1.0,
+	}
+	tiers := &domain.SymbolTiers{
+		Tier1Pct: 0.005,
+		Tier2Pct: 0.010,
+		Tier3Pct: 0.015,
+	}
+
+	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
+	mockTradeRepo := &MockTradeRepo{}
+	mockEx := &MockExchangeForService{}
+
+	marketService := usecase.NewMarketService(mockEx)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
+	ctx := context.Background()
+	service.UpdateCache(ctx)
+
+	// 1. Simulate Active SHORT Position
+	// Entry: 2000. Size: 1.0.
+	mockEx.Position = &domain.Position{
+		Symbol:     "ETHUSDT",
+		Side:       domain.SideShort,
+		Size:       1.0,
+		EntryPrice: 2000,
+		Exchange:   "bybit",
+	}
+
+	// 2. Mock Price Update to 1900 (Profit)
+	service.ProcessTick(ctx, "bybit", "ETHUSDT", 1900)
+
+	// 3. Call ClosePosition manually
+	// PnL: (2000 - 1900) * 1.0 = 100
+	err := service.ClosePosition(ctx, "ETHUSDT")
+	if err != nil {
+		t.Fatalf("Expected ClosePosition to succeed, got %v", err)
+	}
+
+	// 4. Verify PositionHistory Saved
+	if mockTradeRepo.LastHistory == nil {
+		t.Fatal("Expected SavePositionHistory to be called")
+	}
+
+	if mockTradeRepo.LastHistory.Symbol != "ETHUSDT" {
+		t.Errorf("Expected Symbol ETHUSDT, got %s", mockTradeRepo.LastHistory.Symbol)
+	}
+	if mockTradeRepo.LastHistory.Side != domain.SideShort {
+		t.Errorf("Expected Side Short, got %s", mockTradeRepo.LastHistory.Side)
+	}
+
+	expectedPnL := 100.0
+	if mockTradeRepo.LastHistory.RealizedPnL < expectedPnL-0.001 || mockTradeRepo.LastHistory.RealizedPnL > expectedPnL+0.001 {
+		t.Errorf("Expected RealizedPnL %f, got %f", expectedPnL, mockTradeRepo.LastHistory.RealizedPnL)
+	}
+
+	// 5. Verify Trade Saved (Close marker)
+	if mockTradeRepo.LastTrade == nil {
+		t.Fatal("Expected SaveTrade to be called")
+	}
+	if mockTradeRepo.LastTrade.LevelID != "manual-close" {
+		t.Errorf("Expected LevelID manual-close, got %s", mockTradeRepo.LastTrade.LevelID)
 	}
 }

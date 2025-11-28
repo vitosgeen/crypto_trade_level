@@ -41,6 +41,7 @@ func (s *Server) handleLanding(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// Fetch initial data
 	levels, _ := s.levelRepo.ListLevels(r.Context())
+	history, _ := s.tradeRepo.ListPositionHistory(r.Context(), 50)
 
 	var views []LevelView
 	evaluator := usecase.NewLevelEvaluator()
@@ -73,7 +74,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]interface{}{
-		"Levels": views,
+		"Levels":  views,
+		"History": history,
 	}
 
 	if err := templates.ExecuteTemplate(w, "index.html", data); err != nil {
@@ -226,9 +228,33 @@ func (s *Server) handlePositionsTable(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleClosePosition(w http.ResponseWriter, r *http.Request) {
+	symbol := r.PathValue("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.service.ClosePosition(r.Context(), symbol); err != nil {
+		s.logger.Error("Failed to close position", zap.String("symbol", symbol), zap.Error(err))
+		http.Error(w, fmt.Sprintf("Failed to close position: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return updated positions table
+	s.handlePositionsTable(w, r)
+}
+
 func (s *Server) handleTradesTable(w http.ResponseWriter, r *http.Request) {
 	trades, _ := s.tradeRepo.ListTrades(r.Context(), 50)
 	if err := templates.ExecuteTemplate(w, "trades_table", trades); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+	}
+}
+
+func (s *Server) handleHistoryTable(w http.ResponseWriter, r *http.Request) {
+	history, _ := s.tradeRepo.ListPositionHistory(r.Context(), 50)
+	if err := templates.ExecuteTemplate(w, "history_table", history); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
 	}
 }

@@ -526,6 +526,14 @@
             </div>
         </div>
 
+        <!-- Full Width: Positions History -->
+        <div class="card full-width">
+            <h2>Positions History</h2>
+            <div id="history-table" hx-get="/history" hx-trigger="load, every 10s">
+                {{ template "history_table" .History }}
+            </div>
+        </div>
+
         <!-- Full Width: Recent Trades -->
         <div class="card full-width">
             <h2>Recent Trades</h2>
@@ -712,22 +720,32 @@
             }
 
             // Tiers
+            // Tiers
             const tierCell = cells[4];
-            const nestedTable = tierCell.querySelector('table');
             let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
 
-            if (nestedTable) {
-                const nestedRows = nestedTable.querySelectorAll('tr');
-                if (nestedRows.length >= 2) {
-                    const longCells = nestedRows[0].querySelectorAll('td');
-                    longTier1 = parseFloat(longCells[1].textContent);
-                    longTier2 = parseFloat(longCells[2].textContent);
-                    longTier3 = parseFloat(longCells[3].textContent);
+            // Parse from the div/span structure
+            // Structure:
+            // div (grid)
+            //   span (LONG)
+            //   div (flex) -> span (T1), span (T2), span (T3)
+            //   span (SHORT)
+            //   div (flex) -> span (T1), span (T2), span (T3)
 
-                    const shortCells = nestedRows[1].querySelectorAll('td');
-                    shortTier1 = parseFloat(shortCells[1].textContent);
-                    shortTier2 = parseFloat(shortCells[2].textContent);
-                    shortTier3 = parseFloat(shortCells[3].textContent);
+            const tierDivs = tierCell.querySelectorAll('div > div'); // The two flex divs
+            if (tierDivs.length >= 2) {
+                const longSpans = tierDivs[0].querySelectorAll('span');
+                if (longSpans.length >= 3) {
+                    longTier1 = parseFloat(longSpans[0].textContent);
+                    longTier2 = parseFloat(longSpans[1].textContent);
+                    longTier3 = parseFloat(longSpans[2].textContent);
+                }
+
+                const shortSpans = tierDivs[1].querySelectorAll('span');
+                if (shortSpans.length >= 3) {
+                    shortTier1 = parseFloat(shortSpans[0].textContent);
+                    shortTier2 = parseFloat(shortSpans[1].textContent);
+                    shortTier3 = parseFloat(shortSpans[2].textContent);
                 }
             }
 
@@ -1016,6 +1034,7 @@
             <th>Side</th>
             <th>Size</th>
             <th>Price</th>
+            <th>Profit</th>
         </tr>
     </thead>
     <tbody>
@@ -1023,10 +1042,13 @@
         <tr>
             <td class="text-muted">{{ .CreatedAt.Format "15:04:05" }}</td>
             <td>{{ .Symbol }}</td>
-            <td style="color: {{ if eq .Side " Buy" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
-                bold;">{{ .Side }}</td>
-            <td>{{ .Size }}</td>
-            <td>{{ printf "%.6f" .Price }}</td>
+            <td style="color: {{ if eq .Side " Buy" }}var(--success){{ else }}var(--danger){{ end }};">{{ .Side }}</td>
+            <td>{{ if eq .Size 0.0 }}-{{ else }}{{ .Size }}{{ end }}</td>
+            <td>{{ printf "%.2f" .Price }}</td>
+            <td
+                style="color: {{ if gt .RealizedPnL 0.0 }}var(--success){{ else if lt .RealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
+                {{ if ne .RealizedPnL 0.0 }}{{ printf "%.4f" .RealizedPnL }}{{ else }}-{{ end }}
+            </td>
         </tr>
         {{ end }}
     </tbody>
@@ -1045,6 +1067,7 @@
             <th>Unrealized PnL</th>
             <th>Lev</th>
             <th>Margin</th>
+            <th>Action</th>
         </tr>
     </thead>
     <tbody>
@@ -1064,14 +1087,63 @@
             <td style="color: {{ if eq .MarginType " isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
                 font-weight: bold;">
                 {{ .MarginType }}</td>
+            <td>
+                <button class="delete-btn" hx-delete="/positions/{{ .Symbol }}" hx-target="#positions-table"
+                    hx-confirm="Are you sure you want to close this position?">Close</button>
+            </td>
         </tr>
         {{ end }}
         {{ else }}
         <tr>
-            <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 20px;">No active positions
+            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 20px;">No active positions
             </td>
         </tr>
         {{ end }}
     </tbody>
 </table>
 {{ end }}
+
+{{ define "history_table" }}
+<table>
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Size</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th>PnL</th>
+            <th>Lev</th>
+            <th>Margin</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{ if . }}
+        {{ range . }}
+        <tr>
+            <td class="text-muted">{{ .ClosedAt.Format "15:04:05" }}</td>
+            <td><strong>{{ .Symbol }}</strong></td>
+            <td style="color: {{ if or (eq .Side " Buy") (eq .Side " Buy" ) }}var(--success){{ else }}var(--danger){{
+                end }}; font-weight: bold;">{{ .Side }}</td>
+            <td>{{ .Size }}</td>
+            <td>{{ printf "%.6f" .EntryPrice }}</td>
+            <td>{{ printf "%.6f" .ExitPrice }}</td>
+            <td
+                style="color: {{ if gt .RealizedPnL 0.0 }}var(--success){{ else if lt .RealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
+                {{ printf "%.4f" .RealizedPnL }}
+            </td>
+            <td>{{ .Leverage }}x</td>
+            <td>{{ .MarginType }}</td>
+        </tr>
+        {{ end }}
+        {{ else }}
+        <tr>
+            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 20px;">No history available
+            </td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>
+{{ end }}
+```
