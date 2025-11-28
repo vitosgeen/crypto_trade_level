@@ -393,15 +393,8 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 			}
 
 			// Update State with Win/Loss
-			// Note: finalizePosition resets state for ALL levels.
-			// But we want to update ConsecutiveWins for THIS level.
-			// Since we just reset it, we need to re-apply the win/loss to the fresh state?
-			// Or we should have updated it BEFORE reset.
-			// But finalizePosition resets it.
-			// This is a problem. finalizePosition resets state indiscriminately.
-
-			// Solution: Update state AFTER finalizePosition (which resets it).
-			// If we update it after reset, it will be clean state + wins.
+			// Note: finalizePosition resets state (clearing triggers) but preserves ConsecutiveWins.
+			// We update ConsecutiveWins here, which modifies the preserved state.
 			s.engine.UpdateState(level.ID, func(ls *LevelState) {
 				if realizedPnL > 0 {
 					ls.ConsecutiveWins++
@@ -554,9 +547,8 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 	s.mu.RUnlock()
 
 	for _, l := range levels {
-		// We reset state here. Specific logic (like updating wins) should be handled by caller if needed,
-		// but since we reset ALL, it's tricky.
-		// For now, we just reset.
+		// ResetState clears triggers and active side but PRESERVES ConsecutiveWins.
+		// This is safe to call here as we want to reset the level for a fresh start after a position close.
 		s.engine.ResetState(l.ID)
 	}
 

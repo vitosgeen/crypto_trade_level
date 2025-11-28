@@ -720,7 +720,6 @@
             }
 
             // Tiers
-            // Tiers
             const tierCell = cells[4];
             let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
 
@@ -1124,8 +1123,8 @@
         <tr>
             <td class="text-muted">{{ .ClosedAt.Format "15:04:05" }}</td>
             <td><strong>{{ .Symbol }}</strong></td>
-            <td style="color: {{ if or (eq .Side " Buy") (eq .Side " Buy" ) }}var(--success){{ else }}var(--danger){{
-                end }}; font-weight: bold;">{{ .Side }}</td>
+            <td style="color: {{ if eq .Side " Buy" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
+                bold;">{{ .Side }}</td>
             <td>{{ .Size }}</td>
             <td>{{ printf "%.6f" .EntryPrice }}</td>
             <td>{{ printf "%.6f" .ExitPrice }}</td>
