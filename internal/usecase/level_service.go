@@ -25,6 +25,10 @@ type LevelService struct {
 	// Cache
 	levelsCache map[string][]*domain.Level     // symbol -> levels
 	tiersCache  map[string]*domain.SymbolTiers // symbol -> tiers
+
+	// Position Cache
+	positionCache map[string]*domain.Position
+	positionTime  map[string]time.Time
 }
 
 func NewLevelService(
@@ -34,16 +38,18 @@ func NewLevelService(
 	market *MarketService,
 ) *LevelService {
 	return &LevelService{
-		levelRepo:   levelRepo,
-		tradeRepo:   tradeRepo,
-		exchange:    exchange,
-		market:      market,
-		evaluator:   NewLevelEvaluator(),
-		engine:      NewSublevelEngine(),
-		executor:    NewTradeExecutor(exchange),
-		lastPrices:  make(map[string]float64),
-		levelsCache: make(map[string][]*domain.Level),
-		tiersCache:  make(map[string]*domain.SymbolTiers),
+		levelRepo:     levelRepo,
+		tradeRepo:     tradeRepo,
+		exchange:      exchange,
+		market:        market,
+		evaluator:     NewLevelEvaluator(),
+		engine:        NewSublevelEngine(),
+		executor:      NewTradeExecutor(exchange),
+		lastPrices:    make(map[string]float64),
+		levelsCache:   make(map[string][]*domain.Level),
+		tiersCache:    make(map[string]*domain.SymbolTiers),
+		positionCache: make(map[string]*domain.Position),
+		positionTime:  make(map[string]time.Time),
 	}
 }
 
@@ -72,7 +78,7 @@ func (s *LevelService) GetPositions(ctx context.Context) ([]*domain.Position, er
 
 	var positions []*domain.Position
 	for symbol := range uniqueSymbols {
-		pos, err := s.exchange.GetPosition(ctx, symbol)
+		pos, err := s.getPosition(ctx, symbol)
 		if err != nil {
 			// Assuming a logger exists, otherwise log directly
 			log.Printf("Failed to get position for symbol %s: %v", symbol, err)
@@ -133,6 +139,38 @@ func (s *LevelService) UpdateCache(ctx context.Context) error {
 	return nil
 }
 
+func (s *LevelService) getPosition(ctx context.Context, symbol string) (*domain.Position, error) {
+	s.mu.RLock()
+	cached, ok := s.positionCache[symbol]
+	ts, timeOk := s.positionTime[symbol]
+	s.mu.RUnlock()
+
+	// Cache TTL: 1 second
+	if ok && timeOk && time.Since(ts) < 1*time.Second {
+		return cached, nil
+	}
+
+	// Fetch from exchange
+	pos, err := s.exchange.GetPosition(ctx, symbol)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	s.positionCache[symbol] = pos
+	s.positionTime[symbol] = time.Now()
+	s.mu.Unlock()
+
+	return pos, nil
+}
+
+func (s *LevelService) invalidatePositionCache(symbol string) {
+	s.mu.Lock()
+	delete(s.positionCache, symbol)
+	delete(s.positionTime, symbol)
+	s.mu.Unlock()
+}
+
 // ProcessTick should be called when a new price arrives (e.g. from WebSocket).
 func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol string, price float64) error {
 	// fmt.Printf("Tick: %s %f\n", symbol, price) // Too noisy
@@ -191,7 +229,7 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	}
 
 	// Check Position for Exit Logic (TP and Sentiment)
-	pos, err := s.exchange.GetPosition(ctx, symbol)
+	pos, err := s.getPosition(ctx, symbol)
 	if err == nil && pos.Size > 0 {
 		// --- STOP LOSS AT BASE LOGIC ---
 		// Find relevant level (closest to entry)
@@ -234,6 +272,7 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 					if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
 						log.Printf("Failed to close position on TP: %v", err)
 					} else {
+						s.invalidatePositionCache(symbol)
 						for _, l := range relevantLevels {
 							s.engine.ResetState(l.ID)
 						}
@@ -283,6 +322,8 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 					if err != nil {
 						log.Printf("Failed to close position on SL: %v", err)
 						// Proceed to reset state anyway to avoid getting stuck
+					} else {
+						s.invalidatePositionCache(symbol)
 					}
 
 					for _, l := range relevantLevels {
@@ -346,6 +387,7 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 				if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
 					log.Printf("Failed to close position on sentiment: %v", err)
 				} else {
+					s.invalidatePositionCache(symbol)
 					// Reset State for all levels of this symbol
 					for _, l := range relevantLevels {
 						s.engine.ResetState(l.ID)
@@ -412,7 +454,7 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 			// Or we can calculate it roughly: (ExitPrice - EntryPrice) * Size * Side
 			// But we don't track EntryPrice in LevelState.
 			// Let's fetch the position from Exchange.
-			pos, err := s.exchange.GetPosition(ctx, level.Symbol)
+			pos, err := s.getPosition(ctx, level.Symbol)
 			var realizedPnL float64
 			if err == nil && pos.Size > 0 {
 				// Calculate PnL
@@ -431,6 +473,8 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 			err = s.exchange.ClosePosition(ctx, level.Symbol)
 			if err != nil {
 				log.Printf("WARNING: Failed to close position for %s (might be already closed): %v", level.Symbol, err)
+			} else {
+				s.invalidatePositionCache(level.Symbol)
 			}
 
 			// Use the ActiveSide from state for the Close record, as 'side' might be flipped (e.g. crossing level)
@@ -487,6 +531,7 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 			log.Printf("Failed to execute trade: %v", err)
 			return
 		}
+		s.invalidatePositionCache(level.Symbol)
 
 		// 5. Save Trade
 		order := &domain.Order{
@@ -524,7 +569,7 @@ func (s *LevelService) CheckSafety(ctx context.Context) {
 			continue
 		}
 
-		pos, err := s.exchange.GetPosition(ctx, symbol)
+		pos, err := s.getPosition(ctx, symbol)
 		if err != nil {
 			log.Printf("SAFETY: Failed to get position for %s: %v", symbol, err)
 			continue
@@ -580,6 +625,7 @@ func (s *LevelService) CheckSafety(ctx context.Context) {
 				log.Printf("SAFETY: Failed to close position for %s: %v", symbol, err)
 			} else {
 				log.Printf("SAFETY: Closed position for %s", symbol)
+				s.invalidatePositionCache(symbol)
 				// Reset state
 				s.engine.ResetState(relevantLevel.ID)
 				// Log Trade

@@ -659,6 +659,7 @@ func TestScenario_H2_Multiplier_Double_OnProfit(t *testing.T) {
 	h.mockEx.SetPosition(h.symbol, domain.SideShort, 0.1, 10100)
 
 	// 3. Trigger Close (Hit Base 10000)
+	time.Sleep(1100 * time.Millisecond) // Wait for cache expiry (1s) so service sees the manipulated position
 	h.Tick(10000)
 	h.AssertLastTrade(domain.SideShort, 0) // Close
 
