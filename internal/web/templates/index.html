@@ -309,7 +309,9 @@
         #levelChart {
             border-radius: 8px;
             overflow: hidden;
+            position: relative;
         }
+
 
         /* Utilities */
         .text-success {
@@ -505,6 +507,9 @@
                     |
                     <span style="color: var(--text-muted); border-bottom: 1px dashed var(--text-muted);">---</span>
                     Tiers
+                    |
+                    Cursor: <span id="cursor-percent"
+                        style="font-family: 'Inter', monospace; font-weight: 600;">0.00%</span>
                 </div>
             </div>
 
@@ -657,14 +662,34 @@
                 });
 
                 chart.subscribeCrosshairMove((param) => {
+                    const percentSpan = document.getElementById('cursor-percent');
+
                     if (!param.point) {
                         lastCrosshairPrice = null;
                         clearPreview();
+                        if (percentSpan) {
+                            percentSpan.textContent = '0.00%';
+                            percentSpan.style.color = 'var(--text-muted)';
+                        }
                         return;
                     }
 
                     const price = candleSeries.coordinateToPrice(param.point.y);
                     lastCrosshairPrice = price;
+
+                    // Percentage logic
+                    if (percentSpan && price) {
+                        const data = candleSeries.data();
+                        if (data.length > 0) {
+                            const lastCandle = data[data.length - 1];
+                            const currentPrice = lastCandle.close;
+                            const diff = price - currentPrice;
+                            const diffPct = (diff / currentPrice) * 100;
+
+                            percentSpan.textContent = `${diffPct > 0 ? '+' : ''}${diffPct.toFixed(2)}%`;
+                            percentSpan.style.color = diffPct >= 0 ? 'var(--success)' : 'var(--danger)';
+                        }
+                    }
 
                     if (isShiftPressed) {
                         updatePreview(price);
