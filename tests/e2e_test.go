@@ -42,6 +42,8 @@ func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float6
 		}
 	} else {
 		// Add to position (simplified average entry price logic omitted for mock unless needed)
+		// Update average entry price when adding to long position
+		m.Position.EntryPrice = (m.Position.EntryPrice*m.Position.Size + m.Price*size) / (m.Position.Size + size)
 		m.Position.Size += size
 	}
 	return nil
@@ -57,6 +59,8 @@ func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float
 			EntryPrice: m.Price,
 		}
 	} else {
+		// Update average entry price when adding to short position
+		m.Position.EntryPrice = (m.Position.EntryPrice*m.Position.Size + m.Price*size) / (m.Position.Size + size)
 		m.Position.Size += size
 	}
 	return nil
