@@ -359,7 +359,7 @@
         <!-- Left Column: Controls -->
         <div class="card">
             <h2>Add Level</h2>
-            <form hx-post="/levels" hx-target="#levels-table">
+            <form id="add-level-form" hx-post="/levels" hx-target="#levels-table">
                 <div class="flex-row">
                     <input type="text" name="exchange" placeholder="Exchange" value="bybit" required class="flex-1">
                     <input type="text" name="symbol" placeholder="Symbol (BTCUSDT)" required class="flex-1">
@@ -549,6 +549,15 @@
         let liquiditySeries = null;
         let selectedLevelId = null;
         let currentPriceLines = [];
+        let isShiftPressed = false;
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Shift') isShiftPressed = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift') isShiftPressed = false;
+        });
 
         function initChart() {
             const chartContainer = document.getElementById('levelChart');
@@ -609,6 +618,31 @@
                 window.addEventListener('resize', () => {
                     if (chart && chartContainer) {
                         chart.applyOptions({ width: chartContainer.clientWidth });
+                    }
+                });
+
+                chart.subscribeClick((param) => {
+                    if (!isShiftPressed || !param.point) return;
+
+                    const price = candleSeries.coordinateToPrice(param.point.y);
+                    if (price) {
+                        const priceInput = document.getElementById('input-level-price');
+                        if (priceInput) {
+                            priceInput.value = price.toFixed(6); // Match step precision
+
+                            // Visual feedback
+                            const originalColor = priceInput.style.borderColor;
+                            priceInput.style.borderColor = '#00ff88';
+                            setTimeout(() => {
+                                priceInput.style.borderColor = originalColor;
+                            }, 500);
+
+                            // Submit form
+                            const form = document.getElementById('add-level-form');
+                            if (form) {
+                                htmx.trigger('#add-level-form', 'submit');
+                            }
+                        }
                     }
                 });
             } catch (e) {
