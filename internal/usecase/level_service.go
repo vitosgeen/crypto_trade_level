@@ -273,24 +273,10 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 				}
 
 				if shouldTP {
-					if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
-						log.Printf("Failed to close position on TP: %v", err)
-					} else {
-						s.invalidatePositionCache(symbol)
-						for _, l := range relevantLevels {
-							s.engine.ResetState(l.ID)
-						}
-						s.tradeRepo.SaveTrade(ctx, &domain.Order{
-							Exchange:  exchangeName,
-							Symbol:    symbol,
-							LevelID:   "take-profit",
-							Side:      pos.Side,
-							Size:      0,
-							Price:     price,
-							CreatedAt: time.Now(),
-						})
-						return nil
+					if _, err := s.finalizePosition(ctx, symbol, "Take Profit", "take-profit", price); err != nil {
+						log.Printf("Failed to finalize position on TP: %v", err)
 					}
+					return nil
 				}
 			}
 
@@ -312,46 +298,9 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 				}
 
 				if shouldSL {
-					// Calculate PnL before closing
-					var realizedPnL float64
-					if pos.Side == domain.SideLong {
-						realizedPnL = (price - pos.EntryPrice) * pos.Size
-					} else {
-						realizedPnL = (pos.EntryPrice - price) * pos.Size
+					if _, err := s.finalizePosition(ctx, symbol, "Stop Loss (Base)", "stop-loss-base", price); err != nil {
+						log.Printf("Failed to finalize position on SL: %v", err)
 					}
-					log.Printf("AUDIT: SL (Base) Closing. Symbol: %s. Entry: %f. Exit: %f. PnL: %f", symbol, pos.EntryPrice, price, realizedPnL)
-
-					// Attempt to close position
-					err := s.exchange.ClosePosition(ctx, symbol)
-					if err != nil {
-						log.Printf("Failed to close position on SL: %v", err)
-						// Proceed to reset state anyway to avoid getting stuck
-					} else {
-						s.invalidatePositionCache(symbol)
-					}
-
-					for _, l := range relevantLevels {
-						// Update State with Win/Loss
-						s.engine.UpdateState(l.ID, func(ls *LevelState) {
-							if realizedPnL > 0 {
-								ls.ConsecutiveWins++
-								log.Printf("AUDIT: Win recorded for Level %s. Consecutive Wins: %d", l.ID, ls.ConsecutiveWins)
-							} else {
-								ls.ConsecutiveWins = 0
-								log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", l.ID)
-							}
-						})
-						s.engine.ResetState(l.ID)
-					}
-					s.tradeRepo.SaveTrade(ctx, &domain.Order{
-						Exchange:  exchangeName,
-						Symbol:    symbol,
-						LevelID:   "stop-loss-base",
-						Side:      pos.Side,
-						Size:      0,
-						Price:     price,
-						CreatedAt: time.Now(),
-					})
 					return nil
 				}
 			}
@@ -388,26 +337,10 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 			}
 
 			if shouldClose {
-				if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
-					log.Printf("Failed to close position on sentiment: %v", err)
-				} else {
-					s.invalidatePositionCache(symbol)
-					// Reset State for all levels of this symbol
-					for _, l := range relevantLevels {
-						s.engine.ResetState(l.ID)
-					}
-					// Log Trade
-					s.tradeRepo.SaveTrade(ctx, &domain.Order{
-						Exchange:  exchangeName,
-						Symbol:    symbol,
-						LevelID:   "sentiment-exit",
-						Side:      pos.Side,
-						Size:      0, // Marker
-						Price:     price,
-						CreatedAt: time.Now(),
-					})
-					return nil // Stop processing this tick
+				if _, err := s.finalizePosition(ctx, symbol, "Sentiment Exit", "sentiment-exit", price); err != nil {
+					log.Printf("Failed to finalize position on sentiment: %v", err)
 				}
+				return nil
 			}
 		}
 	}
@@ -454,41 +387,14 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 
 		if action == ActionClose {
 			// Close Position
-			// We need to fetch the position BEFORE closing to calculate PnL
-			// Or we can calculate it roughly: (ExitPrice - EntryPrice) * Size * Side
-			// But we don't track EntryPrice in LevelState.
-			// Let's fetch the position from Exchange.
-			pos, err := s.getPosition(ctx, level.Symbol)
-			var realizedPnL float64
-			if err == nil && pos.Size > 0 {
-				// Calculate PnL
-				// Long: (Exit - Entry) * Size
-				// Short: (Entry - Exit) * Size
-				if pos.Side == domain.SideLong {
-					realizedPnL = (currPrice - pos.EntryPrice) * pos.Size
-				} else {
-					realizedPnL = (pos.EntryPrice - currPrice) * pos.Size
-				}
-				log.Printf("AUDIT: Closing Position. Symbol: %s. Entry: %f. Exit: %f. Size: %f. PnL: %f", level.Symbol, pos.EntryPrice, currPrice, pos.Size, realizedPnL)
-			} else {
-				log.Printf("WARNING: Could not fetch position for PnL calc before closing: %v", err)
-			}
-
-			err = s.exchange.ClosePosition(ctx, level.Symbol)
+			realizedPnL, err := s.finalizePosition(ctx, level.Symbol, "Level Cross", level.ID, currPrice)
 			if err != nil {
-				log.Printf("WARNING: Failed to close position for %s (might be already closed): %v", level.Symbol, err)
-			} else {
-				s.invalidatePositionCache(level.Symbol)
-			}
-
-			// Use the ActiveSide from state for the Close record, as 'side' might be flipped (e.g. crossing level)
-			state := s.engine.GetState(level.ID)
-			closingSide := state.ActiveSide
-			if closingSide == "" {
-				closingSide = side // Fallback
+				log.Printf("WARNING: Failed to finalize position for %s: %v", level.Symbol, err)
 			}
 
 			// Update State with Win/Loss
+			// Note: finalizePosition resets state (clearing triggers) but preserves ConsecutiveWins.
+			// We update ConsecutiveWins here, which modifies the preserved state.
 			s.engine.UpdateState(level.ID, func(ls *LevelState) {
 				if realizedPnL > 0 {
 					ls.ConsecutiveWins++
@@ -498,29 +404,6 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 					log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", level.ID)
 				}
 			})
-
-			// Reset State (Triggers and ActiveSide)
-			s.engine.ResetState(level.ID)
-
-			// Save Trade (Close)
-			order := &domain.Order{
-				Exchange: level.Exchange,
-				Symbol:   level.Symbol,
-				LevelID:  level.ID,
-				Side:     closingSide,
-				// Actually, for trade history, it's better to show "CLOSE" or negative size?
-				// For now, let's just log it as a trade with 0 size or specific marker?
-				// The user wants to see it in trades.
-				Size:      0, // Size 0 indicates full close in this MVP context? Or maybe we should fetch position size before closing.
-				Price:     currPrice,
-				CreatedAt: time.Now(),
-			}
-			// We might want to mark it as a close.
-			// But domain.Order doesn't have a "Type".
-			// Let's just save it.
-			if err := s.tradeRepo.SaveTrade(ctx, order); err != nil {
-				log.Printf("Failed to save close trade: %v", err)
-			}
 			return
 		}
 
@@ -625,24 +508,108 @@ func (s *LevelService) CheckSafety(ctx context.Context) {
 		}
 
 		if shouldClose {
-			if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
-				log.Printf("SAFETY: Failed to close position for %s: %v", symbol, err)
+			if _, err := s.finalizePosition(ctx, symbol, "Safety Exit", "safety-exit", price); err != nil {
+				log.Printf("SAFETY: Failed to finalize position for %s: %v", symbol, err)
 			} else {
 				log.Printf("SAFETY: Closed position for %s", symbol)
-				s.invalidatePositionCache(symbol)
-				// Reset state
-				s.engine.ResetState(relevantLevel.ID)
-				// Log Trade
-				s.tradeRepo.SaveTrade(ctx, &domain.Order{
-					Exchange:  relevantLevel.Exchange,
-					Symbol:    symbol,
-					LevelID:   "safety-exit",
-					Side:      pos.Side,
-					Size:      0,
-					Price:     price,
-					CreatedAt: time.Now(),
-				})
 			}
 		}
 	}
+}
+
+// ClosePosition manually closes a position for a symbol
+func (s *LevelService) ClosePosition(ctx context.Context, symbol string) error {
+	_, err := s.finalizePosition(ctx, symbol, "Manual Close", "manual-close", s.GetLatestPrice(symbol))
+	return err
+}
+
+// finalizePosition handles the common logic for closing a position, calculating PnL, and saving history.
+func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, levelID string, price float64) (float64, error) {
+	// 1. Fetch position details
+	pos, err := s.getPosition(ctx, symbol)
+	if err != nil || pos == nil || pos.Size == 0 {
+		log.Printf("FINALIZE: Warning: No active position found for %s when closing (%s). Proceeding to ensure close.", symbol, reason)
+		// We still try to close on exchange to be safe
+	}
+
+	// 2. Close on Exchange
+	if err := s.exchange.ClosePosition(ctx, symbol); err != nil {
+		log.Printf("FINALIZE: Failed to close position for %s: %v. Proceeding with state reset.", symbol, err)
+		// We proceed to reset state to avoid getting stuck, assuming the position might be closed manually or liquidated.
+	}
+
+	// 3. Invalidate Cache
+	s.invalidatePositionCache(symbol)
+
+	// 4. Reset State for all levels of this symbol
+	s.mu.RLock()
+	levels := s.levelsCache[symbol]
+	s.mu.RUnlock()
+
+	for _, l := range levels {
+		// ResetState clears triggers and active side but PRESERVES ConsecutiveWins.
+		// This is safe to call here as we want to reset the level for a fresh start after a position close.
+		s.engine.ResetState(l.ID)
+	}
+
+	// 5. Calculate PnL and Save History
+	var realizedPnL float64
+	var side domain.Side = "UNKNOWN"
+	var size float64
+	var entryPrice float64
+	var leverage int
+	var marginType string
+
+	if pos != nil && pos.Size > 0 {
+		side = pos.Side
+		size = pos.Size
+		entryPrice = pos.EntryPrice
+		leverage = pos.Leverage
+		marginType = pos.MarginType
+
+		if side == domain.SideLong {
+			realizedPnL = (price - entryPrice) * size
+		} else {
+			realizedPnL = (entryPrice - price) * size
+		}
+
+		// Save Position History
+		history := &domain.PositionHistory{
+			Exchange:    pos.Exchange,
+			Symbol:      pos.Symbol,
+			Side:        side,
+			Size:        size,
+			EntryPrice:  entryPrice,
+			ExitPrice:   price,
+			RealizedPnL: realizedPnL,
+			Leverage:    leverage,
+			MarginType:  marginType,
+			ClosedAt:    time.Now(),
+		}
+		if err := s.tradeRepo.SavePositionHistory(ctx, history); err != nil {
+			log.Printf("Failed to save position history: %v", err)
+		}
+	}
+
+	// 6. Log Trade (Close)
+	exchangeName := "unknown"
+	if pos != nil {
+		exchangeName = pos.Exchange
+	} else if len(levels) > 0 {
+		exchangeName = levels[0].Exchange
+	}
+
+	s.tradeRepo.SaveTrade(ctx, &domain.Order{
+		Exchange:    exchangeName,
+		Symbol:      symbol,
+		LevelID:     levelID,
+		Side:        side,
+		Size:        0, // Close marker
+		Price:       price,
+		RealizedPnL: realizedPnL,
+		CreatedAt:   time.Now(),
+	})
+
+	log.Printf("FINALIZE: Closed %s on %s. Reason: %s. PnL: %f", side, symbol, reason, realizedPnL)
+	return realizedPnL, nil
 }

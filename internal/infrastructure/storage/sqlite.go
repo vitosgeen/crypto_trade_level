@@ -63,7 +63,21 @@ func (s *SQLiteStore) initSchema() error {
 			side TEXT NOT NULL,
 			size REAL NOT NULL,
 			price REAL NOT NULL,
+			realized_pnl REAL NOT NULL DEFAULT 0,
 			created_at DATETIME NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS position_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			exchange TEXT NOT NULL,
+			symbol TEXT NOT NULL,
+			side TEXT NOT NULL,
+			size REAL NOT NULL,
+			entry_price REAL NOT NULL,
+			exit_price REAL NOT NULL,
+			realized_pnl REAL NOT NULL,
+			leverage INTEGER NOT NULL,
+			margin_type TEXT NOT NULL,
+			closed_at DATETIME NOT NULL
 		);`,
 	}
 
@@ -79,6 +93,7 @@ func (s *SQLiteStore) initSchema() error {
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN stop_loss_mode TEXT NOT NULL DEFAULT 'exchange'`)
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN disable_speed_close BOOLEAN NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN take_profit_pct REAL NOT NULL DEFAULT 0.02`)
+	_, _ = s.db.Exec(`ALTER TABLE trades ADD COLUMN realized_pnl REAL NOT NULL DEFAULT 0`)
 
 	return nil
 }
@@ -158,15 +173,15 @@ func (s *SQLiteStore) GetSymbolTiers(ctx context.Context, exchange, symbol strin
 // TradeRepository Implementation
 
 func (s *SQLiteStore) SaveTrade(ctx context.Context, order *domain.Order) error {
-	query := `INSERT INTO trades (exchange, symbol, level_id, side, size, price, created_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO trades (exchange, symbol, level_id, side, size, price, realized_pnl, created_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, query,
-		order.Exchange, order.Symbol, order.LevelID, order.Side, order.Size, order.Price, order.CreatedAt)
+		order.Exchange, order.Symbol, order.LevelID, order.Side, order.Size, order.Price, order.RealizedPnL, order.CreatedAt)
 	return err
 }
 
 func (s *SQLiteStore) ListTrades(ctx context.Context, limit int) ([]*domain.Order, error) {
-	query := `SELECT exchange, symbol, level_id, side, size, price, created_at FROM trades ORDER BY id DESC LIMIT ?`
+	query := `SELECT exchange, symbol, level_id, side, size, price, realized_pnl, created_at FROM trades ORDER BY id DESC LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err
@@ -176,10 +191,37 @@ func (s *SQLiteStore) ListTrades(ctx context.Context, limit int) ([]*domain.Orde
 	var trades []*domain.Order
 	for rows.Next() {
 		var o domain.Order
-		if err := rows.Scan(&o.Exchange, &o.Symbol, &o.LevelID, &o.Side, &o.Size, &o.Price, &o.CreatedAt); err != nil {
+		if err := rows.Scan(&o.Exchange, &o.Symbol, &o.LevelID, &o.Side, &o.Size, &o.Price, &o.RealizedPnL, &o.CreatedAt); err != nil {
 			return nil, err
 		}
 		trades = append(trades, &o)
 	}
 	return trades, nil
+}
+
+func (s *SQLiteStore) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+	query := `INSERT INTO position_history (exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, closed_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, query,
+		history.Exchange, history.Symbol, history.Side, history.Size, history.EntryPrice, history.ExitPrice, history.RealizedPnL, history.Leverage, history.MarginType, history.ClosedAt)
+	return err
+}
+
+func (s *SQLiteStore) ListPositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
+	query := `SELECT id, exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, closed_at FROM position_history ORDER BY id DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []*domain.PositionHistory
+	for rows.Next() {
+		var h domain.PositionHistory
+		if err := rows.Scan(&h.ID, &h.Exchange, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.ExitPrice, &h.RealizedPnL, &h.Leverage, &h.MarginType, &h.ClosedAt); err != nil {
+			return nil, err
+		}
+		history = append(history, &h)
+	}
+	return history, nil
 }

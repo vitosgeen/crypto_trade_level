@@ -59,4 +59,7 @@ type LevelRepository interface {
 type TradeRepository interface {
 	SaveTrade(ctx context.Context, order *Order) error
 	ListTrades(ctx context.Context, limit int) ([]*Order, error)
+
+	SavePositionHistory(ctx context.Context, history *PositionHistory) error
+	ListPositionHistory(ctx context.Context, limit int) ([]*PositionHistory, error)
 }
