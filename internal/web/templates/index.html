@@ -549,14 +549,24 @@
         let liquiditySeries = null;
         let selectedLevelId = null;
         let currentPriceLines = [];
+        let previewPriceLines = [];
         let isShiftPressed = false;
+        let lastCrosshairPrice = null;
 
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Shift') isShiftPressed = true;
+            if (e.key === 'Shift') {
+                isShiftPressed = true;
+                if (lastCrosshairPrice) {
+                    updatePreview(lastCrosshairPrice);
+                }
+            }
         });
 
         document.addEventListener('keyup', (e) => {
-            if (e.key === 'Shift') isShiftPressed = false;
+            if (e.key === 'Shift') {
+                isShiftPressed = false;
+                clearPreview();
+            }
         });
 
         function initChart() {
@@ -645,9 +655,84 @@
                         }
                     }
                 });
+
+                chart.subscribeCrosshairMove((param) => {
+                    if (!param.point) {
+                        lastCrosshairPrice = null;
+                        clearPreview();
+                        return;
+                    }
+
+                    const price = candleSeries.coordinateToPrice(param.point.y);
+                    lastCrosshairPrice = price;
+
+                    if (isShiftPressed) {
+                        updatePreview(price);
+                    } else {
+                        clearPreview();
+                    }
+                });
             } catch (e) {
                 console.error("Error initializing chart:", e);
             }
+        }
+
+        function clearPreview() {
+            if (previewPriceLines.length > 0) {
+                previewPriceLines.forEach(line => candleSeries.removePriceLine(line));
+                previewPriceLines = [];
+            }
+        }
+
+        function updatePreview(basePrice) {
+            clearPreview();
+            if (!basePrice) return;
+
+            // Get Tier Percentages from form
+            const t1Input = document.getElementById('input-tier1');
+            const t2Input = document.getElementById('input-tier2');
+            const t3Input = document.getElementById('input-tier3');
+
+            const t1Pct = t1Input ? parseFloat(t1Input.value) / 100 : 0.005;
+            const t2Pct = t2Input ? parseFloat(t2Input.value) / 100 : 0.003;
+            const t3Pct = t3Input ? parseFloat(t3Input.value) / 100 : 0.0015;
+
+            const longTier1 = basePrice * (1 + t1Pct);
+            const longTier2 = basePrice * (1 + t2Pct);
+            const longTier3 = basePrice * (1 + t3Pct);
+            const shortTier1 = basePrice * (1 - t1Pct);
+            const shortTier2 = basePrice * (1 - t2Pct);
+            const shortTier3 = basePrice * (1 - t3Pct);
+
+            const addPreviewLine = (price, label, color) => {
+                previewPriceLines.push(candleSeries.createPriceLine({
+                    price: price,
+                    color: color,
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    axisLabelVisible: false,
+                    title: label,
+                }));
+            };
+
+            // Base
+            previewPriceLines.push(candleSeries.createPriceLine({
+                price: basePrice,
+                color: 'rgba(255, 255, 255, 0.5)',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Solid,
+                axisLabelVisible: true,
+                title: 'Preview',
+            }));
+
+            // Tiers (Translucent)
+            addPreviewLine(longTier1, 'L-T1', 'rgba(0, 255, 136, 0.5)');
+            addPreviewLine(longTier2, 'L-T2', 'rgba(0, 255, 136, 0.5)');
+            addPreviewLine(longTier3, 'L-T3', 'rgba(0, 255, 136, 0.5)');
+
+            addPreviewLine(shortTier1, 'S-T1', 'rgba(220, 53, 69, 0.5)');
+            addPreviewLine(shortTier2, 'S-T2', 'rgba(220, 53, 69, 0.5)');
+            addPreviewLine(shortTier3, 'S-T3', 'rgba(220, 53, 69, 0.5)');
         }
 
         function changeLevel() {
