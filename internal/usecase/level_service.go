@@ -147,7 +147,9 @@ func (s *LevelService) getPosition(ctx context.Context, symbol string) (*domain.
 
 	// Cache TTL: 1 second
 	if ok && timeOk && time.Since(ts) < 1*time.Second {
-		return cached, nil
+		// Return a copy to prevent external mutation affecting the cache
+		cachedCopy := *cached
+		return &cachedCopy, nil
 	}
 
 	// Fetch from exchange
@@ -161,7 +163,9 @@ func (s *LevelService) getPosition(ctx context.Context, symbol string) (*domain.
 	s.positionTime[symbol] = time.Now()
 	s.mu.Unlock()
 
-	return pos, nil
+	// Return a copy
+	posCopy := *pos
+	return &posCopy, nil
 }
 
 func (s *LevelService) invalidatePositionCache(symbol string) {
@@ -255,13 +259,13 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 			if activeLevel.TakeProfitPct > 0 {
 				shouldTP := false
 				if pos.Side == domain.SideLong {
-					tpPrice := activeLevel.LevelPrice * (1 + activeLevel.TakeProfitPct)
+					tpPrice := pos.EntryPrice * (1 + activeLevel.TakeProfitPct)
 					if price >= tpPrice {
 						log.Printf("TAKE PROFIT: LONG on %s. Price %f >= TP %f. Closing...", symbol, price, tpPrice)
 						shouldTP = true
 					}
 				} else if pos.Side == domain.SideShort {
-					tpPrice := activeLevel.LevelPrice * (1 - activeLevel.TakeProfitPct)
+					tpPrice := pos.EntryPrice * (1 - activeLevel.TakeProfitPct)
 					if price <= tpPrice {
 						log.Printf("TAKE PROFIT: SHORT on %s. Price %f <= TP %f. Closing...", symbol, price, tpPrice)
 						shouldTP = true

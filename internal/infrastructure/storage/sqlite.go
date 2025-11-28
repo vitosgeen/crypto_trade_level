@@ -41,7 +41,7 @@ func (s *SQLiteStore) initSchema() error {
 			stop_loss_at_base BOOLEAN NOT NULL DEFAULT 0,
 			stop_loss_mode TEXT NOT NULL DEFAULT 'exchange',
 			disable_speed_close BOOLEAN NOT NULL DEFAULT 0,
-			take_profit_pct REAL NOT NULL DEFAULT 2.0,
+			take_profit_pct REAL NOT NULL DEFAULT 0.02,
 			source TEXT,
 			created_at DATETIME NOT NULL
 		);`,
@@ -78,7 +78,7 @@ func (s *SQLiteStore) initSchema() error {
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN stop_loss_at_base BOOLEAN NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN stop_loss_mode TEXT NOT NULL DEFAULT 'exchange'`)
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN disable_speed_close BOOLEAN NOT NULL DEFAULT 0`)
-	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN take_profit_pct REAL NOT NULL DEFAULT 2.0`)
+	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN take_profit_pct REAL NOT NULL DEFAULT 0.02`)
 
 	return nil
 }

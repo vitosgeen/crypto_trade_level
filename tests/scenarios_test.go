@@ -108,6 +108,9 @@ func (h *TestScenarioHelper) AssertLastTrade(side domain.Side, size float64) {
 	if err != nil {
 		h.t.Fatalf("Failed to list trades: %v", err)
 	}
+	if len(trades) == 0 {
+		h.t.Fatalf("No trades exist to assert last trade")
+	}
 	last := trades[0] // ListTrades returns DESC order
 	if last.Side != side {
 		h.t.Errorf("Expected last trade side %s, got %s", side, last.Side)
