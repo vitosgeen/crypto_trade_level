@@ -14,6 +14,7 @@ type Exchange interface {
 	GetRecentTrades(ctx context.Context, symbol string, limit int) ([]PublicTrade, error)
 	GetInstruments(ctx context.Context, category string) ([]Instrument, error)
 	OnTradeUpdate(callback func(symbol string, side string, size float64, price float64))
+	Subscribe(symbols []string) error
 }
 
 type Candle struct {

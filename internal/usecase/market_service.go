@@ -35,6 +35,7 @@ type MarketService struct {
 	trades       map[string][]Trade // Symbol -> Trades
 	depthHistory map[string][]DepthSnapshot
 	priceHistory map[string][]PricePoint // Symbol -> Price Points
+	subscribed   map[string]bool         // Symbol -> Subscribed
 	mu           sync.Mutex
 	timeNow      func() time.Time // For testing
 }
@@ -52,6 +53,7 @@ func NewMarketService(exchange domain.Exchange) *MarketService {
 		trades:       make(map[string][]Trade),
 		depthHistory: make(map[string][]DepthSnapshot),
 		priceHistory: make(map[string][]PricePoint),
+		subscribed:   make(map[string]bool),
 		timeNow:      time.Now,
 	}
 
@@ -107,10 +109,23 @@ type MarketStats struct {
 	DepthBid       float64 `json:"depth_bid"`
 	DepthAsk       float64 `json:"depth_ask"`
 	PriceChange60s float64 `json:"price_change_60s"`
+	OBI            float64 `json:"obi"`
+	CVD            float64 `json:"cvd"`
+	TSI            float64 `json:"tsi"`
+	GLI            float64 `json:"gli"`
+	TradeVelocity  float64 `json:"trade_velocity"`
 }
 
 func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*MarketStats, error) {
 	s.mu.Lock()
+	if !s.subscribed[symbol] {
+		// Subscribe to real-time updates
+		if err := s.exchange.Subscribe([]string{symbol}); err == nil {
+			s.subscribed[symbol] = true
+		} else {
+			// Log error? For now just continue, maybe next time it succeeds
+		}
+	}
 
 	// Check if we need to hydrate/refresh trades
 	// Refresh if: 1) No trades at all, OR 2) No trades in last 60 seconds
@@ -178,6 +193,7 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 
 	// 1. Calculate Speed (from trades)
 	var speedBuy, speedSell float64
+	var tradeCount int
 	if trades, ok := s.trades[symbol]; ok {
 		now := s.timeNow()
 		cutoff := now.Add(-60 * time.Second)
@@ -186,6 +202,7 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		for _, t := range trades {
 			if t.Time.After(cutoff) {
 				validTrades = append(validTrades, t)
+				tradeCount++
 				if t.Side == "Buy" {
 					speedBuy += t.Size * t.Price
 				} else {
@@ -223,12 +240,41 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		}
 	}
 
+	// 4. Calculate Indicators
+	// OBI = (BidDepth - AskDepth) / (BidDepth + AskDepth)
+	var obi float64
+	if avgBid+avgAsk > 0 {
+		obi = (avgBid - avgAsk) / (avgBid + avgAsk)
+	}
+
+	// CVD (60s) = SpeedBuy - SpeedSell
+	cvd := speedBuy - speedSell
+
+	// TSI = NumberOfTrades / TimeWindow (60s)
+	tsi := float64(tradeCount) / 60.0
+
+	// GLI = ExecutedVolumeAtBid / ExecutedVolumeAtAsk = SpeedSell / SpeedBuy
+	var gli float64 = 1.0
+	if speedBuy > 0 {
+		gli = speedSell / speedBuy
+	} else if speedSell > 0 {
+		gli = 10.0 // Max cap if no buys
+	}
+
+	// TradeVelocity = TotalVolume / TimeWindow (60s)
+	tradeVelocity := (speedBuy + speedSell) / 60.0
+
 	return &MarketStats{
 		SpeedBuy:       speedBuy,
 		SpeedSell:      speedSell,
 		DepthBid:       avgBid,
 		DepthAsk:       avgAsk,
 		PriceChange60s: priceChange60s,
+		OBI:            obi,
+		CVD:            cvd,
+		TSI:            tsi,
+		GLI:            gli,
+		TradeVelocity:  tradeVelocity,
 	}, nil
 }
 

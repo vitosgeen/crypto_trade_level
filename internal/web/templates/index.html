@@ -435,52 +435,115 @@
                 <div class="gauges-grid">
                     <!-- Gauge 1: Trade Speed -->
                     <div class="gauge-container">
-                        <h3 style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Trade Volume (60s)
-                        </h3>
-                        <div class="gauge">
-                            <div class="gauge-bg"></div>
-                            <div class="gauge-needle" id="speed-needle"></div>
-                            <div class="gauge-center"></div>
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Volume (60s)</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg" style="width: 80px; height: 80px;"></div>
+                            <div class="gauge-needle" id="speed-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
                         </div>
-                        <div class="gauge-labels">
-                            <span class="text-danger">Sell</span>
-                            <span class="text-success">Buy</span>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span class="text-danger">S</span>
+                            <span class="text-success">B</span>
                         </div>
-                        <div class="gauge-value" id="speed-value">0 / 0</div>
+                        <div class="gauge-value" id="speed-value" style="font-size: 0.8rem;">0/0</div>
                     </div>
 
                     <!-- Gauge 2: Order Book Depth -->
                     <div class="gauge-container">
-                        <h3 style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Order Book Depth
-                        </h3>
-                        <div class="gauge">
-                            <div class="gauge-bg"></div>
-                            <div class="gauge-needle" id="depth-needle"></div>
-                            <div class="gauge-center"></div>
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Depth</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg" style="width: 80px; height: 80px;"></div>
+                            <div class="gauge-needle" id="depth-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
                         </div>
-                        <div class="gauge-labels">
-                            <span class="text-danger">Ask</span>
-                            <span class="text-success">Bid</span>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span class="text-danger">A</span>
+                            <span class="text-success">B</span>
                         </div>
-                        <div class="gauge-value" id="depth-value">0 / 0</div>
+                        <div class="gauge-value" id="depth-value" style="font-size: 0.8rem;">0/0</div>
                     </div>
 
-                    <!-- Gauge 3: Divergence -->
+                    <!-- Gauge 3: Price Change -->
                     <div class="gauge-container">
-                        <h3 style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Sentiment
-                            Divergence</h3>
-                        <div class="gauge">
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Change (60s)</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg" style="width: 80px; height: 80px;"></div>
+                            <div class="gauge-needle" id="price-change-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                        </div>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span class="text-danger">Dn</span>
+                            <span class="text-success">Up</span>
+                        </div>
+                        <div class="gauge-value" id="price-change-value" style="font-size: 0.8rem;">0.00%</div>
+                    </div>
+
+                    <!-- Gauge 4: Divergence -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Divergence</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
                             <div class="gauge-bg"
-                                style="background: conic-gradient(from 270deg, var(--warning) 0deg 90deg, var(--info) 90deg 180deg, transparent 180deg);">
+                                style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--warning) 0deg 90deg, var(--info) 90deg 180deg, transparent 180deg);">
                             </div>
-                            <div class="gauge-needle" id="div-needle"></div>
-                            <div class="gauge-center"></div>
+                            <div class="gauge-needle" id="div-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
                         </div>
-                        <div class="gauge-labels">
-                            <span style="color: var(--warning);">Bearish</span>
-                            <span style="color: var(--info);">Bullish</span>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span style="color: var(--warning);">Bear</span>
+                            <span style="color: var(--info);">Bull</span>
                         </div>
-                        <div class="gauge-value" id="div-value">0.00</div>
+                        <div class="gauge-value" id="div-value" style="font-size: 0.8rem;">0.00</div>
+                    </div>
+
+                    <!-- Gauge 5: OBI -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">OBI</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg"
+                                style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--danger) 0deg 90deg, var(--success) 90deg 180deg, transparent 180deg);">
+                            </div>
+                            <div class="gauge-needle" id="obi-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                        </div>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span class="text-danger">Bear</span>
+                            <span class="text-success">Bull</span>
+                        </div>
+                        <div class="gauge-value" id="obi-value" style="font-size: 0.8rem;">0.00</div>
+                    </div>
+
+                    <!-- Gauge 6: TSI -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">TSI</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg"
+                                style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--secondary-color) 0deg 180deg, transparent 180deg);">
+                            </div>
+                            <div class="gauge-needle" id="tsi-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                        </div>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span>Slow</span>
+                            <span>Fast</span>
+                        </div>
+                        <div class="gauge-value" id="tsi-value" style="font-size: 0.8rem;">0</div>
+                    </div>
+
+                    <!-- Gauge 7: GLI -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">GLI</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg"
+                                style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--success) 0deg 90deg, var(--danger) 90deg 180deg, transparent 180deg);">
+                            </div>
+                            <div class="gauge-needle" id="gli-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                        </div>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span class="text-success">Bull</span>
+                            <span class="text-danger">Bear</span>
+                        </div>
+                        <div class="gauge-value" id="gli-value" style="font-size: 0.8rem;">0.00</div>
                     </div>
                 </div>
             </div>
@@ -1054,6 +1117,7 @@
                 const resp = await fetch(`/api/market-stats?symbol=${symbol}`);
                 const stats = await resp.json();
 
+                // 1. Volume (Speed)
                 const totalSpeed = stats.speed_buy + stats.speed_sell;
                 let speedRatio = 0.5;
                 if (totalSpeed > 0) speedRatio = stats.speed_buy / totalSpeed;
@@ -1061,8 +1125,9 @@
                 const speedNeedle = document.getElementById('speed-needle');
                 if (speedNeedle) speedNeedle.style.transform = `rotate(${speedDeg}deg)`;
                 const speedValue = document.getElementById('speed-value');
-                if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(2)} / ${stats.speed_buy.toFixed(2)}`;
+                if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(0)}/${stats.speed_buy.toFixed(0)}`;
 
+                // 2. Depth
                 const totalDepth = stats.depth_bid + stats.depth_ask;
                 let depthRatio = 0.5;
                 if (totalDepth > 0) depthRatio = stats.depth_bid / totalDepth;
@@ -1070,14 +1135,56 @@
                 const depthNeedle = document.getElementById('depth-needle');
                 if (depthNeedle) depthNeedle.style.transform = `rotate(${depthDeg}deg)`;
                 const depthValue = document.getElementById('depth-value');
-                if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)} / ${stats.depth_bid.toFixed(2)}`;
+                if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)}/${stats.depth_bid.toFixed(2)}`;
 
+                // 3. Price Change (60s)
+                // Map -1% to 1% -> -90 to 90 deg
+                let changeRatio = stats.price_change_60s; // e.g. 0.5 for 0.5%
+                if (changeRatio > 1) changeRatio = 1;
+                if (changeRatio < -1) changeRatio = -1;
+                const changeDeg = changeRatio * 90;
+                const changeNeedle = document.getElementById('price-change-needle');
+                if (changeNeedle) changeNeedle.style.transform = `rotate(${changeDeg}deg)`;
+                const changeValue = document.getElementById('price-change-value');
+                if (changeValue) {
+                    changeValue.textContent = `${stats.price_change_60s > 0 ? '+' : ''}${stats.price_change_60s.toFixed(3)}%`;
+                    changeValue.style.color = stats.price_change_60s >= 0 ? 'var(--success)' : 'var(--danger)';
+                }
+
+                // 4. Divergence
                 const divergence = speedRatio - depthRatio;
                 const divDeg = divergence * 90;
                 const divNeedle = document.getElementById('div-needle');
                 if (divNeedle) divNeedle.style.transform = `rotate(${divDeg}deg)`;
                 const divValue = document.getElementById('div-value');
                 if (divValue) divValue.textContent = divergence.toFixed(2);
+
+                // 5. OBI
+                const obiDeg = stats.obi * 90;
+                const obiNeedle = document.getElementById('obi-needle');
+                if (obiNeedle) obiNeedle.style.transform = `rotate(${obiDeg}deg)`;
+                const obiValue = document.getElementById('obi-value');
+                if (obiValue) obiValue.textContent = stats.obi.toFixed(2);
+
+                // 6. TSI
+                const maxTsi = 1000;
+                let tsiRatio = stats.tsi / maxTsi;
+                if (tsiRatio > 1) tsiRatio = 1;
+                const tsiDeg = (tsiRatio * 180) - 90;
+                const tsiNeedle = document.getElementById('tsi-needle');
+                if (tsiNeedle) tsiNeedle.style.transform = `rotate(${tsiDeg}deg)`;
+                const tsiValue = document.getElementById('tsi-value');
+                if (tsiValue) tsiValue.textContent = stats.tsi.toFixed(0);
+
+                // 7. GLI
+                let gliRatio = (stats.gli - 1);
+                if (gliRatio > 1) gliRatio = 1;
+                if (gliRatio < -1) gliRatio = -1;
+                const gliDeg = gliRatio * 90;
+                const gliNeedle = document.getElementById('gli-needle');
+                if (gliNeedle) gliNeedle.style.transform = `rotate(${gliDeg}deg)`;
+                const gliValue = document.getElementById('gli-value');
+                if (gliValue) gliValue.textContent = stats.gli.toFixed(2);
 
             } catch (e) {
                 console.error("Failed to fetch market stats", e);

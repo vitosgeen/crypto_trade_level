@@ -341,6 +341,57 @@
                     </div>
                     <div class="gauge-value" id="div-value">0.00</div>
                 </div>
+
+                <!-- Gauge 5: OBI -->
+                <div class="gauge-container">
+                    <h3 style="text-align: center; margin-bottom: 10px;">OBI (Imbalance)</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"
+                            style="background: conic-gradient(from 270deg, #dc3545 0deg 90deg, #28a745 90deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="obi-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span style="color: #dc3545;">Bearish</span>
+                        <span style="color: #28a745;">Bullish</span>
+                    </div>
+                    <div class="gauge-value" id="obi-value">0.00</div>
+                </div>
+
+                <!-- Gauge 6: TSI (Trades/60s) -->
+                <div class="gauge-container">
+                    <h3 style="text-align: center; margin-bottom: 10px;">TSI (Trades/60s)</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"
+                            style="background: conic-gradient(from 270deg, #cd07ff 0deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="tsi-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span>Slow</span>
+                        <span>Fast</span>
+                    </div>
+                    <div class="gauge-value" id="tsi-value">0</div>
+                </div>
+
+                <!-- Gauge 7: GLI (Liquidity Grab) -->
+                <div class="gauge-container">
+                    <h3 style="text-align: center; margin-bottom: 10px;">GLI (Grab Ratio)</h3>
+                    <div class="gauge">
+                        <div class="gauge-bg"
+                            style="background: conic-gradient(from 270deg, #28a745 0deg 90deg, #dc3545 90deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="gli-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span style="color: #28a745;">Bullish (&lt;1)</span>
+                        <span style="color: #dc3545;">Bearish (&gt;1)</span>
+                    </div>
+                    <div class="gauge-value" id="gli-value">0.00</div>
+                </div>
             </div>
         </div>
 
@@ -609,6 +660,37 @@
 
                 const divValue = document.getElementById('div-value');
                 if (divValue) divValue.textContent = divergence.toFixed(2);
+
+                // Update OBI
+                // OBI is -1 to 1. Map to -90 to 90 degrees.
+                const obiDeg = stats.obi * 90;
+                const obiNeedle = document.getElementById('obi-needle');
+                if (obiNeedle) obiNeedle.style.transform = `rotate(${obiDeg}deg)`;
+                const obiValue = document.getElementById('obi-value');
+                if (obiValue) obiValue.textContent = stats.obi.toFixed(2);
+
+                // Update TSI
+                // Assume max 1000 trades/min for full scale?
+                const maxTsi = 1000;
+                let tsiRatio = stats.tsi / maxTsi;
+                if (tsiRatio > 1) tsiRatio = 1;
+                const tsiDeg = (tsiRatio * 180) - 90;
+                const tsiNeedle = document.getElementById('tsi-needle');
+                if (tsiNeedle) tsiNeedle.style.transform = `rotate(${tsiDeg}deg)`;
+                const tsiValue = document.getElementById('tsi-value');
+                if (tsiValue) tsiValue.textContent = stats.tsi.toFixed(0);
+
+                // Update GLI
+                // GLI > 1 Bearish (Right), < 1 Bullish (Left)
+                // Center at 1. Range 0 to 2 mapped to -90 to 90.
+                let gliRatio = (stats.gli - 1); // -1 to 1
+                if (gliRatio > 1) gliRatio = 1;
+                if (gliRatio < -1) gliRatio = -1;
+                const gliDeg = gliRatio * 90;
+                const gliNeedle = document.getElementById('gli-needle');
+                if (gliNeedle) gliNeedle.style.transform = `rotate(${gliDeg}deg)`;
+                const gliValue = document.getElementById('gli-value');
+                if (gliValue) gliValue.textContent = stats.gli.toFixed(2);
 
             } catch (e) {
                 console.error("Failed to fetch market stats", e);

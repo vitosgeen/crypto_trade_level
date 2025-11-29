@@ -93,6 +93,10 @@ func (m *MockExchange) GetInstruments(ctx context.Context, category string) ([]d
 	return nil, nil
 }
 
+func (m *MockExchange) Subscribe(symbols []string) error {
+	return nil
+}
+
 func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 	// Setup
 	level := &domain.Level{
@@ -210,6 +214,10 @@ func (m *MockExchangeForService) GetRecentTrades(ctx context.Context, symbol str
 }
 func (m *MockExchangeForService) GetInstruments(ctx context.Context, category string) ([]domain.Instrument, error) {
 	return nil, nil
+}
+
+func (m *MockExchangeForService) Subscribe(symbols []string) error {
+	return nil
 }
 
 func TestLevelService_StopLossMode(t *testing.T) {
