@@ -159,21 +159,27 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	}
 	disableSpeedClose := r.FormValue("disable_speed_close") == "on"
 
+	maxConsecutiveBaseCloses, _ := strconv.Atoi(r.FormValue("max_consecutive_base_closes"))
+	baseCloseCooldownMinutes, _ := strconv.Atoi(r.FormValue("base_close_cooldown_minutes"))
+	baseCloseCooldownMs := int64(baseCloseCooldownMinutes) * 60 * 1000
+
 	level := &domain.Level{
-		ID:                fmt.Sprintf("%d", time.Now().UnixNano()),
-		Exchange:          exchange,
-		Symbol:            symbol,
-		LevelPrice:        price,
-		BaseSize:          baseSize,
-		Leverage:          leverage,
-		MarginType:        marginType,
-		CoolDownMs:        coolDownMs,
-		StopLossAtBase:    stopLossAtBase,
-		StopLossMode:      stopLossMode,
-		DisableSpeedClose: disableSpeedClose,
-		TakeProfitPct:     takeProfitPct,
-		Source:            "manual-web",
-		CreatedAt:         time.Now(),
+		ID:                       fmt.Sprintf("%d", time.Now().UnixNano()),
+		Exchange:                 exchange,
+		Symbol:                   symbol,
+		LevelPrice:               price,
+		BaseSize:                 baseSize,
+		Leverage:                 leverage,
+		MarginType:               marginType,
+		CoolDownMs:               coolDownMs,
+		StopLossAtBase:           stopLossAtBase,
+		StopLossMode:             stopLossMode,
+		DisableSpeedClose:        disableSpeedClose,
+		MaxConsecutiveBaseCloses: maxConsecutiveBaseCloses,
+		BaseCloseCooldownMs:      baseCloseCooldownMs,
+		TakeProfitPct:            takeProfitPct,
+		Source:                   "manual-web",
+		CreatedAt:                time.Now(),
 	}
 
 	if err := s.levelRepo.SaveLevel(r.Context(), level); err != nil {
