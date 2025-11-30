@@ -273,18 +273,10 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 				}
 
 				if shouldTP {
-					if _, err := s.finalizePosition(ctx, symbol, "Take Profit", "take-profit", price); err != nil {
+					if _, err := s.finalizePosition(ctx, symbol, "Take Profit", activeLevel.ID, price); err != nil {
 						log.Printf("Failed to finalize position on TP: %v", err)
 					}
-					// Reset Base Closes on TP
-					s.engine.UpdateState(activeLevel.ID, func(ls *LevelState) {
-						ls.ConsecutiveBaseCloses = 0
-						// Wins are handled in processLevel if triggered by engine, but here it's TP.
-						// Should we increment wins here?
-						// TP is a win.
-						ls.ConsecutiveWins++
-						log.Printf("AUDIT: Take Profit recorded for Level %s. Wins: %d", activeLevel.ID, ls.ConsecutiveWins)
-					})
+					// State update is now handled in finalizePosition
 					return nil
 				}
 			}
@@ -307,22 +299,9 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 				}
 
 				if shouldSL {
-					if _, err := s.finalizePosition(ctx, symbol, "Stop Loss (Base)", "stop-loss-base", price); err != nil {
+					if _, err := s.finalizePosition(ctx, symbol, "Stop Loss (Base)", activeLevel.ID, price); err != nil {
 						log.Printf("Failed to finalize position on SL: %v", err)
 					}
-
-					// Update State for Base Close
-					s.engine.UpdateState(activeLevel.ID, func(ls *LevelState) {
-						ls.ConsecutiveBaseCloses++
-						ls.ConsecutiveWins = 0 // Reset wins on loss
-						log.Printf("AUDIT: Stop Loss (Base) recorded for Level %s. Count: %d", activeLevel.ID, ls.ConsecutiveBaseCloses)
-
-						if activeLevel.MaxConsecutiveBaseCloses > 0 && ls.ConsecutiveBaseCloses >= activeLevel.MaxConsecutiveBaseCloses {
-							ls.DisabledUntil = time.Now().Add(time.Duration(activeLevel.BaseCloseCooldownMs) * time.Millisecond)
-							ls.ConsecutiveBaseCloses = 0
-							log.Printf("AUDIT: Level %s disabled until %v due to max base closes (SL).", activeLevel.ID, ls.DisabledUntil)
-						}
-					})
 					return nil
 				}
 			}
@@ -409,48 +388,10 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 
 		if action == ActionClose {
 			// Close Position
-			realizedPnL, err := s.finalizePosition(ctx, level.Symbol, "Level Cross", level.ID, currPrice)
+			_, err := s.finalizePosition(ctx, level.Symbol, "Level Cross", level.ID, currPrice)
 			if err != nil {
 				log.Printf("WARNING: Failed to finalize position for %s: %v", level.Symbol, err)
 			}
-
-			// Update State with Win/Loss
-			// Note: finalizePosition resets state (clearing triggers) but preserves ConsecutiveWins.
-			// We update ConsecutiveWins here, which modifies the preserved state.
-			s.engine.UpdateState(level.ID, func(ls *LevelState) {
-				if realizedPnL > 0 {
-					ls.ConsecutiveWins++
-					ls.ConsecutiveBaseCloses = 0 // Reset base closes on win
-					log.Printf("AUDIT: Win recorded for Level %s. Consecutive Wins: %d", level.ID, ls.ConsecutiveWins)
-				} else {
-					ls.ConsecutiveWins = 0
-					log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", level.ID)
-
-					// Check if this was a Base Close (Stop Loss at Base)
-					// We need to know the reason. But here we just have realizedPnL < 0.
-					// The caller knows the reason. But we are inside UpdateState which is called from processLevel.
-					// Wait, processLevel calls finalizePosition for "Level Cross" (which is effectively a base close if it crosses back).
-					// If it's a "Level Cross" close, it means we failed to hold the level.
-
-					// Ideally we should pass the reason to UpdateState or handle it in finalizePosition.
-					// But finalizePosition is generic.
-					// Let's look at where finalizePosition is called.
-					// It's called with reasons: "Take Profit", "Stop Loss (Base)", "Sentiment Exit", "Level Cross", "Safety Exit".
-
-					// "Level Cross" IS the base close logic in the engine.
-					// "Stop Loss (Base)" is the safety check in ProcessTick.
-
-					// So if we are here (ActionClose from engine), it means price crossed back.
-					ls.ConsecutiveBaseCloses++
-					log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", level.ID, ls.ConsecutiveBaseCloses)
-
-					if level.MaxConsecutiveBaseCloses > 0 && ls.ConsecutiveBaseCloses >= level.MaxConsecutiveBaseCloses {
-						ls.DisabledUntil = time.Now().Add(time.Duration(level.BaseCloseCooldownMs) * time.Millisecond)
-						ls.ConsecutiveBaseCloses = 0 // Reset or keep? Resetting allows cycle.
-						log.Printf("AUDIT: Level %s disabled until %v due to max base closes.", level.ID, ls.DisabledUntil)
-					}
-				}
-			})
 			return
 		}
 
@@ -658,5 +599,62 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 	})
 
 	log.Printf("FINALIZE: Closed %s on %s. Reason: %s. PnL: %f", side, symbol, reason, realizedPnL)
+
+	// 7. Update Level State (Centralized Logic)
+	// We only update state if we have a valid levelID
+	if levelID != "" && levelID != "unknown" {
+		s.engine.UpdateState(levelID, func(ls *LevelState) {
+			if realizedPnL > 0 {
+				ls.ConsecutiveWins++
+				ls.ConsecutiveBaseCloses = 0 // Reset base closes on win
+				log.Printf("AUDIT: Win recorded for Level %s. Consecutive Wins: %d", levelID, ls.ConsecutiveWins)
+			} else {
+				ls.ConsecutiveWins = 0
+				log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", levelID)
+
+				// Check if this was a Base Close
+				// We consider "Stop Loss (Base)" and "Level Cross" as base closes.
+				if reason == "Stop Loss (Base)" || reason == "Level Cross" {
+					ls.ConsecutiveBaseCloses++
+					log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
+
+					// Check Cooldown
+					// We need to fetch the level to check config.
+					// Since we are in a callback, we can't easily fetch async?
+					// We can assume we have the level config in cache.
+					// But UpdateState is sync.
+					// Let's try to get level from cache.
+					// Warning: s.levelsCache requires lock. We are not holding lock here.
+					// But s.engine.UpdateState locks the engine state, not the service.
+					// So we can acquire service lock.
+
+					// However, calling s.levelsCache here might be expensive or complex if we don't have symbol.
+					// We have symbol.
+
+					// Let's find the level in cache.
+					s.mu.RLock()
+					levels := s.levelsCache[symbol]
+					s.mu.RUnlock()
+
+					var activeLevel *domain.Level
+					for _, l := range levels {
+						if l.ID == levelID {
+							activeLevel = l
+							break
+						}
+					}
+
+					if activeLevel != nil {
+						if activeLevel.MaxConsecutiveBaseCloses > 0 && ls.ConsecutiveBaseCloses >= activeLevel.MaxConsecutiveBaseCloses {
+							ls.DisabledUntil = time.Now().Add(time.Duration(activeLevel.BaseCloseCooldownMs) * time.Millisecond)
+							ls.ConsecutiveBaseCloses = 0
+							log.Printf("AUDIT: Level %s disabled until %v due to max base closes.", activeLevel.ID, ls.DisabledUntil)
+						}
+					}
+				}
+			}
+		})
+	}
+
 	return realizedPnL, nil
 }

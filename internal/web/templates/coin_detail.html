@@ -670,15 +670,15 @@
                 if (obiValue) obiValue.textContent = stats.obi.toFixed(2);
 
                 // Update TSI
-                // Assume max 1000 trades/min for full scale?
-                const maxTsi = 1000;
+                // Assume max 100 trades/sec for full scale?
+                const maxTsi = 100;
                 let tsiRatio = stats.tsi / maxTsi;
                 if (tsiRatio > 1) tsiRatio = 1;
                 const tsiDeg = (tsiRatio * 180) - 90;
                 const tsiNeedle = document.getElementById('tsi-needle');
                 if (tsiNeedle) tsiNeedle.style.transform = `rotate(${tsiDeg}deg)`;
                 const tsiValue = document.getElementById('tsi-value');
-                if (tsiValue) tsiValue.textContent = stats.tsi.toFixed(0);
+                if (tsiValue) tsiValue.textContent = stats.tsi.toFixed(2);
 
                 // Update GLI
                 // GLI > 1 Bearish (Right), < 1 Bullish (Left)
