@@ -557,6 +557,29 @@
                         </div>
                         <div class="gauge-value" id="gli-value" style="font-size: 0.8rem;">0.00</div>
                     </div>
+
+                    <!-- Conclusion Indicator -->
+                    <div class="gauge-container"
+                        style="width: 100%; flex-direction: row; justify-content: center; gap: 20px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color);">
+                        <div style="display: flex; flex-direction: column; align-items: center;">
+                            <div id="conclusion-bear"
+                                style="width: 40px; height: 40px; border-radius: 50%; background-color: var(--danger); opacity: 0.2; transition: opacity 0.3s; box-shadow: 0 0 10px var(--danger);">
+                            </div>
+                            <span
+                                style="font-size: 0.8rem; margin-top: 5px; color: var(--danger); font-weight: bold;">SELL</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center;">
+                            <h3 style="font-size: 0.9rem; color: var(--text-muted); margin: 0 10px;">CONCLUSION</h3>
+                            <div id="conclusion-score" style="font-size: 0.8rem; color: var(--text-color);">0%</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center;">
+                            <div id="conclusion-bull"
+                                style="width: 40px; height: 40px; border-radius: 50%; background-color: var(--success); opacity: 0.2; transition: opacity 0.3s; box-shadow: 0 0 10px var(--success);">
+                            </div>
+                            <span
+                                style="font-size: 0.8rem; margin-top: 5px; color: var(--success); font-weight: bold;">BUY</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1197,6 +1220,77 @@
                 if (gliNeedle) gliNeedle.style.transform = `rotate(${gliDeg}deg)`;
                 const gliValue = document.getElementById('gli-value');
                 if (gliValue) gliValue.textContent = stats.gli.toFixed(2);
+
+                // 8. Conclusion Calculation
+                // Normalize all signals to -1 (Bear) to 1 (Bull)
+
+                // Speed: -1 to 1
+                let speedScore = 0;
+                if (totalSpeed > 0) speedScore = (stats.speed_buy - stats.speed_sell) / totalSpeed;
+
+                // Depth: -1 to 1 (Bid - Ask) / Total
+                let depthScore = 0;
+                if (totalDepth > 0) depthScore = (stats.depth_bid - stats.depth_ask) / totalDepth;
+
+                // Price Change: Cap at +/- 1% -> -1 to 1
+                let changeScore = stats.price_change_60s;
+                if (changeScore > 1) changeScore = 1;
+                if (changeScore < -1) changeScore = -1;
+
+                // OBI: Already -1 to 1
+                let obiScore = stats.obi;
+
+                // Divergence: SpeedRatio (0-1) - DepthRatio (0-1). Range -1 to 1.
+                // But wait, divergence calculation above was: speedRatio - depthRatio.
+                // speedRatio is Buy/(Buy+Sell). depthRatio is Bid/(Bid+Ask).
+                // If Buy% > Bid%, it means aggressive buying against passive support? 
+                // Actually, divergence usually means Price up but CVD down etc.
+                // Here: Divergence = SpeedRatio - DepthRatio.
+                // If SpeedRatio (Buy%) is 0.8 and DepthRatio (Bid%) is 0.2. Div = 0.6.
+                // High Buy Speed but Low Bid Depth.
+                // Is this Bullish? Yes, aggressive buying.
+                // So Divergence is roughly directional.
+                let divScore = divergence;
+                if (divScore > 1) divScore = 1;
+                if (divScore < -1) divScore = -1;
+
+                // GLI: < 1 Bullish, > 1 Bearish.
+                // Map to score.
+                // If GLI = 0.5 (Bullish) -> Score +0.5?
+                // If GLI = 2.0 (Bearish) -> Score -0.5?
+                // Formula: (1 - GLI). 
+                // If GLI=0.5 -> 0.5. If GLI=1.5 -> -0.5.
+                // Cap at +/- 1.
+                let gliScore = 1 - stats.gli;
+                if (gliScore > 1) gliScore = 1;
+                if (gliScore < -1) gliScore = -1;
+
+                // Weighted Average
+                // Weights: Speed(2), OBI(2), Change(1), Depth(1), Div(1), GLI(1)
+                const totalWeight = 2 + 2 + 1 + 1 + 1 + 1;
+                const weightedSum = (speedScore * 2) + (obiScore * 2) + changeScore + depthScore + divScore + gliScore;
+                const finalScore = weightedSum / totalWeight; // -1 to 1
+
+                // Update UI
+                const bearCircle = document.getElementById('conclusion-bear');
+                const bullCircle = document.getElementById('conclusion-bull');
+                const scoreText = document.getElementById('conclusion-score');
+
+                // Base opacity 0.2
+                let bearOpacity = 0.2;
+                let bullOpacity = 0.2;
+
+                if (finalScore > 0) {
+                    // Bullish
+                    bullOpacity = 0.2 + (finalScore * 0.8); // Map 0->1 to 0.2->1.0
+                } else {
+                    // Bearish
+                    bearOpacity = 0.2 + (Math.abs(finalScore) * 0.8);
+                }
+
+                if (bearCircle) bearCircle.style.opacity = bearOpacity;
+                if (bullCircle) bullCircle.style.opacity = bullOpacity;
+                if (scoreText) scoreText.textContent = `${(finalScore * 100).toFixed(0)}%`;
 
             } catch (e) {
                 console.error("Failed to fetch market stats", e);

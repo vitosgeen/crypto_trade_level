@@ -392,6 +392,27 @@
                     </div>
                     <div class="gauge-value" id="gli-value">0.00</div>
                 </div>
+
+                <!-- Conclusion Indicator -->
+                <div class="gauge-container"
+                    style="width: 100%; flex-direction: row; justify-content: center; gap: 40px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
+                    <div style="display: flex; flex-direction: column; align-items: center;">
+                        <div id="conclusion-bear"
+                            style="width: 60px; height: 60px; border-radius: 50%; background-color: #dc3545; opacity: 0.2; transition: opacity 0.3s; box-shadow: 0 0 15px #dc3545;">
+                        </div>
+                        <span style="font-size: 1rem; margin-top: 10px; color: #dc3545; font-weight: bold;">SELL</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                        <h3 style="font-size: 1.1rem; color: #6c757d; margin: 0 0 5px 0;">CONCLUSION</h3>
+                        <div id="conclusion-score" style="font-size: 1.2rem; font-weight: bold; color: #333;">0%</div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center;">
+                        <div id="conclusion-bull"
+                            style="width: 60px; height: 60px; border-radius: 50%; background-color: #28a745; opacity: 0.2; transition: opacity 0.3s; box-shadow: 0 0 15px #28a745;">
+                        </div>
+                        <span style="font-size: 1rem; margin-top: 10px; color: #28a745; font-weight: bold;">BUY</span>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -691,6 +712,59 @@
                 if (gliNeedle) gliNeedle.style.transform = `rotate(${gliDeg}deg)`;
                 const gliValue = document.getElementById('gli-value');
                 if (gliValue) gliValue.textContent = stats.gli.toFixed(2);
+
+                // Conclusion Calculation
+                // Speed: -1 to 1
+                let speedScore = 0;
+                if (totalSpeed > 0) speedScore = (stats.speed_buy - stats.speed_sell) / totalSpeed;
+
+                // Depth: -1 to 1 (Bid - Ask) / Total
+                let depthScore = 0;
+                if (totalDepth > 0) depthScore = (stats.depth_bid - stats.depth_ask) / totalDepth;
+
+                // Price Change: Cap at +/- 1% -> -1 to 1
+                let changeScore = stats.price_change_60s;
+                if (changeScore > 1) changeScore = 1;
+                if (changeScore < -1) changeScore = -1;
+
+                // OBI: Already -1 to 1
+                let obiScore = stats.obi;
+
+                // Divergence: SpeedRatio - DepthRatio
+                let divScore = divergence;
+                if (divScore > 1) divScore = 1;
+                if (divScore < -1) divScore = -1;
+
+                // GLI: 1 - GLI
+                let gliScore = 1 - stats.gli;
+                if (gliScore > 1) gliScore = 1;
+                if (gliScore < -1) gliScore = -1;
+
+                // Weighted Average
+                const totalWeight = 2 + 2 + 1 + 1 + 1 + 1;
+                const weightedSum = (speedScore * 2) + (obiScore * 2) + changeScore + depthScore + divScore + gliScore;
+                const finalScore = weightedSum / totalWeight; // -1 to 1
+
+                // Update UI
+                const bearCircle = document.getElementById('conclusion-bear');
+                const bullCircle = document.getElementById('conclusion-bull');
+                const scoreText = document.getElementById('conclusion-score');
+
+                // Base opacity 0.2
+                let bearOpacity = 0.2;
+                let bullOpacity = 0.2;
+
+                if (finalScore > 0) {
+                    // Bullish
+                    bullOpacity = 0.2 + (finalScore * 0.8);
+                } else {
+                    // Bearish
+                    bearOpacity = 0.2 + (Math.abs(finalScore) * 0.8);
+                }
+
+                if (bearCircle) bearCircle.style.opacity = bearOpacity;
+                if (bullCircle) bullCircle.style.opacity = bullOpacity;
+                if (scoreText) scoreText.textContent = `${(finalScore * 100).toFixed(0)}%`;
 
             } catch (e) {
                 console.error("Failed to fetch market stats", e);
