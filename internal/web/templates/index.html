@@ -608,6 +608,9 @@
                     |
                     Cursor: <span id="cursor-percent"
                         style="font-family: 'Inter', monospace; font-weight: 600;">0.00%</span>
+                    <span id="book-order-info" style="display: none; margin-left: 10px;"> | Book: <span
+                            id="book-order-value"
+                            style="font-family: 'Inter', monospace; font-weight: 600;">0</span></span>
                 </div>
             </div>
 
@@ -653,6 +656,7 @@
         let selectedLevelId = null;
         let currentPriceLines = [];
         let previewPriceLines = [];
+        let liquidityData = [];
         let isShiftPressed = false;
         let lastCrosshairPrice = null;
         let borderResetTimeout = null;
@@ -796,6 +800,34 @@
 
                             percentSpan.textContent = `${diffPct > 0 ? '+' : ''}${diffPct.toFixed(2)}%`;
                             percentSpan.style.color = diffPct >= 0 ? 'var(--success)' : 'var(--danger)';
+                        }
+                    }
+
+                    // Book Order Logic
+                    const bookInfo = document.getElementById('book-order-info');
+                    const bookValue = document.getElementById('book-order-value');
+
+                    if (bookInfo && bookValue && window.liquidityData && price) {
+                        let closest = null;
+                        let minDiff = Infinity;
+
+                        for (const c of window.liquidityData) {
+                            const diff = Math.abs(price - c.price);
+                            if (diff < minDiff) {
+                                minDiff = diff;
+                                closest = c;
+                            }
+                        }
+
+                        // Threshold: 0.5% of price
+                        const threshold = price * 0.005;
+
+                        if (closest && minDiff < threshold) {
+                            bookInfo.style.display = 'inline';
+                            bookValue.textContent = closest.volume.toFixed(2);
+                            bookValue.style.color = closest.type === 'bid' ? '#00ff88' : '#dc3545';
+                        } else {
+                            bookInfo.style.display = 'none';
                         }
                     }
 
@@ -1064,10 +1096,12 @@
                         window.currentLiquidityLines.forEach(line => liquiditySeries.removePriceLine(line));
                     }
                     window.currentLiquidityLines = [];
+                    window.liquidityData = [];
 
                     if (clusters && clusters.length > 0) {
                         const maxVol = Math.max(...clusters.map(c => c.volume));
                         clusters.forEach(c => {
+                            window.liquidityData.push(c);
                             let opacity = 0.0;
                             if (maxVol > 0) {
                                 opacity = c.volume / maxVol;
