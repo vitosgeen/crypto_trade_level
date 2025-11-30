@@ -603,6 +603,19 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 	// 7. Update Level State (Centralized Logic)
 	// We only update state if we have a valid levelID
 	if levelID != "" && levelID != "unknown" {
+		// Find the activeLevel before entering the callback to avoid nested locking
+		var activeLevel *domain.Level
+		s.mu.RLock()
+		if levels, ok := s.levelsCache[symbol]; ok {
+			for _, l := range levels {
+				if l.ID == levelID {
+					activeLevel = l
+					break
+				}
+			}
+		}
+		s.mu.RUnlock()
+
 		s.engine.UpdateState(levelID, func(ls *LevelState) {
 			if realizedPnL > 0 {
 				ls.ConsecutiveWins++
@@ -614,37 +627,19 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 
 				// Check if this was a Base Close
 				// We consider "Stop Loss (Base)" and "Level Cross" as base closes.
-				if reason == "Stop Loss (Base)" || reason == "Level Cross" {
-					ls.ConsecutiveBaseCloses++
-					log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
-
-					// Check Cooldown
-					// We need to fetch the level to check config.
-					// Since we are in a callback, we can't easily fetch async?
-					// We can assume we have the level config in cache.
-					// But UpdateState is sync.
-					// Let's try to get level from cache.
-					// Warning: s.levelsCache requires lock. We are not holding lock here.
-					// But s.engine.UpdateState locks the engine state, not the service.
-					// So we can acquire service lock.
-
-					// However, calling s.levelsCache here might be expensive or complex if we don't have symbol.
-					// We have symbol.
-
-					// Let's find the level in cache.
-					s.mu.RLock()
-					levels := s.levelsCache[symbol]
-					s.mu.RUnlock()
-
-					var activeLevel *domain.Level
-					for _, l := range levels {
-						if l.ID == levelID {
-							activeLevel = l
-							break
-						}
+				if (reason == "Stop Loss (Base)" || reason == "Level Cross") && activeLevel != nil {
+					// Only increment if close price is at/near base price
+					// Use 0.2% tolerance to account for slippage/spread
+					const epsilon = 0.002
+					dist := (price - activeLevel.LevelPrice) / activeLevel.LevelPrice
+					if dist < 0 {
+						dist = -dist
 					}
 
-					if activeLevel != nil {
+					if dist <= epsilon {
+						ls.ConsecutiveBaseCloses++
+						log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
+
 						if activeLevel.MaxConsecutiveBaseCloses > 0 && ls.ConsecutiveBaseCloses >= activeLevel.MaxConsecutiveBaseCloses {
 							ls.DisabledUntil = time.Now().Add(time.Duration(activeLevel.BaseCloseCooldownMs) * time.Millisecond)
 							ls.ConsecutiveBaseCloses = 0

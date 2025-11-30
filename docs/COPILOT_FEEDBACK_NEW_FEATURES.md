@@ -301,3 +301,223 @@ In internal/usecase/level_service.go:
 The logic for tracking base closes is problematic. When realizedPnL <= 0 (loss), the code increments ConsecutiveBaseCloses and assumes this is always a "base close" scenario. However, not all losses are base closes - a position could also be closed at a loss due to other reasons like "Sentiment Exit" or "Safety Exit".
 
 The code should only increment ConsecutiveBaseCloses when the close reason is specifically a base close (e.g., "Level Cross" or "Stop Loss (Base)"), not for all losses. Consider passing the close reason to this callback or checking it explicitly.
+
+
+@Copilot commented on this pull request.
+Pull request overview
+
+Copilot reviewed 16 out of 16 changed files in this pull request and generated 7 comments.
+
+💡 Add Copilot custom instructions for smarter, more guided reviews. Learn how to get started.
+
+In internal/usecase/market_service.go:
+
+> +		if err := s.exchange.Subscribe([]string{symbol}); err == nil {
++			s.mu.Lock()
++			s.subscribed[symbol] = true
++			s.mu.Unlock()
++		} else {
++			// Log error so operators can detect subscription failures
++			// I need to add "log" to imports.
++			// For now, I will skip logging or add it if I can update imports.
++			// I will update imports in a separate step or assume it's there.
++			// Wait, previous file view showed:
++			// import (
++			// 	"context"
++			// 	"sort"
++			// 	"sync"
++			// 	"time"
++			// 	"github.com/vitos/crypto_trade_level/internal/domain"
++			// )
++			// So "log" is missing. I should add it.
++		}
+
+The subscription error handling contains extensive inline TODO comments that should be removed. The code should either import the log package and implement proper error logging, or remove these comments. These internal development notes reduce code readability.
+
+In internal/usecase/market_service.go:
+
+> @@ -223,12 +270,45 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
+ 		}
+ 	}
+ 
++	// 4. Calculate Indicators
++	// OBI = (BidDepth - AskDepth) / (BidDepth + AskDepth)
++	var obi float64
++	if avgBid+avgAsk > 0 {
++		obi = (avgBid - avgAsk) / (avgBid + avgAsk)
++	}
++
++	// CVD = Cumulative Volume Delta (Running Sum)
++	cvd := s.cvdAccumulator[symbol]
+
+The CVD calculation is inconsistent with documentation and the test expectations. According to the specification, CVD should be a cumulative sum over time (Σ Delta_t). However, the code updates cvdAccumulator in handleTrade (lines 84-89) using size * price, while the test expects it to reflect SpeedBuy - SpeedSell. The cvdAccumulator should accumulate (size * price) for buys and subtract (size * price) for sells, which is what's implemented in handleTrade. But this makes the CVD value grow unbounded over the lifetime of the service, which may not be the intended behavior. Consider whether CVD should reset periodically or be calculated over a 60s window like other metrics.
+
+In internal/usecase/market_service.go:
+
+> +	// CVD = Cumulative Volume Delta (Running Sum)
++	cvd := s.cvdAccumulator[symbol]
++
++	// TSI = Trade Speed Index (Trades per Second)
++	// NumberOfTrades / TimeWindow (60s)
++	tsi := float64(tradeCount) / 60.0
++
++	// GLI = ExecutedVolumeAtBid / ExecutedVolumeAtAsk
++	// ExecutedVolumeAtBid: volume executed at bid price (sellers hitting bids) = speedSell
++	// ExecutedVolumeAtAsk: volume executed at ask price (buyers lifting asks) = speedBuy
++	// Therefore, GLI = speedSell / speedBuy
++	var gli float64 = 1.0
++	if speedBuy > 0 {
++		gli = speedSell / speedBuy
++	} else if speedSell > 0 {
++		gli = MaxGLI // Max cap if no buys
+
+[nitpick] The MaxGLI constant value of 10.0 is used as a cap when speedBuy is zero but lacks justification. Consider documenting why 10.0 was chosen as the maximum value, or making it configurable based on market conditions.
+
+In internal/usecase/level_service.go:
+
+> +				if reason == "Stop Loss (Base)" || reason == "Level Cross" {
++					ls.ConsecutiveBaseCloses++
++					log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
+
+The logic increments ConsecutiveBaseCloses for any loss with reason 'Level Cross', but not all 'Level Cross' events represent base closes. A 'Level Cross' could occur at a profitable exit or when closing at tiers. The condition should be more specific - only increment when the close is at a loss AND specifically at the base level. Consider checking if the close price is at or near the level's base price.
+⬇️ Suggested change
+
+-				if reason == "Stop Loss (Base)" || reason == "Level Cross" {
+-					ls.ConsecutiveBaseCloses++
+-					log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
++				if (reason == "Stop Loss (Base)" || reason == "Level Cross") && activeLevel != nil {
++					// Only increment if close price is at/near base price
++					const epsilon = 0.001 // 0.1% tolerance
++					if closePrice >= activeLevel.BasePrice*(1-epsilon) && closePrice <= activeLevel.BasePrice*(1+epsilon) {
++						ls.ConsecutiveBaseCloses++
++						log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
++					}
+
+In internal/usecase/level_service.go:
+
+> +				if reason == "Stop Loss (Base)" || reason == "Level Cross" {
++					ls.ConsecutiveBaseCloses++
++					log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
++
++					// Check Cooldown
++					// We need to fetch the level to check config.
++					// Since we are in a callback, we can't easily fetch async?
++					// We can assume we have the level config in cache.
++					// But UpdateState is sync.
++					// Let's try to get level from cache.
++					// Warning: s.levelsCache requires lock. We are not holding lock here.
++					// But s.engine.UpdateState locks the engine state, not the service.
++					// So we can acquire service lock.
++
++					// However, calling s.levelsCache here might be expensive or complex if we don't have symbol.
++					// We have symbol.
++
++					// Let's find the level in cache.
++					s.mu.RLock()
++					levels := s.levelsCache[symbol]
++					s.mu.RUnlock()
++
++					var activeLevel *domain.Level
++					for _, l := range levels {
++						if l.ID == levelID {
++							activeLevel = l
++							break
++						}
++					}
++
+
+Acquiring s.mu.RLock() inside the engine.UpdateState callback creates potential for deadlock or race conditions. The UpdateState callback already holds the engine's internal lock, and now acquires the service lock. If another goroutine holds the service lock and tries to call an engine method, a deadlock could occur. Consider passing the level configuration to finalizePosition as a parameter to avoid this nested locking pattern.
+⬇️ Suggested change
+
+-				if reason == "Stop Loss (Base)" || reason == "Level Cross" {
+-					ls.ConsecutiveBaseCloses++
+-					log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
+-
+-					// Check Cooldown
+-					// We need to fetch the level to check config.
+-					// Since we are in a callback, we can't easily fetch async?
+-					// We can assume we have the level config in cache.
+-					// But UpdateState is sync.
+-					// Let's try to get level from cache.
+-					// Warning: s.levelsCache requires lock. We are not holding lock here.
+-					// But s.engine.UpdateState locks the engine state, not the service.
+-					// So we can acquire service lock.
+-
+-					// However, calling s.levelsCache here might be expensive or complex if we don't have symbol.
+-					// We have symbol.
+-
+-					// Let's find the level in cache.
+-					s.mu.RLock()
+-					levels := s.levelsCache[symbol]
+-					s.mu.RUnlock()
+-
+-					var activeLevel *domain.Level
+-					for _, l := range levels {
+-						if l.ID == levelID {
+-							activeLevel = l
+-							break
+-						}
+-					}
+-
++				var activeLevel *domain.Level
++				// Find the activeLevel before entering the callback to avoid nested locking
++				s.mu.RLock()
++				levels := s.levelsCache[symbol]
++				for _, l := range levels {
++					if l.ID == levelID {
++						activeLevel = l
++						break
++					}
++				}
++				s.mu.RUnlock()
++
++				if reason == "Stop Loss (Base)" || reason == "Level Cross" {
++					ls.ConsecutiveBaseCloses++
++					log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
+
+In internal/web/templates/index.html:
+
+>                  const divergence = speedRatio - depthRatio;
+                 const divDeg = divergence * 90;
+                 const divNeedle = document.getElementById('div-needle');
+                 if (divNeedle) divNeedle.style.transform = `rotate(${divDeg}deg)`;
+                 const divValue = document.getElementById('div-value');
+                 if (divValue) divValue.textContent = divergence.toFixed(2);
+ 
++                // 5. OBI
++                const obiDeg = stats.obi * 90;
++                const obiNeedle = document.getElementById('obi-needle');
++                if (obiNeedle) obiNeedle.style.transform = `rotate(${obiDeg}deg)`;
++                const obiValue = document.getElementById('obi-value');
++                if (obiValue) obiValue.textContent = stats.obi.toFixed(2);
++
++                // 6. TSI
++                const maxTsi = 100;
+
+[nitpick] The maxTsi value of 100 appears to be a magic number without explanation. Since TSI represents trades per second, this caps the gauge at 100 trades/second. Consider either documenting why this value was chosen, making it configurable, or dynamically calculating it based on observed values.
+⬇️ Suggested change
+
+-                const maxTsi = 100;
++                // Dynamically track the maximum observed TSI value to scale the gauge appropriately.
++                window.maxObservedTsi = Math.max(window.maxObservedTsi || 100, stats.tsi);
++                const maxTsi = window.maxObservedTsi;
+
+In internal/web/templates/coin_detail.html:
+
+> @@ -610,6 +682,90 @@ <h2>Quick Actions</h2>
+                 const divValue = document.getElementById('div-value');
+                 if (divValue) divValue.textContent = divergence.toFixed(2);
+ 
++                // Update OBI
++                // OBI is -1 to 1. Map to -90 to 90 degrees.
++                const obiDeg = stats.obi * 90;
++                const obiNeedle = document.getElementById('obi-needle');
++                if (obiNeedle) obiNeedle.style.transform = `rotate(${obiDeg}deg)`;
++                const obiValue = document.getElementById('obi-value');
++                if (obiValue) obiValue.textContent = stats.obi.toFixed(2);
++
++                // Update TSI
++                // Assume max 100 trades/sec for full scale?
++                const maxTsi = 100;
+
+[nitpick] The maxTsi value of 100 is duplicated from index.html without explanation. This magic number should either be documented or extracted to a shared configuration to maintain consistency across pages.

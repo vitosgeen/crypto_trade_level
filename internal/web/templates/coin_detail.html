@@ -691,8 +691,9 @@
                 if (obiValue) obiValue.textContent = stats.obi.toFixed(2);
 
                 // Update TSI
-                // Assume max 100 trades/sec for full scale?
-                const maxTsi = 100;
+                // Dynamically track the maximum observed TSI value to scale the gauge appropriately.
+                window.maxObservedTsi = Math.max(window.maxObservedTsi || 100, stats.tsi);
+                const maxTsi = window.maxObservedTsi;
                 let tsiRatio = stats.tsi / maxTsi;
                 if (tsiRatio > 1) tsiRatio = 1;
                 const tsiDeg = (tsiRatio * 180) - 90;

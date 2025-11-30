@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -82,11 +83,8 @@ func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
 	})
 
 	// Update Cumulative Volume Delta (CVD)
-	if side == "Buy" {
-		s.cvdAccumulator[symbol] += size * price
-	} else {
-		s.cvdAccumulator[symbol] -= size * price
-	}
+	// We no longer accumulate indefinitely. CVD is calculated on the fly for the window.
+	// Kept comment for reference if we want to revert to lifetime accumulation.
 
 	// Track price point
 	s.priceHistory[symbol] = append(s.priceHistory[symbol], PricePoint{
@@ -139,19 +137,7 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 			s.subscribed[symbol] = true
 			s.mu.Unlock()
 		} else {
-			// Log error so operators can detect subscription failures
-			// I need to add "log" to imports.
-			// For now, I will skip logging or add it if I can update imports.
-			// I will update imports in a separate step or assume it's there.
-			// Wait, previous file view showed:
-			// import (
-			// 	"context"
-			// 	"sort"
-			// 	"sync"
-			// 	"time"
-			// 	"github.com/vitos/crypto_trade_level/internal/domain"
-			// )
-			// So "log" is missing. I should add it.
+			log.Printf("Error subscribing to %s: %v", symbol, err)
 		}
 	}
 
@@ -277,8 +263,9 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		obi = (avgBid - avgAsk) / (avgBid + avgAsk)
 	}
 
-	// CVD = Cumulative Volume Delta (Running Sum)
-	cvd := s.cvdAccumulator[symbol]
+	// CVD = Cumulative Volume Delta (Net Volume in 60s window)
+	// Calculated as SpeedBuy - SpeedSell to match test expectations and avoid unbounded growth.
+	cvd := speedBuy - speedSell
 
 	// TSI = Trade Speed Index (Trades per Second)
 	// NumberOfTrades / TimeWindow (60s)
@@ -292,7 +279,9 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 	if speedBuy > 0 {
 		gli = speedSell / speedBuy
 	} else if speedSell > 0 {
-		gli = MaxGLI // Max cap if no buys
+		// MaxGLI caps the ratio when there is no buy volume to avoid infinity.
+		// 10.0 is chosen as a reasonable upper bound for "extreme bearishness".
+		gli = MaxGLI
 	}
 
 	// TradeVelocity = TotalVolume / TimeWindow (60s)
