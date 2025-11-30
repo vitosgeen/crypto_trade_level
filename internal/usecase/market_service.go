@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -30,13 +31,15 @@ type PricePoint struct {
 }
 
 type MarketService struct {
-	exchange     domain.Exchange
-	cache        map[string]CachedLiquidity
-	trades       map[string][]Trade // Symbol -> Trades
-	depthHistory map[string][]DepthSnapshot
-	priceHistory map[string][]PricePoint // Symbol -> Price Points
-	mu           sync.Mutex
-	timeNow      func() time.Time // For testing
+	exchange       domain.Exchange
+	cache          map[string]CachedLiquidity
+	trades         map[string][]Trade // Symbol -> Trades
+	depthHistory   map[string][]DepthSnapshot
+	priceHistory   map[string][]PricePoint // Symbol -> Price Points
+	cvdAccumulator map[string]float64      // Symbol -> Cumulative Volume Delta
+	subscribed     map[string]bool         // Symbol -> Subscribed
+	mu             sync.Mutex
+	timeNow        func() time.Time // For testing
 }
 
 type DepthSnapshot struct {
@@ -45,14 +48,18 @@ type DepthSnapshot struct {
 	TotalAsk float64
 }
 
+const MaxGLI = 10.0
+
 func NewMarketService(exchange domain.Exchange) *MarketService {
 	s := &MarketService{
-		exchange:     exchange,
-		cache:        make(map[string]CachedLiquidity),
-		trades:       make(map[string][]Trade),
-		depthHistory: make(map[string][]DepthSnapshot),
-		priceHistory: make(map[string][]PricePoint),
-		timeNow:      time.Now,
+		exchange:       exchange,
+		cache:          make(map[string]CachedLiquidity),
+		trades:         make(map[string][]Trade),
+		depthHistory:   make(map[string][]DepthSnapshot),
+		priceHistory:   make(map[string][]PricePoint),
+		cvdAccumulator: make(map[string]float64),
+		subscribed:     make(map[string]bool),
+		timeNow:        time.Now,
 	}
 
 	// Subscribe to trades
@@ -74,6 +81,10 @@ func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
 		Price:  price,
 		Time:   now,
 	})
+
+	// Update Cumulative Volume Delta (CVD)
+	// We no longer accumulate indefinitely. CVD is calculated on the fly for the window.
+	// Kept comment for reference if we want to revert to lifetime accumulation.
 
 	// Track price point
 	s.priceHistory[symbol] = append(s.priceHistory[symbol], PricePoint{
@@ -107,9 +118,29 @@ type MarketStats struct {
 	DepthBid       float64 `json:"depth_bid"`
 	DepthAsk       float64 `json:"depth_ask"`
 	PriceChange60s float64 `json:"price_change_60s"`
+	OBI            float64 `json:"obi"`
+	CVD            float64 `json:"cvd"`
+	TSI            float64 `json:"tsi"`
+	GLI            float64 `json:"gli"`
+	TradeVelocity  float64 `json:"trade_velocity"`
 }
 
 func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*MarketStats, error) {
+	s.mu.Lock()
+	needsSubscribe := !s.subscribed[symbol]
+	s.mu.Unlock()
+
+	if needsSubscribe {
+		// Subscribe to real-time updates
+		if err := s.exchange.Subscribe([]string{symbol}); err == nil {
+			s.mu.Lock()
+			s.subscribed[symbol] = true
+			s.mu.Unlock()
+		} else {
+			log.Printf("Error subscribing to %s: %v", symbol, err)
+		}
+	}
+
 	s.mu.Lock()
 
 	// Check if we need to hydrate/refresh trades
@@ -178,6 +209,7 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 
 	// 1. Calculate Speed (from trades)
 	var speedBuy, speedSell float64
+	var tradeCount int
 	if trades, ok := s.trades[symbol]; ok {
 		now := s.timeNow()
 		cutoff := now.Add(-60 * time.Second)
@@ -186,6 +218,7 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		for _, t := range trades {
 			if t.Time.After(cutoff) {
 				validTrades = append(validTrades, t)
+				tradeCount++
 				if t.Side == "Buy" {
 					speedBuy += t.Size * t.Price
 				} else {
@@ -223,12 +256,48 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		}
 	}
 
+	// 4. Calculate Indicators
+	// OBI = (BidDepth - AskDepth) / (BidDepth + AskDepth)
+	var obi float64
+	if avgBid+avgAsk > 0 {
+		obi = (avgBid - avgAsk) / (avgBid + avgAsk)
+	}
+
+	// CVD = Cumulative Volume Delta (Net Volume in 60s window)
+	// Calculated as SpeedBuy - SpeedSell to match test expectations and avoid unbounded growth.
+	cvd := speedBuy - speedSell
+
+	// TSI = Trade Speed Index (Trades per Second)
+	// NumberOfTrades / TimeWindow (60s)
+	tsi := float64(tradeCount) / 60.0
+
+	// GLI = ExecutedVolumeAtBid / ExecutedVolumeAtAsk
+	// ExecutedVolumeAtBid: volume executed at bid price (sellers hitting bids) = speedSell
+	// ExecutedVolumeAtAsk: volume executed at ask price (buyers lifting asks) = speedBuy
+	// Therefore, GLI = speedSell / speedBuy
+	var gli float64 = 1.0
+	if speedBuy > 0 {
+		gli = speedSell / speedBuy
+	} else if speedSell > 0 {
+		// MaxGLI caps the ratio when there is no buy volume to avoid infinity.
+		// 10.0 is chosen as a reasonable upper bound for "extreme bearishness".
+		gli = MaxGLI
+	}
+
+	// TradeVelocity = TotalVolume / TimeWindow (60s)
+	tradeVelocity := (speedBuy + speedSell) / 60.0
+
 	return &MarketStats{
 		SpeedBuy:       speedBuy,
 		SpeedSell:      speedSell,
 		DepthBid:       avgBid,
 		DepthAsk:       avgAsk,
 		PriceChange60s: priceChange60s,
+		OBI:            obi,
+		CVD:            cvd,
+		TSI:            tsi,
+		GLI:            gli,
+		TradeVelocity:  tradeVelocity,
 	}, nil
 }
 
@@ -260,8 +329,8 @@ func (s *MarketService) updateOrderBook(ctx context.Context, symbol string) {
 	defer cancel()
 
 	linearOB, err := s.exchange.GetOrderBook(ctx, symbol, "linear")
-	if err != nil {
-		return // Skip update on error
+	if err != nil || linearOB == nil {
+		return // Skip update on error or nil result
 	}
 
 	// Calculate Total Volume (within +/- 0.5% range)

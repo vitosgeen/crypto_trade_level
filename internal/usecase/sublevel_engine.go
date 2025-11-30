@@ -18,12 +18,14 @@ const (
 )
 
 type LevelState struct {
-	Tier1Triggered  bool
-	Tier2Triggered  bool
-	Tier3Triggered  bool
-	LastTriggerTime time.Time
-	ActiveSide      domain.Side
-	ConsecutiveWins int // Tracks consecutive profitable closes
+	Tier1Triggered        bool
+	Tier2Triggered        bool
+	Tier3Triggered        bool
+	LastTriggerTime       time.Time
+	ActiveSide            domain.Side
+	ConsecutiveWins       int       // Tracks consecutive profitable closes
+	ConsecutiveBaseCloses int       // Tracks consecutive closes at base level
+	DisabledUntil         time.Time // Timestamp until which the level is disabled
 }
 
 type SublevelEngine struct {
@@ -66,6 +68,8 @@ func (e *SublevelEngine) ResetState(levelID string) {
 		s.Tier3Triggered = false
 		s.ActiveSide = ""
 		// ConsecutiveWins is preserved
+		// ConsecutiveBaseCloses is preserved
+		// DisabledUntil is preserved
 	} else {
 		// If state doesn't exist, no need to do anything (or create empty?)
 		delete(e.states, levelID)
@@ -87,6 +91,12 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	// Check Cooldown
 	if !state.LastTriggerTime.IsZero() && time.Since(state.LastTriggerTime) < time.Duration(level.CoolDownMs)*time.Millisecond {
 		// log.Printf("DEBUG: Level %s in cooldown. Remaining: %v", level.ID, time.Duration(level.CoolDownMs)*time.Millisecond - time.Since(state.LastTriggerTime))
+		return ActionNone, 0
+	}
+
+	// Check Base Close Cooldown
+	if !state.DisabledUntil.IsZero() && time.Now().Before(state.DisabledUntil) {
+		// log.Printf("DEBUG: Level %s disabled until %v", level.ID, state.DisabledUntil)
 		return ActionNone, 0
 	}
 

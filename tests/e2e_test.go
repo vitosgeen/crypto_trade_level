@@ -94,6 +94,10 @@ func (m *MockExchange) GetInstruments(ctx context.Context, category string) ([]d
 	return nil, nil
 }
 
+func (m *MockExchange) Subscribe(symbols []string) error {
+	return nil
+}
+
 func TestEndToEnd_LevelDefense(t *testing.T) {
 	// Enable logs
 	// log.SetOutput(os.Stdout) // Default is stderr which go test shows on failure

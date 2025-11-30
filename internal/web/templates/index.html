@@ -406,6 +406,18 @@
                     </div>
                 </div>
 
+                <div class="form-group">
+                    <label for="max_consecutive_base_closes">Max Base Closes (0 to disable):</label>
+                    <input type="number" id="max_consecutive_base_closes" name="max_consecutive_base_closes" step="1"
+                        value="0">
+                </div>
+
+                <div class="form-group">
+                    <label for="base_close_cooldown_minutes">Cooldown (Minutes):</label>
+                    <input type="number" id="base_close_cooldown_minutes" name="base_close_cooldown_minutes" step="1"
+                        value="5">
+                </div>
+
                 <div class="checkbox-wrapper">
                     <input type="checkbox" name="stop_loss_at_base" id="sl-base">
                     <label for="sl-base" style="margin:0; cursor:pointer;">Stop Loss at Base</label>
@@ -435,52 +447,138 @@
                 <div class="gauges-grid">
                     <!-- Gauge 1: Trade Speed -->
                     <div class="gauge-container">
-                        <h3 style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Trade Volume (60s)
-                        </h3>
-                        <div class="gauge">
-                            <div class="gauge-bg"></div>
-                            <div class="gauge-needle" id="speed-needle"></div>
-                            <div class="gauge-center"></div>
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Volume (60s)</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg" style="width: 80px; height: 80px;"></div>
+                            <div class="gauge-needle" id="speed-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
                         </div>
-                        <div class="gauge-labels">
-                            <span class="text-danger">Sell</span>
-                            <span class="text-success">Buy</span>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span class="text-danger">S</span>
+                            <span class="text-success">B</span>
                         </div>
-                        <div class="gauge-value" id="speed-value">0 / 0</div>
+                        <div class="gauge-value" id="speed-value" style="font-size: 0.8rem;">0/0</div>
                     </div>
 
                     <!-- Gauge 2: Order Book Depth -->
                     <div class="gauge-container">
-                        <h3 style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Order Book Depth
-                        </h3>
-                        <div class="gauge">
-                            <div class="gauge-bg"></div>
-                            <div class="gauge-needle" id="depth-needle"></div>
-                            <div class="gauge-center"></div>
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Depth</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg" style="width: 80px; height: 80px;"></div>
+                            <div class="gauge-needle" id="depth-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
                         </div>
-                        <div class="gauge-labels">
-                            <span class="text-danger">Ask</span>
-                            <span class="text-success">Bid</span>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span class="text-danger">A</span>
+                            <span class="text-success">B</span>
                         </div>
-                        <div class="gauge-value" id="depth-value">0 / 0</div>
+                        <div class="gauge-value" id="depth-value" style="font-size: 0.8rem;">0/0</div>
                     </div>
 
-                    <!-- Gauge 3: Divergence -->
+                    <!-- Gauge 3: Price Change -->
                     <div class="gauge-container">
-                        <h3 style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Sentiment
-                            Divergence</h3>
-                        <div class="gauge">
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Change (60s)</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg" style="width: 80px; height: 80px;"></div>
+                            <div class="gauge-needle" id="price-change-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                        </div>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span class="text-danger">Dn</span>
+                            <span class="text-success">Up</span>
+                        </div>
+                        <div class="gauge-value" id="price-change-value" style="font-size: 0.8rem;">0.00%</div>
+                    </div>
+
+                    <!-- Gauge 4: Divergence -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">Divergence</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
                             <div class="gauge-bg"
-                                style="background: conic-gradient(from 270deg, var(--warning) 0deg 90deg, var(--info) 90deg 180deg, transparent 180deg);">
+                                style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--warning) 0deg 90deg, var(--info) 90deg 180deg, transparent 180deg);">
                             </div>
-                            <div class="gauge-needle" id="div-needle"></div>
-                            <div class="gauge-center"></div>
+                            <div class="gauge-needle" id="div-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
                         </div>
-                        <div class="gauge-labels">
-                            <span style="color: var(--warning);">Bearish</span>
-                            <span style="color: var(--info);">Bullish</span>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span style="color: var(--warning);">Bear</span>
+                            <span style="color: var(--info);">Bull</span>
                         </div>
-                        <div class="gauge-value" id="div-value">0.00</div>
+                        <div class="gauge-value" id="div-value" style="font-size: 0.8rem;">0.00</div>
+                    </div>
+
+                    <!-- Gauge 5: OBI -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">OBI</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg"
+                                style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--danger) 0deg 90deg, var(--success) 90deg 180deg, transparent 180deg);">
+                            </div>
+                            <div class="gauge-needle" id="obi-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                        </div>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span class="text-danger">Bear</span>
+                            <span class="text-success">Bull</span>
+                        </div>
+                        <div class="gauge-value" id="obi-value" style="font-size: 0.8rem;">0.00</div>
+                    </div>
+
+                    <!-- Gauge 6: TSI -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">TSI</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg"
+                                style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--secondary-color) 0deg 180deg, transparent 180deg);">
+                            </div>
+                            <div class="gauge-needle" id="tsi-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                        </div>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span>Slow</span>
+                            <span>Fast</span>
+                        </div>
+                        <div class="gauge-value" id="tsi-value" style="font-size: 0.8rem;">0</div>
+                    </div>
+
+                    <!-- Gauge 7: GLI -->
+                    <div class="gauge-container">
+                        <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">GLI</h3>
+                        <div class="gauge" style="width: 80px; height: 40px;">
+                            <div class="gauge-bg"
+                                style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--success) 0deg 90deg, var(--danger) 90deg 180deg, transparent 180deg);">
+                            </div>
+                            <div class="gauge-needle" id="gli-needle" style="height: 35px; width: 2px;"></div>
+                            <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                        </div>
+                        <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                            <span class="text-success">Bull</span>
+                            <span class="text-danger">Bear</span>
+                        </div>
+                        <div class="gauge-value" id="gli-value" style="font-size: 0.8rem;">0.00</div>
+                    </div>
+
+                    <!-- Conclusion Indicator -->
+                    <div class="gauge-container"
+                        style="width: 100%; flex-direction: row; justify-content: center; gap: 20px; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color);">
+                        <div style="display: flex; flex-direction: column; align-items: center;">
+                            <div id="conclusion-bear"
+                                style="width: 40px; height: 40px; border-radius: 50%; background-color: var(--danger); opacity: 0.2; transition: opacity 0.3s; box-shadow: 0 0 10px var(--danger);">
+                            </div>
+                            <span
+                                style="font-size: 0.8rem; margin-top: 5px; color: var(--danger); font-weight: bold;">SELL</span>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center;">
+                            <h3 style="font-size: 0.9rem; color: var(--text-muted); margin: 0 10px;">CONCLUSION</h3>
+                            <div id="conclusion-score" style="font-size: 0.8rem; color: var(--text-color);">0%</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center;">
+                            <div id="conclusion-bull"
+                                style="width: 40px; height: 40px; border-radius: 50%; background-color: var(--success); opacity: 0.2; transition: opacity 0.3s; box-shadow: 0 0 10px var(--success);">
+                            </div>
+                            <span
+                                style="font-size: 0.8rem; margin-top: 5px; color: var(--success); font-weight: bold;">BUY</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -510,6 +608,9 @@
                     |
                     Cursor: <span id="cursor-percent"
                         style="font-family: 'Inter', monospace; font-weight: 600;">0.00%</span>
+                    <span id="book-order-info" style="display: none; margin-left: 10px;"> | Book: <span
+                            id="book-order-value"
+                            style="font-family: 'Inter', monospace; font-weight: 600;">0</span></span>
                 </div>
             </div>
 
@@ -555,6 +656,7 @@
         let selectedLevelId = null;
         let currentPriceLines = [];
         let previewPriceLines = [];
+        let liquidityData = [];
         let isShiftPressed = false;
         let lastCrosshairPrice = null;
         let borderResetTimeout = null;
@@ -698,6 +800,34 @@
 
                             percentSpan.textContent = `${diffPct > 0 ? '+' : ''}${diffPct.toFixed(2)}%`;
                             percentSpan.style.color = diffPct >= 0 ? 'var(--success)' : 'var(--danger)';
+                        }
+                    }
+
+                    // Book Order Logic
+                    const bookInfo = document.getElementById('book-order-info');
+                    const bookValue = document.getElementById('book-order-value');
+
+                    if (bookInfo && bookValue && window.liquidityData && price) {
+                        let closest = null;
+                        let minDiff = Infinity;
+
+                        for (const c of window.liquidityData) {
+                            const diff = Math.abs(price - c.price);
+                            if (diff < minDiff) {
+                                minDiff = diff;
+                                closest = c;
+                            }
+                        }
+
+                        // Threshold: 0.5% of price
+                        const threshold = price * 0.005;
+
+                        if (closest && minDiff < threshold) {
+                            bookInfo.style.display = 'inline';
+                            bookValue.textContent = closest.volume.toFixed(2);
+                            bookValue.style.color = closest.type === 'bid' ? '#00ff88' : '#dc3545';
+                        } else {
+                            bookInfo.style.display = 'none';
                         }
                     }
 
@@ -966,10 +1096,12 @@
                         window.currentLiquidityLines.forEach(line => liquiditySeries.removePriceLine(line));
                     }
                     window.currentLiquidityLines = [];
+                    window.liquidityData = [];
 
                     if (clusters && clusters.length > 0) {
                         const maxVol = Math.max(...clusters.map(c => c.volume));
                         clusters.forEach(c => {
+                            window.liquidityData.push(c);
                             let opacity = 0.0;
                             if (maxVol > 0) {
                                 opacity = c.volume / maxVol;
@@ -1054,6 +1186,7 @@
                 const resp = await fetch(`/api/market-stats?symbol=${symbol}`);
                 const stats = await resp.json();
 
+                // 1. Volume (Speed)
                 const totalSpeed = stats.speed_buy + stats.speed_sell;
                 let speedRatio = 0.5;
                 if (totalSpeed > 0) speedRatio = stats.speed_buy / totalSpeed;
@@ -1061,8 +1194,9 @@
                 const speedNeedle = document.getElementById('speed-needle');
                 if (speedNeedle) speedNeedle.style.transform = `rotate(${speedDeg}deg)`;
                 const speedValue = document.getElementById('speed-value');
-                if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(2)} / ${stats.speed_buy.toFixed(2)}`;
+                if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(0)}/${stats.speed_buy.toFixed(0)}`;
 
+                // 2. Depth
                 const totalDepth = stats.depth_bid + stats.depth_ask;
                 let depthRatio = 0.5;
                 if (totalDepth > 0) depthRatio = stats.depth_bid / totalDepth;
@@ -1070,14 +1204,129 @@
                 const depthNeedle = document.getElementById('depth-needle');
                 if (depthNeedle) depthNeedle.style.transform = `rotate(${depthDeg}deg)`;
                 const depthValue = document.getElementById('depth-value');
-                if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)} / ${stats.depth_bid.toFixed(2)}`;
+                if (depthValue) depthValue.textContent = `${stats.depth_ask.toFixed(2)}/${stats.depth_bid.toFixed(2)}`;
 
+                // 3. Price Change (60s)
+                // Map -1% to 1% -> -90 to 90 deg
+                let changeRatio = stats.price_change_60s; // e.g. 0.5 for 0.5%
+                if (changeRatio > 1) changeRatio = 1;
+                if (changeRatio < -1) changeRatio = -1;
+                const changeDeg = changeRatio * 90;
+                const changeNeedle = document.getElementById('price-change-needle');
+                if (changeNeedle) changeNeedle.style.transform = `rotate(${changeDeg}deg)`;
+                const changeValue = document.getElementById('price-change-value');
+                if (changeValue) {
+                    changeValue.textContent = `${stats.price_change_60s > 0 ? '+' : ''}${stats.price_change_60s.toFixed(3)}%`;
+                    changeValue.style.color = stats.price_change_60s >= 0 ? 'var(--success)' : 'var(--danger)';
+                }
+
+                // 4. Divergence
                 const divergence = speedRatio - depthRatio;
                 const divDeg = divergence * 90;
                 const divNeedle = document.getElementById('div-needle');
                 if (divNeedle) divNeedle.style.transform = `rotate(${divDeg}deg)`;
                 const divValue = document.getElementById('div-value');
                 if (divValue) divValue.textContent = divergence.toFixed(2);
+
+                // 5. OBI
+                const obiDeg = stats.obi * 90;
+                const obiNeedle = document.getElementById('obi-needle');
+                if (obiNeedle) obiNeedle.style.transform = `rotate(${obiDeg}deg)`;
+                const obiValue = document.getElementById('obi-value');
+                if (obiValue) obiValue.textContent = stats.obi.toFixed(2);
+
+                // 6. TSI
+                // Dynamically track the maximum observed TSI value to scale the gauge appropriately.
+                window.maxObservedTsi = Math.max(window.maxObservedTsi || 100, stats.tsi);
+                const maxTsi = window.maxObservedTsi;
+                let tsiRatio = stats.tsi / maxTsi;
+                if (tsiRatio > 1) tsiRatio = 1;
+                const tsiDeg = (tsiRatio * 180) - 90;
+                const tsiNeedle = document.getElementById('tsi-needle');
+                if (tsiNeedle) tsiNeedle.style.transform = `rotate(${tsiDeg}deg)`;
+                const tsiValue = document.getElementById('tsi-value');
+                if (tsiValue) tsiValue.textContent = stats.tsi.toFixed(2);
+
+                // 7. GLI
+                let gliRatio = (stats.gli - 1);
+                if (gliRatio > 1) gliRatio = 1;
+                if (gliRatio < -1) gliRatio = -1;
+                const gliDeg = gliRatio * 90;
+                const gliNeedle = document.getElementById('gli-needle');
+                if (gliNeedle) gliNeedle.style.transform = `rotate(${gliDeg}deg)`;
+                const gliValue = document.getElementById('gli-value');
+                if (gliValue) gliValue.textContent = stats.gli.toFixed(2);
+
+                // 8. Conclusion Calculation
+                // Normalize all signals to -1 (Bear) to 1 (Bull)
+
+                // Speed: -1 to 1
+                let speedScore = 0;
+                if (totalSpeed > 0) speedScore = (stats.speed_buy - stats.speed_sell) / totalSpeed;
+
+                // Depth: -1 to 1 (Bid - Ask) / Total
+                let depthScore = 0;
+                if (totalDepth > 0) depthScore = (stats.depth_bid - stats.depth_ask) / totalDepth;
+
+                // Price Change: Cap at +/- 1% -> -1 to 1
+                let changeScore = stats.price_change_60s;
+                if (changeScore > 1) changeScore = 1;
+                if (changeScore < -1) changeScore = -1;
+
+                // OBI: Already -1 to 1
+                let obiScore = stats.obi;
+
+                // Divergence: SpeedRatio (0-1) - DepthRatio (0-1). Range -1 to 1.
+                // But wait, divergence calculation above was: speedRatio - depthRatio.
+                // speedRatio is Buy/(Buy+Sell). depthRatio is Bid/(Bid+Ask).
+                // If Buy% > Bid%, it means aggressive buying against passive support? 
+                // Actually, divergence usually means Price up but CVD down etc.
+                // Here: Divergence = SpeedRatio - DepthRatio.
+                // If SpeedRatio (Buy%) is 0.8 and DepthRatio (Bid%) is 0.2. Div = 0.6.
+                // High Buy Speed but Low Bid Depth.
+                // Is this Bullish? Yes, aggressive buying.
+                // So Divergence is roughly directional.
+                let divScore = divergence;
+                if (divScore > 1) divScore = 1;
+                if (divScore < -1) divScore = -1;
+
+                // GLI: < 1 Bullish, > 1 Bearish.
+                // Map to score.
+                // If GLI = 0.5 (Bullish) -> Score +0.5?
+                // If GLI = 2.0 (Bearish) -> Score -0.5?
+                // Formula: (1 - GLI). 
+                // If GLI=0.5 -> 0.5. If GLI=1.5 -> -0.5.
+                // Cap at +/- 1.
+                let gliScore = 1 - stats.gli;
+                if (gliScore > 1) gliScore = 1;
+                if (gliScore < -1) gliScore = -1;
+
+                // Weighted Average
+                // Weights: Speed(2), OBI(2), Change(1), Depth(1), Div(1), GLI(1)
+                const totalWeight = 2 + 2 + 1 + 1 + 1 + 1;
+                const weightedSum = (speedScore * 2) + (obiScore * 2) + changeScore + depthScore + divScore + gliScore;
+                const finalScore = weightedSum / totalWeight; // -1 to 1
+
+                // Update UI
+                const bearCircle = document.getElementById('conclusion-bear');
+                const bullCircle = document.getElementById('conclusion-bull');
+                const scoreText = document.getElementById('conclusion-score');
+
+                // Base opacity 0.2
+                let bearOpacity = 0.2;
+                let bullOpacity = 0.2;
+
+                if (finalScore > 0) {
+                    // Bullish
+                    bullOpacity = 0.2 + (finalScore * 0.8); // Map 0->1 to 0.2->1.0
+                } else {
+                    // Bearish
+                    bearOpacity = 0.2 + (Math.abs(finalScore) * 0.8);
+                }
+
+                if (bearCircle) bearCircle.style.opacity = bearOpacity;
+                if (bullCircle) bullCircle.style.opacity = bullOpacity;
+                if (scoreText) scoreText.textContent = `${(finalScore * 100).toFixed(0)}%`;
 
             } catch (e) {
                 console.error("Failed to fetch market stats", e);

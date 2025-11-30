@@ -273,9 +273,10 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 				}
 
 				if shouldTP {
-					if _, err := s.finalizePosition(ctx, symbol, "Take Profit", "take-profit", price); err != nil {
+					if _, err := s.finalizePosition(ctx, symbol, "Take Profit", activeLevel.ID, price); err != nil {
 						log.Printf("Failed to finalize position on TP: %v", err)
 					}
+					// State update is now handled in finalizePosition
 					return nil
 				}
 			}
@@ -298,7 +299,7 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 				}
 
 				if shouldSL {
-					if _, err := s.finalizePosition(ctx, symbol, "Stop Loss (Base)", "stop-loss-base", price); err != nil {
+					if _, err := s.finalizePosition(ctx, symbol, "Stop Loss (Base)", activeLevel.ID, price); err != nil {
 						log.Printf("Failed to finalize position on SL: %v", err)
 					}
 					return nil
@@ -387,23 +388,10 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 
 		if action == ActionClose {
 			// Close Position
-			realizedPnL, err := s.finalizePosition(ctx, level.Symbol, "Level Cross", level.ID, currPrice)
+			_, err := s.finalizePosition(ctx, level.Symbol, "Level Cross", level.ID, currPrice)
 			if err != nil {
 				log.Printf("WARNING: Failed to finalize position for %s: %v", level.Symbol, err)
 			}
-
-			// Update State with Win/Loss
-			// Note: finalizePosition resets state (clearing triggers) but preserves ConsecutiveWins.
-			// We update ConsecutiveWins here, which modifies the preserved state.
-			s.engine.UpdateState(level.ID, func(ls *LevelState) {
-				if realizedPnL > 0 {
-					ls.ConsecutiveWins++
-					log.Printf("AUDIT: Win recorded for Level %s. Consecutive Wins: %d", level.ID, ls.ConsecutiveWins)
-				} else {
-					ls.ConsecutiveWins = 0
-					log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", level.ID)
-				}
-			})
 			return
 		}
 
@@ -611,5 +599,57 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 	})
 
 	log.Printf("FINALIZE: Closed %s on %s. Reason: %s. PnL: %f", side, symbol, reason, realizedPnL)
+
+	// 7. Update Level State (Centralized Logic)
+	// We only update state if we have a valid levelID
+	if levelID != "" && levelID != "unknown" {
+		// Find the activeLevel before entering the callback to avoid nested locking
+		var activeLevel *domain.Level
+		s.mu.RLock()
+		if levels, ok := s.levelsCache[symbol]; ok {
+			for _, l := range levels {
+				if l.ID == levelID {
+					activeLevel = l
+					break
+				}
+			}
+		}
+		s.mu.RUnlock()
+
+		s.engine.UpdateState(levelID, func(ls *LevelState) {
+			if realizedPnL > 0 {
+				ls.ConsecutiveWins++
+				ls.ConsecutiveBaseCloses = 0 // Reset base closes on win
+				log.Printf("AUDIT: Win recorded for Level %s. Consecutive Wins: %d", levelID, ls.ConsecutiveWins)
+			} else {
+				ls.ConsecutiveWins = 0
+				log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", levelID)
+
+				// Check if this was a Base Close
+				// We consider "Stop Loss (Base)" and "Level Cross" as base closes.
+				if (reason == "Stop Loss (Base)" || reason == "Level Cross") && activeLevel != nil {
+					// Only increment if close price is at/near base price
+					// Use 0.2% tolerance to account for slippage/spread
+					const epsilon = 0.002
+					dist := (price - activeLevel.LevelPrice) / activeLevel.LevelPrice
+					if dist < 0 {
+						dist = -dist
+					}
+
+					if dist <= epsilon {
+						ls.ConsecutiveBaseCloses++
+						log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
+
+						if activeLevel.MaxConsecutiveBaseCloses > 0 && ls.ConsecutiveBaseCloses >= activeLevel.MaxConsecutiveBaseCloses {
+							ls.DisabledUntil = time.Now().Add(time.Duration(activeLevel.BaseCloseCooldownMs) * time.Millisecond)
+							ls.ConsecutiveBaseCloses = 0
+							log.Printf("AUDIT: Level %s disabled until %v due to max base closes.", activeLevel.ID, ls.DisabledUntil)
+						}
+					}
+				}
+			}
+		})
+	}
+
 	return realizedPnL, nil
 }
