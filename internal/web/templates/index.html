@@ -231,6 +231,26 @@
             color: white;
         }
 
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .badge-purple {
+            background: rgba(112, 0, 255, 0.2);
+            color: #b388ff;
+            border: 1px solid #7000ff;
+        }
+
+        .badge-blue {
+            background: rgba(0, 123, 255, 0.2);
+            color: #80bdff;
+            border: 1px solid #007bff;
+        }
+
         /* Gauges */
         .gauges-grid {
             display: flex;
@@ -416,6 +436,11 @@
                     <label for="base_close_cooldown_minutes">Cooldown (Minutes):</label>
                     <input type="number" id="base_close_cooldown_minutes" name="base_close_cooldown_minutes" step="1"
                         value="5">
+                </div>
+
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <input type="checkbox" name="auto_mode_enabled" id="auto_mode_enabled" checked>
+                    <label for="auto_mode_enabled" style="margin: 0;">Auto-Level Mode (Recreate on Failure)</label>
                 </div>
 
                 <div class="checkbox-wrapper">
@@ -653,6 +678,7 @@
         let chart = null;
         let candleSeries = null;
         let liquiditySeries = null;
+        let conclusionSeries = null;
         let selectedLevelId = null;
         let currentPriceLines = [];
         let previewPriceLines = [];
@@ -702,9 +728,23 @@
                         borderColor: 'rgba(255, 255, 255, 0.1)',
                     },
                     timeScale: {
-                        borderColor: 'rgba(255, 255, 255, 0.1)',
                         timeVisible: true,
                         secondsVisible: false,
+                    },
+                    leftPriceScale: {
+                        visible: true,
+                        borderColor: 'rgba(255, 255, 255, 0.1)',
+                        // Fix the scale to avoid jitter, assuming score is -1 to 1
+                        autoScale: false,
+                    },
+                });
+
+                // Set fixed range for left scale (Conclusion)
+                chart.priceScale('left').applyOptions({
+                    autoScale: false,
+                    scaleMargins: {
+                        top: 0.1,
+                        bottom: 0.1,
                     },
                 });
 
@@ -721,6 +761,15 @@
                     },
                 });
 
+                conclusionSeries = chart.addHistogramSeries({
+                    priceScaleId: 'left',
+                    priceFormat: {
+                        type: 'custom',
+                        formatter: price => price.toFixed(2),
+                    },
+                    title: 'Conclusion',
+                });
+
                 candleSeries = chart.addCandlestickSeries({
                     upColor: '#00ff88',
                     downColor: '#dc3545',
@@ -733,6 +782,7 @@
                         minMove: 0.000001,
                     },
                 });
+
                 chart.timeScale().fitContent();
 
                 const chartElement = chart.chartElement();
@@ -907,6 +957,8 @@
         }
 
         async function updateChart() {
+            console.log("updateChart called");
+            let lastCandleTime = null;
             if (!chart) {
                 initChart();
                 if (!chart) return;
@@ -979,6 +1031,9 @@
             try {
                 const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`);
                 const candles = await response.json();
+                if (candles && candles.length > 0) {
+                    lastCandleTime = candles[candles.length - 1].time;
+                }
                 if (candles && candles.length > 0) {
                     candles.sort((a, b) => a.time - b.time);
                     const uniqueCandles = [];
@@ -1128,6 +1183,30 @@
                 }
             } catch (e) {
                 console.error("Failed to fetch liquidity", e);
+            }
+
+            // Conclusion Score (Poll and Update)
+            try {
+                const statsResp = await fetch(`/api/market-stats?symbol=${symbol}`);
+                const stats = await statsResp.json();
+                console.log("Market Stats:", stats, "Last Candle Time:", lastCandleTime);
+
+                if (stats && stats.conclusion_score !== undefined && lastCandleTime) {
+                    // Use last candle time to align with the chart
+                    const score = stats.conclusion_score;
+                    // Color based on score (Green/Red with transparency)
+                    const color = score >= 0 ? 'rgba(0, 255, 136, 0.6)' : 'rgba(220, 53, 69, 0.6)';
+
+                    conclusionSeries.update({
+                        time: lastCandleTime,
+                        value: score,
+                        color: color
+                    });
+                } else {
+                    // console.warn("Skipping Conclusion Update:", { stats: !!stats, score: stats?.conclusion_score, time: lastCandleTime });
+                }
+            } catch (e) {
+                console.error("Failed to fetch market stats", e);
             }
         }
 
@@ -1367,10 +1446,12 @@
         <tr>
             <th>Exchange</th>
             <th>Symbol</th>
+            <th>Mode</th>
             <th>Level Price</th>
             <th>Current Price</th>
             <th>Zone/Tiers</th>
             <th>Size</th>
+            <th>Closes</th>
             <th>Lev</th>
             <th>Margin</th>
             <th>Cooldown</th>
@@ -1384,6 +1465,13 @@
             <td onclick="selectLevel('{{.Symbol}}-{{.LevelPrice}}')" style="cursor: pointer; transition: color 0.2s;"
                 title="Click to view on chart">
                 <strong style="color: var(--accent-color);">{{ .Symbol }}</strong>
+            </td>
+            <td>
+                {{if .IsAuto}}
+                <span class="badge badge-purple" style="font-size: 0.7em;">AUTO</span>
+                {{else}}
+                <span class="badge badge-blue" style="font-size: 0.7em;">MANUAL</span>
+                {{end}}
             </td>
             <td>{{ printf "%.6f" .LevelPrice }}</td>
             <td>{{ printf "%.6f" .CurrentPrice }}</td>
@@ -1410,6 +1498,13 @@
                 </div>
             </td>
             <td>{{ .BaseSize }}</td>
+            <td>
+                {{if gt .ConsecutiveBaseCloses 0}}
+                <span class="text-warning" style="font-weight: bold;">{{.ConsecutiveBaseCloses}}</span>
+                {{else}}
+                <span class="text-muted">0</span>
+                {{end}}
+            </td>
             <td>{{ .Leverage }}x</td>
             <td style="color: {{ if eq .MarginType " isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
                 font-weight: bold;">

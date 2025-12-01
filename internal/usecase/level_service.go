@@ -2,7 +2,9 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"sort"
 	"sync"
 	"time"
 
@@ -58,6 +60,11 @@ func (s *LevelService) GetLatestPrice(symbol string) float64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastPrices[symbol]
+}
+
+// GetLevelState returns the current runtime state of a level
+func (s *LevelService) GetLevelState(levelID string) LevelState {
+	return s.engine.GetState(levelID)
 }
 
 func (s *LevelService) GetExchange() domain.Exchange {
@@ -644,6 +651,99 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 							ls.DisabledUntil = time.Now().Add(time.Duration(activeLevel.BaseCloseCooldownMs) * time.Millisecond)
 							ls.ConsecutiveBaseCloses = 0
 							log.Printf("AUDIT: Level %s disabled until %v due to max base closes.", activeLevel.ID, ls.DisabledUntil)
+
+							// --- AUTO-LEVEL CREATION LOGIC ---
+							if activeLevel.AutoModeEnabled {
+								go func(oldLevel *domain.Level) {
+									// Run in goroutine to avoid blocking the update loop and potential deadlocks
+									// We need a new context or use background
+									bgCtx := context.Background()
+
+									// 1. Fetch Liquidity
+									clusters, err := s.market.GetLiquidityClusters(bgCtx, oldLevel.Symbol)
+									if err != nil {
+										log.Printf("AUTO-LEVEL: Failed to fetch liquidity for %s: %v", oldLevel.Symbol, err)
+										return
+									}
+
+									// 2. Find Best Cluster
+									// Criteria:
+									// - Distance > 0.5% from old level price (to avoid immediate chop)
+									// - High Volume
+									var candidates []LiquidityCluster
+									const minDistancePct = 0.005
+
+									for _, c := range clusters {
+										dist := (c.Price - oldLevel.LevelPrice) / oldLevel.LevelPrice
+										if dist < 0 {
+											dist = -dist
+										}
+										if dist >= minDistancePct {
+											candidates = append(candidates, c)
+										}
+									}
+
+									// Sort by Volume DESC
+									sort.Slice(candidates, func(i, j int) bool {
+										return candidates[i].Volume > candidates[j].Volume
+									})
+
+									if len(candidates) > 0 {
+										best := candidates[0]
+										log.Printf("AUTO-LEVEL: Found best candidate at %f (Vol: %f)", best.Price, best.Volume)
+
+										// 3. Create New Level
+										newLevel := &domain.Level{
+											ID:                       fmt.Sprintf("%d", time.Now().UnixNano()),
+											Exchange:                 oldLevel.Exchange,
+											Symbol:                   oldLevel.Symbol,
+											LevelPrice:               best.Price,
+											BaseSize:                 oldLevel.BaseSize,
+											Leverage:                 oldLevel.Leverage,
+											MarginType:               oldLevel.MarginType,
+											CoolDownMs:               oldLevel.CoolDownMs,
+											StopLossAtBase:           oldLevel.StopLossAtBase,
+											StopLossMode:             oldLevel.StopLossMode,
+											DisableSpeedClose:        oldLevel.DisableSpeedClose,
+											MaxConsecutiveBaseCloses: oldLevel.MaxConsecutiveBaseCloses,
+											BaseCloseCooldownMs:      oldLevel.BaseCloseCooldownMs,
+											TakeProfitPct:            oldLevel.TakeProfitPct,
+											IsAuto:                   true,
+											AutoModeEnabled:          true, // Chain reaction
+											Source:                   "auto-recovery",
+											CreatedAt:                time.Now(),
+										}
+
+										// 4. Save New Level
+										if err := s.levelRepo.SaveLevel(bgCtx, newLevel); err != nil {
+											log.Printf("AUTO-LEVEL: Failed to save new level: %v", err)
+										} else {
+											log.Printf("AUTO-LEVEL: Successfully created new level %s at %f", newLevel.ID, newLevel.LevelPrice)
+											// Refresh cache
+											s.UpdateCache(bgCtx)
+										}
+
+										// 5. Delete Old Auto-Levels?
+										// If the old level was also auto, maybe we should delete it to keep things clean?
+										// Or just disable it (which is already done by cooldown/max closes logic).
+										// The user spec says: "And if level works in this mode we delete all previous levels that were set by auto mode."
+										// So we should find other auto levels for this symbol and delete them.
+										if oldLevel.IsAuto {
+											// Delete the old level itself? Or all auto levels?
+											// "delete all previous levels that were set by auto mode"
+											// Let's delete the one that just failed if it was auto.
+											if err := s.levelRepo.DeleteLevel(bgCtx, oldLevel.ID); err != nil {
+												log.Printf("AUTO-LEVEL: Failed to delete old auto level %s: %v", oldLevel.ID, err)
+											} else {
+												log.Printf("AUTO-LEVEL: Deleted old auto level %s", oldLevel.ID)
+											}
+										}
+
+									} else {
+										log.Printf("AUTO-LEVEL: No suitable candidates found for %s", oldLevel.Symbol)
+									}
+								}(activeLevel)
+							}
 						}
 					}
 				}

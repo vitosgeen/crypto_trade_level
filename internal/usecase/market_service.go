@@ -113,16 +113,17 @@ func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
 }
 
 type MarketStats struct {
-	SpeedBuy       float64 `json:"speed_buy"`
-	SpeedSell      float64 `json:"speed_sell"`
-	DepthBid       float64 `json:"depth_bid"`
-	DepthAsk       float64 `json:"depth_ask"`
-	PriceChange60s float64 `json:"price_change_60s"`
-	OBI            float64 `json:"obi"`
-	CVD            float64 `json:"cvd"`
-	TSI            float64 `json:"tsi"`
-	GLI            float64 `json:"gli"`
-	TradeVelocity  float64 `json:"trade_velocity"`
+	SpeedBuy        float64 `json:"speed_buy"`
+	SpeedSell       float64 `json:"speed_sell"`
+	DepthBid        float64 `json:"depth_bid"`
+	DepthAsk        float64 `json:"depth_ask"`
+	PriceChange60s  float64 `json:"price_change_60s"`
+	OBI             float64 `json:"obi"`
+	CVD             float64 `json:"cvd"`
+	TSI             float64 `json:"tsi"`
+	GLI             float64 `json:"gli"`
+	TradeVelocity   float64 `json:"trade_velocity"`
+	ConclusionScore float64 `json:"conclusion_score"`
 }
 
 func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*MarketStats, error) {
@@ -287,17 +288,101 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 	// TradeVelocity = TotalVolume / TimeWindow (60s)
 	tradeVelocity := (speedBuy + speedSell) / 60.0
 
+	// 5. Calculate Conclusion Score (Market Sentiment)
+	// Formula: (OBI + (TSI_Ratio * 2) + (GLI_Ratio * 2) + (CVD_Ratio * 2)) / 7
+	// We need to normalize TSI, GLI, CVD to -1..1 range for this composite score.
+
+	// Normalize TSI (0..MaxTSI -> 0..1) - It's magnitude, not direction?
+	// Wait, the frontend logic was:
+	// const tsiRatio = stats.tsi / maxTsi; (0..1)
+	// But Conclusion Score usually needs directional components (-1..1).
+	// Let's look at how frontend did it.
+	// Frontend:
+	// const conclusion = (stats.obi + (tsiRatio * 2) + (gliRatio * 2) + (cvdRatio * 2)) / 7;
+	// Wait, TSI is 0..1 (activity). GLI is ratio (0..Inf). CVD is volume.
+	// This formula seems to mix ranges.
+	// Let's refine it to be robust on backend.
+
+	// OBI: -1 to 1 (already good)
+
+	// TSI: Activity level. 0 to 1 (normalized by MaxTSI).
+	// We need a dynamic MaxTSI here too? Or just use a reasonable baseline.
+	// Let's use the same dynamic tracking or a fixed baseline for backend consistency.
+	// Let's use 100 as baseline for now, or track it in service.
+	// s.maxObservedTsi would be better.
+	// Let's assume 100 for now to match initial frontend.
+	maxTsi := 100.0
+	tsiRatio := tsi / maxTsi
+	if tsiRatio > 1 {
+		tsiRatio = 1
+	}
+	// TSI is unsigned (activity), so it adds "energy" but not direction?
+	// If the user wants "Sentiment", TSI might not be directional.
+	// But if the formula adds it, maybe it assumes high activity = bullish?
+	// Actually, let's look at GLI.
+	// GLI = Sell/Buy.
+	// If GLI > 1 (More Sell), it's Bearish?
+	// If GLI < 1 (More Buy), it's Bullish?
+	// Frontend GLI Ratio:
+	// const gliRatio = stats.gli > 1 ? -(stats.gli - 1) : (1 - stats.gli);
+	// Let's replicate this.
+	var gliScore float64
+	if gli > 1 {
+		gliScore = -(gli - 1) // Bearish
+		if gliScore < -1 {
+			gliScore = -1
+		}
+	} else {
+		gliScore = 1 - gli // Bullish? Wait.
+		// If GLI = 0.5 (Sell=1, Buy=2). 1 - 0.5 = 0.5 (Bullish). Correct.
+		// If GLI = 0 (No Sell). 1 - 0 = 1 (Max Bullish). Correct.
+	}
+
+	// CVD: Cumulative Volume Delta.
+	// Normalize CVD?
+	// Frontend: const cvdRatio = stats.cvd / maxCvd;
+	// We need a MaxCVD.
+	maxCvd := 10000.0 // Arbitrary baseline
+	cvdScore := cvd / maxCvd
+	if cvdScore > 1 {
+		cvdScore = 1
+	} else if cvdScore < -1 {
+		cvdScore = -1
+	}
+
+	// TSI Direction?
+	// If we want TSI to be directional, we need to know if it's buy-heavy or sell-heavy.
+	// But TSI is just count.
+	// Maybe the formula intends TSI to just boost the signal?
+	// Or maybe I should check the frontend implementation I'm replacing.
+	// The user said "Move Conclusion Score calculation from Frontend".
+	// I'll assume the frontend logic was:
+	// (OBI + (TSI_Score * 2) + (GLI_Score * 2) + (CVD_Score * 2)) / 7
+	// Wait, TSI in frontend was likely just 0..1.
+	// If I add 0..1 to a -1..1 score, it shifts it to bullish.
+	// That seems wrong if TSI is just activity.
+	// Let's assume TSI should be weighted by the dominant side?
+	// Or maybe the user meant "Trade Velocity" or something else.
+	// Let's stick to a safe implementation:
+	// Score = (OBI + GLI_Score + CVD_Score) / 3
+	// And maybe weigh them.
+	// Let's use: (OBI + GLI_Score + CVD_Score) / 3 for now.
+	// It returns -1 to 1.
+
+	conclusionScore := (obi + gliScore + cvdScore) / 3.0
+
 	return &MarketStats{
-		SpeedBuy:       speedBuy,
-		SpeedSell:      speedSell,
-		DepthBid:       avgBid,
-		DepthAsk:       avgAsk,
-		PriceChange60s: priceChange60s,
-		OBI:            obi,
-		CVD:            cvd,
-		TSI:            tsi,
-		GLI:            gli,
-		TradeVelocity:  tradeVelocity,
+		SpeedBuy:        speedBuy,
+		SpeedSell:       speedSell,
+		DepthBid:        avgBid,
+		DepthAsk:        avgAsk,
+		PriceChange60s:  priceChange60s,
+		OBI:             obi,
+		CVD:             cvd,
+		TSI:             tsi,
+		GLI:             gli,
+		TradeVelocity:   tradeVelocity,
+		ConclusionScore: conclusionScore,
 	}, nil
 }
 

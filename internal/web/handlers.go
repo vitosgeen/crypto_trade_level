@@ -25,10 +25,11 @@ func InitTemplates(dir string) error {
 
 type LevelView struct {
 	*domain.Level
-	CurrentPrice float64
-	Side         domain.Side
-	LongTiers    []float64
-	ShortTiers   []float64
+	CurrentPrice          float64
+	Side                  domain.Side
+	LongTiers             []float64
+	ShortTiers            []float64
+	ConsecutiveBaseCloses int
 }
 
 func (s *Server) handleLanding(w http.ResponseWriter, r *http.Request) {
@@ -64,12 +65,16 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		longTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideLong)
 		shortTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideShort)
 
+		// Get Runtime State
+		state := s.service.GetLevelState(l.ID)
+
 		views = append(views, LevelView{
-			Level:        l,
-			CurrentPrice: price,
-			Side:         side,
-			LongTiers:    longTiers,
-			ShortTiers:   shortTiers,
+			Level:                 l,
+			CurrentPrice:          price,
+			Side:                  side,
+			LongTiers:             longTiers,
+			ShortTiers:            shortTiers,
+			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
 		})
 	}
 
@@ -108,12 +113,16 @@ func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 		longTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideLong)
 		shortTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideShort)
 
+		// Get Runtime State
+		state := s.service.GetLevelState(l.ID)
+
 		views = append(views, LevelView{
-			Level:        l,
-			CurrentPrice: price,
-			Side:         side,
-			LongTiers:    longTiers,
-			ShortTiers:   shortTiers,
+			Level:                 l,
+			CurrentPrice:          price,
+			Side:                  side,
+			LongTiers:             longTiers,
+			ShortTiers:            shortTiers,
+			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
 		})
 	}
 

@@ -18,6 +18,8 @@ type Level struct {
 	MaxConsecutiveBaseCloses int     // Max number of consecutive base closes before cooldown
 	BaseCloseCooldownMs      int64   // Cooldown duration in milliseconds after max base closes
 	TakeProfitPct            float64 // Take profit percentage (e.g. 0.02 for 2%)
+	IsAuto                   bool    // Created automatically by the system
+	AutoModeEnabled          bool    // Enable auto-recreation on failure
 	Source                   string
 	CreatedAt                time.Time
 }

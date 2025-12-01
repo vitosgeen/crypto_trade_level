@@ -16,6 +16,7 @@ type MockExchange struct {
 	BuyCalled  bool
 	SellCalled bool
 	Position   *domain.Position
+	OrderBook  *domain.OrderBook
 }
 
 func (m *MockExchange) SetPosition(symbol string, side domain.Side, size, entryPrice float64) {
@@ -80,7 +81,10 @@ func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, 
 }
 
 func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
-	return nil, nil
+	if m.OrderBook != nil {
+		return m.OrderBook, nil
+	}
+	return &domain.OrderBook{Symbol: symbol}, nil
 }
 
 func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
