@@ -274,16 +274,12 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 
 			// Check TP
 			// Check TP
-			if activeLevel.TakeProfitPct > 0 || activeLevel.TakeProfitMode == "liquidity" {
+			if activeLevel.TakeProfitPct > 0 || activeLevel.TakeProfitMode == "liquidity" || activeLevel.TakeProfitMode == "sentiment" {
 				shouldTP := false
 				var tpPrice float64
 
 				if activeLevel.TakeProfitMode == "liquidity" {
 					// Dynamic TP based on liquidity
-					// We should probably cache this or calculate it once per position?
-					// For now, let's calculate it on every tick (might be expensive, but safe)
-					// Optimization: Store it in memory map?
-					// Let's try to calculate it.
 					dynamicTP, err := s.CalculateLiquidityTP(ctx, symbol, pos.Side, pos.EntryPrice)
 					if err == nil && dynamicTP > 0 {
 						tpPrice = dynamicTP
@@ -295,6 +291,58 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 							tpPrice = pos.EntryPrice * (1 - activeLevel.TakeProfitPct)
 						}
 					}
+				} else if activeLevel.TakeProfitMode == "sentiment" {
+					// Sentiment-Adjusted TP
+					// TargetTP = BaseTP * (1 + (ConclusionScore * Factor))
+					// Factor = 0.5 (Adjustable? Hardcoded for now per plan)
+					baseTP := activeLevel.TakeProfitPct
+					if baseTP <= 0 {
+						baseTP = 0.02 // Default 2% if not set
+					}
+
+					stats, err := s.market.GetMarketStats(ctx, symbol)
+					score := 0.0
+					if err == nil && stats != nil {
+						score = stats.ConclusionScore
+					}
+
+					// Adjust TP
+					// If Long: Positive Score (Bullish) -> Increase TP. Negative Score (Bearish) -> Decrease TP.
+					// If Short: Negative Score (Bearish) -> Increase TP. Positive Score (Bullish) -> Decrease TP.
+					// Wait, Score is -1 (Bear) to 1 (Bull).
+					// For Long: Multiplier = 1 + (Score * 0.5)
+					//   Score 0.8 -> 1 + 0.4 = 1.4x TP.
+					//   Score -0.5 -> 1 - 0.25 = 0.75x TP.
+					// For Short: We want to INCREASE TP if Bearish (Score < 0).
+					//   Score -0.8 -> We want larger TP.
+					//   Multiplier = 1 - (Score * 0.5)
+					//   Score -0.8 -> 1 - (-0.4) = 1.4x TP.
+					//   Score 0.5 -> 1 - 0.25 = 0.75x TP.
+
+					factor := 0.5
+					multiplier := 1.0
+					if pos.Side == domain.SideLong {
+						multiplier = 1 + (score * factor)
+					} else {
+						multiplier = 1 - (score * factor)
+					}
+
+					// Clamp multiplier to avoid negative or too small TP?
+					// If score is extreme, e.g. -1. Multiplier = 0.5. TP becomes half.
+					// Seems safe.
+
+					adjustedPct := baseTP * multiplier
+					if adjustedPct < 0.001 {
+						adjustedPct = 0.001 // Minimum 0.1% TP
+					}
+
+					if pos.Side == domain.SideLong {
+						tpPrice = pos.EntryPrice * (1 + adjustedPct)
+					} else {
+						tpPrice = pos.EntryPrice * (1 - adjustedPct)
+					}
+					// log.Printf("DEBUG: Sentiment TP for %s. Score: %f, Base: %f, Adj: %f, Price: %f", symbol, score, baseTP, adjustedPct, tpPrice)
+
 				} else {
 					// Fixed TP
 					if pos.Side == domain.SideLong {
