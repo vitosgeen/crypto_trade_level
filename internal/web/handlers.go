@@ -158,6 +158,11 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	}
 	takeProfitPct = takeProfitPct / 100
 
+	takeProfitMode := r.FormValue("take_profit_mode")
+	if takeProfitMode == "" {
+		takeProfitMode = "fixed"
+	}
+
 	exchange := r.FormValue("exchange")
 	symbol := r.FormValue("symbol")
 	marginType := r.FormValue("margin_type")
@@ -187,6 +192,9 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		MaxConsecutiveBaseCloses: maxConsecutiveBaseCloses,
 		BaseCloseCooldownMs:      baseCloseCooldownMs,
 		TakeProfitPct:            takeProfitPct,
+		TakeProfitMode:           takeProfitMode,
+		IsAuto:                   false,
+		AutoModeEnabled:          false, // Disabled by default, manual trigger only
 		Source:                   "manual-web",
 		CreatedAt:                time.Now(),
 	}
@@ -220,6 +228,16 @@ func (s *Server) handleDeleteLevel(w http.ResponseWriter, r *http.Request) {
 	if err := s.levelRepo.DeleteLevel(r.Context(), id); err != nil {
 		s.logger.Error("Failed to delete level", zap.Error(err))
 		http.Error(w, "Failed to delete level", http.StatusInternalServerError)
+		return
+	}
+	s.handleLevelsTable(w, r)
+}
+
+func (s *Server) handleAutoCreateLevel(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.service.AutoCreateNextLevel(r.Context(), id); err != nil {
+		s.logger.Error("Failed to auto-create level", zap.Error(err))
+		http.Error(w, fmt.Sprintf("Failed to auto-create level: %v", err), http.StatusInternalServerError)
 		return
 	}
 	s.handleLevelsTable(w, r)

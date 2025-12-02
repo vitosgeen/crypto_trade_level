@@ -677,7 +677,7 @@ func (b *BybitAdapter) GetOrderBook(ctx context.Context, symbol string, category
 		category = "linear"
 	}
 
-	limit := 50
+	limit := 200
 	if category == "linear" {
 		limit = 500
 	}

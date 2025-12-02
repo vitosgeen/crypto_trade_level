@@ -400,11 +400,22 @@
                     <option value="cross">Cross</option>
                 </select>
 
+                <input type="number" name="cool_down_ms" placeholder="Cooldown (ms)" value="5000" required>
+
+
+
                 <div class="flex-row">
-                    <input type="number" name="cool_down_ms" placeholder="Cooldown (ms)" value="5000" required
-                        class="flex-1">
-                    <input type="number" step="0.1" name="take_profit_pct" placeholder="TP %" value="2.0" required
-                        class="flex-1">
+                    <div class="flex-1">
+                        <label style="margin-bottom: 2px;">TP %</label>
+                        <input type="number" step="0.1" name="take_profit_pct" placeholder="TP %" value="2.0" required>
+                    </div>
+                    <div class="flex-1">
+                        <label style="margin-bottom: 2px;">TP Mode</label>
+                        <select name="take_profit_mode">
+                            <option value="fixed">Fixed %</option>
+                            <option value="liquidity">Liquidity</option>
+                        </select>
+                    </div>
                 </div>
 
                 <label>Tiers (%):</label>
@@ -986,7 +997,7 @@
                 const cells = row.querySelectorAll('td');
                 if (cells.length < 3) return;
                 const symbol = cells[1].textContent.trim();
-                const levelPrice = parseFloat(cells[2].textContent);
+                const levelPrice = parseFloat(cells[3].textContent);
                 const id = `${symbol}-${levelPrice}`;
                 activeIds.push(id);
                 availableLevels.push({ id, text: `${symbol} @ ${levelPrice}` });
@@ -1015,7 +1026,7 @@
                 const cells = row.querySelectorAll('td');
                 if (cells.length < 3) return;
                 const symbol = cells[1].textContent.trim();
-                const levelPrice = parseFloat(cells[2].textContent);
+                const levelPrice = parseFloat(cells[3].textContent);
                 const id = `${symbol}-${levelPrice}`;
                 if (id === selectedLevelId) {
                     targetRow = row;
@@ -1026,7 +1037,7 @@
 
             const cells = targetRow.querySelectorAll('td');
             const symbol = cells[1].textContent.trim();
-            const levelPrice = parseFloat(cells[2].textContent);
+            const levelPrice = parseFloat(cells[3].textContent);
 
             try {
                 const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`);
@@ -1059,7 +1070,7 @@
             }
 
             // Tiers
-            const tierCell = cells[4];
+            const tierCell = cells[5];
             let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
 
             // Parse from the div/span structure
@@ -1515,6 +1526,10 @@
             </td>
             <td>
                 <button class="delete-btn" hx-delete="/levels/{{ .ID }}" hx-target="#levels-table">Delete</button>
+                <button class="cta-button"
+                    style="font-size: 0.7rem; padding: 4px 8px; background: var(--secondary-color);"
+                    hx-post="/levels/{{ .ID }}/auto" hx-target="#levels-table" title="Find best next level">Auto
+                    Next</button>
             </td>
         </tr>
         {{ end }}

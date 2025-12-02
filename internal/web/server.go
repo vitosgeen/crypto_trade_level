@@ -58,6 +58,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /levels", s.handleLevelsTable)
 	s.router.HandleFunc("POST /levels", s.handleAddLevel)
 	s.router.HandleFunc("DELETE /levels/{id}", s.handleDeleteLevel)
+	s.router.HandleFunc("POST /levels/{id}/auto", s.handleAutoCreateLevel)
 
 	// Tiers
 	s.router.HandleFunc("POST /tiers", s.handleUpdateTiers)

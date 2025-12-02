@@ -630,9 +630,9 @@ func (s *MarketService) processSide(linear, spot []domain.OrderBookEntry, side s
 		return peaks[i].Volume > peaks[j].Volume
 	})
 
-	// Limit to top 50 peaks
-	if len(peaks) > 50 {
-		peaks = peaks[:50]
+	// Limit to top 200 peaks
+	if len(peaks) > 200 {
+		peaks = peaks[:200]
 	}
 
 	return peaks

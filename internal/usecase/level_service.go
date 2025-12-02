@@ -263,16 +263,43 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 
 		if activeLevel != nil {
 			// Check TP
-			if activeLevel.TakeProfitPct > 0 {
+			// Check TP
+			if activeLevel.TakeProfitPct > 0 || activeLevel.TakeProfitMode == "liquidity" {
 				shouldTP := false
+				var tpPrice float64
+
+				if activeLevel.TakeProfitMode == "liquidity" {
+					// Dynamic TP based on liquidity
+					// We should probably cache this or calculate it once per position?
+					// For now, let's calculate it on every tick (might be expensive, but safe)
+					// Optimization: Store it in memory map?
+					// Let's try to calculate it.
+					dynamicTP, err := s.CalculateLiquidityTP(ctx, symbol, pos.Side, pos.EntryPrice)
+					if err == nil && dynamicTP > 0 {
+						tpPrice = dynamicTP
+					} else {
+						// Fallback to fixed % if liquidity TP fails
+						if pos.Side == domain.SideLong {
+							tpPrice = pos.EntryPrice * (1 + activeLevel.TakeProfitPct)
+						} else {
+							tpPrice = pos.EntryPrice * (1 - activeLevel.TakeProfitPct)
+						}
+					}
+				} else {
+					// Fixed TP
+					if pos.Side == domain.SideLong {
+						tpPrice = pos.EntryPrice * (1 + activeLevel.TakeProfitPct)
+					} else {
+						tpPrice = pos.EntryPrice * (1 - activeLevel.TakeProfitPct)
+					}
+				}
+
 				if pos.Side == domain.SideLong {
-					tpPrice := pos.EntryPrice * (1 + activeLevel.TakeProfitPct)
 					if price >= tpPrice {
 						log.Printf("TAKE PROFIT: LONG on %s. Price %f >= TP %f. Closing...", symbol, price, tpPrice)
 						shouldTP = true
 					}
 				} else if pos.Side == domain.SideShort {
-					tpPrice := pos.EntryPrice * (1 - activeLevel.TakeProfitPct)
 					if price <= tpPrice {
 						log.Printf("TAKE PROFIT: SHORT on %s. Price %f <= TP %f. Closing...", symbol, price, tpPrice)
 						shouldTP = true
@@ -624,132 +651,300 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 		s.mu.RUnlock()
 
 		s.engine.UpdateState(levelID, func(ls *LevelState) {
-			if realizedPnL > 0 {
-				ls.ConsecutiveWins++
-				ls.ConsecutiveBaseCloses = 0 // Reset base closes on win
-				log.Printf("AUDIT: Win recorded for Level %s. Consecutive Wins: %d", levelID, ls.ConsecutiveWins)
+			// 1. Check for Base Close (Priority)
+			isBaseClose := false
+			if activeLevel != nil {
+				// Use 0.2% tolerance to account for slippage/spread
+				const epsilon = 0.002
+				dist := (price - activeLevel.LevelPrice) / activeLevel.LevelPrice
+				if dist < 0 {
+					dist = -dist
+				}
+				if dist <= epsilon {
+					isBaseClose = true
+				}
+			}
+
+			if isBaseClose && (reason == "Stop Loss (Base)" || reason == "Level Cross" || reason == "Safety Exit") {
+				ls.ConsecutiveBaseCloses++
+				ls.ConsecutiveWins = 0 // Reset wins on base close
+				log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d (PnL: %f)", levelID, ls.ConsecutiveBaseCloses, realizedPnL)
+
+				if activeLevel != nil && activeLevel.MaxConsecutiveBaseCloses > 0 && ls.ConsecutiveBaseCloses >= activeLevel.MaxConsecutiveBaseCloses {
+					ls.DisabledUntil = time.Now().Add(time.Duration(activeLevel.BaseCloseCooldownMs) * time.Millisecond)
+					ls.ConsecutiveBaseCloses = 0
+					log.Printf("AUDIT: Level %s disabled until %v due to max base closes.", activeLevel.ID, ls.DisabledUntil)
+
+					// --- AUTO-LEVEL CREATION LOGIC (DISABLED) ---
+					// if activeLevel.AutoModeEnabled {
+					// 	go func(oldLevel *domain.Level) {
+					// 		if err := s.AutoCreateNextLevel(context.Background(), oldLevel.ID); err != nil {
+					// 			log.Printf("AUTO-LEVEL: Failed to create next level for %s: %v", oldLevel.ID, err)
+					// 		}
+					// 	}(activeLevel)
+					// }
+				}
 			} else {
-				ls.ConsecutiveWins = 0
-				log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", levelID)
+				// Not a Base Close
+				ls.ConsecutiveBaseCloses = 0 // Reset base close streak
 
-				// Check if this was a Base Close
-				// We consider "Stop Loss (Base)" and "Level Cross" as base closes.
-				if (reason == "Stop Loss (Base)" || reason == "Level Cross") && activeLevel != nil {
-					// Only increment if close price is at/near base price
-					// Use 0.2% tolerance to account for slippage/spread
-					const epsilon = 0.002
-					dist := (price - activeLevel.LevelPrice) / activeLevel.LevelPrice
-					if dist < 0 {
-						dist = -dist
-					}
-
-					if dist <= epsilon {
-						ls.ConsecutiveBaseCloses++
-						log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d", levelID, ls.ConsecutiveBaseCloses)
-
-						if activeLevel.MaxConsecutiveBaseCloses > 0 && ls.ConsecutiveBaseCloses >= activeLevel.MaxConsecutiveBaseCloses {
-							ls.DisabledUntil = time.Now().Add(time.Duration(activeLevel.BaseCloseCooldownMs) * time.Millisecond)
-							ls.ConsecutiveBaseCloses = 0
-							log.Printf("AUDIT: Level %s disabled until %v due to max base closes.", activeLevel.ID, ls.DisabledUntil)
-
-							// --- AUTO-LEVEL CREATION LOGIC ---
-							if activeLevel.AutoModeEnabled {
-								go func(oldLevel *domain.Level) {
-									// Run in goroutine to avoid blocking the update loop and potential deadlocks
-									// We need a new context or use background
-									bgCtx := context.Background()
-
-									// 1. Fetch Liquidity
-									clusters, err := s.market.GetLiquidityClusters(bgCtx, oldLevel.Symbol)
-									if err != nil {
-										log.Printf("AUTO-LEVEL: Failed to fetch liquidity for %s: %v", oldLevel.Symbol, err)
-										return
-									}
-
-									// 2. Find Best Cluster
-									// Criteria:
-									// - Distance > 0.5% from old level price (to avoid immediate chop)
-									// - High Volume
-									var candidates []LiquidityCluster
-									const minDistancePct = 0.005
-
-									for _, c := range clusters {
-										dist := (c.Price - oldLevel.LevelPrice) / oldLevel.LevelPrice
-										if dist < 0 {
-											dist = -dist
-										}
-										if dist >= minDistancePct {
-											candidates = append(candidates, c)
-										}
-									}
-
-									// Sort by Volume DESC
-									sort.Slice(candidates, func(i, j int) bool {
-										return candidates[i].Volume > candidates[j].Volume
-									})
-
-									if len(candidates) > 0 {
-										best := candidates[0]
-										log.Printf("AUTO-LEVEL: Found best candidate at %f (Vol: %f)", best.Price, best.Volume)
-
-										// 3. Create New Level
-										newLevel := &domain.Level{
-											ID:                       fmt.Sprintf("%d", time.Now().UnixNano()),
-											Exchange:                 oldLevel.Exchange,
-											Symbol:                   oldLevel.Symbol,
-											LevelPrice:               best.Price,
-											BaseSize:                 oldLevel.BaseSize,
-											Leverage:                 oldLevel.Leverage,
-											MarginType:               oldLevel.MarginType,
-											CoolDownMs:               oldLevel.CoolDownMs,
-											StopLossAtBase:           oldLevel.StopLossAtBase,
-											StopLossMode:             oldLevel.StopLossMode,
-											DisableSpeedClose:        oldLevel.DisableSpeedClose,
-											MaxConsecutiveBaseCloses: oldLevel.MaxConsecutiveBaseCloses,
-											BaseCloseCooldownMs:      oldLevel.BaseCloseCooldownMs,
-											TakeProfitPct:            oldLevel.TakeProfitPct,
-											IsAuto:                   true,
-											AutoModeEnabled:          true, // Chain reaction
-											Source:                   "auto-recovery",
-											CreatedAt:                time.Now(),
-										}
-
-										// 4. Save New Level
-										if err := s.levelRepo.SaveLevel(bgCtx, newLevel); err != nil {
-											log.Printf("AUTO-LEVEL: Failed to save new level: %v", err)
-										} else {
-											log.Printf("AUTO-LEVEL: Successfully created new level %s at %f", newLevel.ID, newLevel.LevelPrice)
-											// Refresh cache
-											s.UpdateCache(bgCtx)
-										}
-
-										// 5. Delete Old Auto-Levels?
-										// If the old level was also auto, maybe we should delete it to keep things clean?
-										// Or just disable it (which is already done by cooldown/max closes logic).
-										// The user spec says: "And if level works in this mode we delete all previous levels that were set by auto mode."
-										// So we should find other auto levels for this symbol and delete them.
-										if oldLevel.IsAuto {
-											// Delete the old level itself? Or all auto levels?
-											// "delete all previous levels that were set by auto mode"
-											// Let's delete the one that just failed if it was auto.
-											if err := s.levelRepo.DeleteLevel(bgCtx, oldLevel.ID); err != nil {
-												log.Printf("AUTO-LEVEL: Failed to delete old auto level %s: %v", oldLevel.ID, err)
-											} else {
-												log.Printf("AUTO-LEVEL: Deleted old auto level %s", oldLevel.ID)
-											}
-										}
-
-									} else {
-										log.Printf("AUTO-LEVEL: No suitable candidates found for %s", oldLevel.Symbol)
-									}
-								}(activeLevel)
-							}
-						}
-					}
+				if realizedPnL > 0 {
+					ls.ConsecutiveWins++
+					log.Printf("AUDIT: Win recorded for Level %s. Consecutive Wins: %d", levelID, ls.ConsecutiveWins)
+				} else {
+					ls.ConsecutiveWins = 0
+					log.Printf("AUDIT: Loss recorded for Level %s. Streak reset.", levelID)
 				}
 			}
 		})
 	}
 
 	return realizedPnL, nil
+}
+
+// AutoCreateNextLevel attempts to find a better level based on liquidity and create it.
+// It creates levels for the best Bid (Support) and/or best Ask (Resistance).
+// It limits auto-levels to 2 per symbol and handles overlap by prioritizing volume.
+// It deletes ALL previous auto-levels for the symbol.
+func (s *LevelService) AutoCreateNextLevel(ctx context.Context, oldLevelID string) error {
+	// 1. Get Old Level to identify Symbol and Exchange
+	s.mu.RLock()
+	var oldLevel *domain.Level
+	for _, levels := range s.levelsCache {
+		for _, l := range levels {
+			if l.ID == oldLevelID {
+				oldLevel = l
+				break
+			}
+		}
+		if oldLevel != nil {
+			break
+		}
+	}
+	s.mu.RUnlock()
+
+	if oldLevel == nil {
+		return fmt.Errorf("level %s not found", oldLevelID)
+	}
+
+	// 2. Fetch Liquidity
+	clusters, err := s.market.GetLiquidityClusters(ctx, oldLevel.Symbol)
+	if err != nil {
+		return fmt.Errorf("failed to fetch liquidity: %w", err)
+	}
+
+	// 3. Fetch Tiers (Moved up for distance calculation)
+	tiers, err := s.levelRepo.GetSymbolTiers(ctx, oldLevel.Exchange, oldLevel.Symbol)
+	if err != nil || tiers == nil {
+		// Default tiers if not found
+		tiers = &domain.SymbolTiers{Tier3Pct: 0.003} // Conservative default
+	}
+
+	// 4. Find Best Clusters (Bid and Ask)
+	var bidCandidates []LiquidityCluster
+	var askCandidates []LiquidityCluster
+	minDistancePct := tiers.Tier3Pct
+
+	for _, c := range clusters {
+		dist := (c.Price - oldLevel.LevelPrice) / oldLevel.LevelPrice
+		if dist < 0 {
+			dist = -dist
+		}
+		if dist >= minDistancePct {
+			if c.Type == "bid" {
+				bidCandidates = append(bidCandidates, c)
+			} else if c.Type == "ask" {
+				askCandidates = append(askCandidates, c)
+			}
+		}
+	}
+
+	sort.Slice(bidCandidates, func(i, j int) bool {
+		return bidCandidates[i].Volume > bidCandidates[j].Volume
+	})
+	sort.Slice(askCandidates, func(i, j int) bool {
+		return askCandidates[i].Volume > askCandidates[j].Volume
+	})
+
+	// 5. Select Candidates
+	var selected []LiquidityCluster
+
+	var bestBid *LiquidityCluster
+	if len(bidCandidates) > 0 {
+		bestBid = &bidCandidates[0]
+	}
+
+	var bestAsk *LiquidityCluster
+	if len(askCandidates) > 0 {
+		bestAsk = &askCandidates[0]
+	}
+
+	// 6. Check Overlap & Apply Offset
+
+	// Apply Offset Logic
+	// Bid Level = Cluster + Tier3 (Buffer above support)
+	// Ask Level = Cluster - Tier3 (Buffer below resistance)
+	if bestBid != nil {
+		originalPrice := bestBid.Price
+		bestBid.Price = originalPrice * (1 + tiers.Tier3Pct)
+		log.Printf("AUTO-LEVEL: Offset Bid Level: %f -> %f (Tier3: %f)", originalPrice, bestBid.Price, tiers.Tier3Pct)
+	}
+	if bestAsk != nil {
+		originalPrice := bestAsk.Price
+		bestAsk.Price = originalPrice * (1 - tiers.Tier3Pct)
+		log.Printf("AUTO-LEVEL: Offset Ask Level: %f -> %f (Tier3: %f)", originalPrice, bestAsk.Price, tiers.Tier3Pct)
+	}
+
+	if bestBid != nil && bestAsk != nil {
+		// Check if they are too close
+		// Range < (Bid * Tier3 + Ask * Tier3) ?
+		// Or simply: Ask - Bid < (Ask * Tier3) ?
+		// Let's use the sum of their Tier 3 distances as the "forbidden zone".
+		// Actually, if they are closer than 2x Tier3, the zones might overlap.
+		// Let's be safe: if Ask < Bid * (1 + 2*tiers.Tier3Pct), they overlap.
+		minAsk := bestBid.Price * (1 + 2*tiers.Tier3Pct)
+		if bestAsk.Price < minAsk {
+			log.Printf("AUTO-LEVEL: Overlap detected. Bid: %f, Ask: %f. Min Ask: %f. Prioritizing Volume.", bestBid.Price, bestAsk.Price, minAsk)
+			if bestBid.Volume >= bestAsk.Volume {
+				selected = append(selected, *bestBid)
+			} else {
+				selected = append(selected, *bestAsk)
+			}
+		} else {
+			selected = append(selected, *bestBid, *bestAsk)
+		}
+	} else {
+		if bestBid != nil {
+			selected = append(selected, *bestBid)
+		}
+		if bestAsk != nil {
+			selected = append(selected, *bestAsk)
+		}
+	}
+
+	if len(selected) == 0 {
+		return fmt.Errorf("no suitable candidates found")
+	}
+
+	// 6. Delete ALL Old Auto-Levels for this Symbol
+	// We do this BEFORE creating new ones to ensure we stay within limits (though ID collision is unlikely).
+	// Actually, we should find them first.
+	s.mu.RLock()
+	var levelsToDelete []string
+	if levels, ok := s.levelsCache[oldLevel.Symbol]; ok {
+		for _, l := range levels {
+			if l.IsAuto {
+				levelsToDelete = append(levelsToDelete, l.ID)
+			}
+		}
+	}
+	s.mu.RUnlock()
+
+	for _, id := range levelsToDelete {
+		if err := s.levelRepo.DeleteLevel(ctx, id); err != nil {
+			log.Printf("AUTO-LEVEL: Failed to delete old auto level %s: %v", id, err)
+		} else {
+			log.Printf("AUTO-LEVEL: Deleted old auto level %s", id)
+		}
+	}
+
+	// 7. Create New Levels
+	for _, c := range selected {
+		newLevel := &domain.Level{
+			ID:                       fmt.Sprintf("%d", time.Now().UnixNano()),
+			Exchange:                 oldLevel.Exchange,
+			Symbol:                   oldLevel.Symbol,
+			LevelPrice:               c.Price,
+			BaseSize:                 oldLevel.BaseSize,
+			Leverage:                 oldLevel.Leverage,
+			MarginType:               oldLevel.MarginType,
+			CoolDownMs:               oldLevel.CoolDownMs,
+			StopLossAtBase:           oldLevel.StopLossAtBase,
+			StopLossMode:             oldLevel.StopLossMode,
+			DisableSpeedClose:        oldLevel.DisableSpeedClose,
+			MaxConsecutiveBaseCloses: oldLevel.MaxConsecutiveBaseCloses,
+			BaseCloseCooldownMs:      oldLevel.BaseCloseCooldownMs,
+			TakeProfitPct:            oldLevel.TakeProfitPct,
+			TakeProfitMode:           oldLevel.TakeProfitMode,
+			IsAuto:                   true,
+			AutoModeEnabled:          true,
+			Source:                   "auto-next-" + c.Type,
+			CreatedAt:                time.Now(),
+		}
+		// Ensure unique ID
+		time.Sleep(1 * time.Nanosecond)
+		newLevel.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+
+		if err := s.levelRepo.SaveLevel(ctx, newLevel); err != nil {
+			log.Printf("AUTO-LEVEL: Failed to save new %s level: %v", c.Type, err)
+		} else {
+			log.Printf("AUTO-LEVEL: Created new %s level %s at %f (Vol: %f)", c.Type, newLevel.ID, newLevel.LevelPrice, c.Volume)
+		}
+	}
+
+	// Refresh cache
+	s.UpdateCache(ctx)
+
+	return nil
+}
+
+// CalculateLiquidityTP finds the best liquidity cluster to use as a Take Profit target.
+// For Longs: Finds the biggest Ask cluster above entryPrice.
+// For Shorts: Finds the biggest Bid cluster below entryPrice.
+func (s *LevelService) CalculateLiquidityTP(ctx context.Context, symbol string, side domain.Side, entryPrice float64) (float64, error) {
+	clusters, err := s.market.GetLiquidityClusters(ctx, symbol)
+	if err != nil {
+		return 0, err
+	}
+
+	var bestCluster *LiquidityCluster
+	// We want to find a cluster that is at least some distance away to cover fees/profit.
+	// Let's say min 0.5% profit.
+	const minProfitPct = 0.005
+
+	for _, c := range clusters {
+		if side == domain.SideLong {
+			// Look for Asks above entry
+			if c.Type == "ask" && c.Price > entryPrice*(1+minProfitPct) {
+				if bestCluster == nil || c.Volume > bestCluster.Volume {
+					// We want the biggest wall
+					// But maybe we also want the closest big wall?
+					// For now, let's just pick the biggest volume one within reasonable range?
+					// Or the first big one?
+					// Let's stick to "Highest Volume" as per spec.
+					// But we should probably limit the range, e.g. within 5%
+					if c.Price <= entryPrice*1.05 {
+						current := c // copy loop var
+						bestCluster = &current
+					}
+				}
+			}
+		} else {
+			// Look for Bids below entry
+			if c.Type == "bid" && c.Price < entryPrice*(1-minProfitPct) {
+				if bestCluster == nil || c.Volume > bestCluster.Volume {
+					if c.Price >= entryPrice*0.95 {
+						current := c
+						bestCluster = &current
+					}
+				}
+			}
+		}
+	}
+
+	if bestCluster == nil {
+		return 0, fmt.Errorf("no suitable liquidity cluster found for TP")
+	}
+
+	// Apply small offset to exit BEFORE the wall
+	// 0.1% offset
+	const offsetPct = 0.001
+	tpPrice := bestCluster.Price
+	if side == domain.SideLong {
+		tpPrice = tpPrice * (1 - offsetPct)
+	} else {
+		tpPrice = tpPrice * (1 + offsetPct)
+	}
+
+	return tpPrice, nil
 }
