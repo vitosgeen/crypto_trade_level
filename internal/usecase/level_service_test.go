@@ -84,6 +84,10 @@ func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category
 func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return nil, nil
 }
+func (m *MockExchange) GetTickers(ctx context.Context, category string) ([]domain.Ticker, error) {
+	return nil, nil
+}
+
 func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 }
 func (m *MockExchange) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
@@ -206,6 +210,10 @@ func (m *MockExchangeForService) GetCandles(ctx context.Context, symbol, interva
 func (m *MockExchangeForService) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
 	return nil, nil
 }
+func (m *MockExchangeForService) GetTickers(ctx context.Context, category string) ([]domain.Ticker, error) {
+	return nil, nil
+}
+
 func (m *MockExchangeForService) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 	m.TradeCallback = callback
 }

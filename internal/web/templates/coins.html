@@ -105,7 +105,11 @@
                         <th onclick="sortTable(0)">Symbol ▼</th>
                         <th onclick="sortTable(1)">Base Coin ▼</th>
                         <th onclick="sortTable(2)">Quote Coin ▼</th>
-                        <th onclick="sortTable(3)">Status ▼</th>
+                        <th onclick="sortTable(3)">Last Price ▼</th>
+                        <th onclick="sortTable(4)">24h Change % ▼</th>
+                        <th onclick="sortTable(5)">24h Volume (USD) ▼</th>
+                        <th onclick="sortTable(6)">Open Interest (USD) ▼</th>
+                        <th onclick="sortTable(7)">Status ▼</th>
                         <th>Action</th>
                     </tr>
                 </thead>
@@ -115,7 +119,14 @@
                         <td>{{.Symbol}}</td>
                         <td>{{.BaseCoin}}</td>
                         <td>{{.QuoteCoin}}</td>
-                        <td class="{{if eq .Status "Trading"}}status-trading{{else}}status-other{{end}}">{{.Status}}
+                        <td>{{printf "%.4f" .LastPrice}}</td>
+                        <td
+                            style="color: {{if gt .Price24hPcnt 0.0}}green{{else if lt .Price24hPcnt 0.0}}red{{else}}black{{end}}">
+                            {{printf "%.2f%%" .Price24hPcnt}}
+                        </td>
+                        <td>{{printf "%.0f" .Volume24h}}</td>
+                        <td>{{printf "%.0f" .OpenInterestValue}}</td>
+                        <td class="{{if eq .Status " Trading"}}status-trading{{else}}status-other{{end}}">{{.Status}}
                         </td>
                         <td><a href="/speed-bot/coin/{{.Symbol}}">View Details →</a></td>
                     </tr>
@@ -153,7 +164,7 @@
         }
 
         // Sort functionality
-        let sortDirection = [1, 1, 1, 1]; // 1 = ascending, -1 = descending
+        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1]; // 1 = ascending, -1 = descending
 
         function sortTable(columnIndex) {
             const table = document.getElementById('coinsTable');
@@ -165,6 +176,14 @@
             rows.sort((a, b) => {
                 const aText = a.getElementsByTagName('td')[columnIndex].textContent.trim();
                 const bText = b.getElementsByTagName('td')[columnIndex].textContent.trim();
+
+                // Numeric sorting for columns 3, 4, 5, 6
+                if ([3, 4, 5, 6].includes(columnIndex)) {
+                    // Remove non-numeric chars like % or ,
+                    const aNum = parseFloat(aText.replace(/[^0-9.-]/g, ''));
+                    const bNum = parseFloat(bText.replace(/[^0-9.-]/g, ''));
+                    return (aNum - bNum) * direction;
+                }
 
                 if (aText < bText) return -1 * direction;
                 if (aText > bText) return 1 * direction;

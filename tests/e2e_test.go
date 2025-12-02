@@ -87,6 +87,10 @@ func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category
 	return &domain.OrderBook{Symbol: symbol}, nil
 }
 
+func (m *MockExchange) GetTickers(ctx context.Context, category string) ([]domain.Ticker, error) {
+	return nil, nil
+}
+
 func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 }
 

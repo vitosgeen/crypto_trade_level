@@ -34,6 +34,10 @@ func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (*domain.
 func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return nil, nil
 }
+func (m *MockExchange) GetTickers(ctx context.Context, category string) ([]domain.Ticker, error) {
+	return nil, nil
+}
+
 func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 }
 

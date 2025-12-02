@@ -26,6 +26,8 @@ type LevelState struct {
 	ConsecutiveWins       int       // Tracks consecutive profitable closes
 	ConsecutiveBaseCloses int       // Tracks consecutive closes at base level
 	DisabledUntil         time.Time // Timestamp until which the level is disabled
+	RangeHigh             float64   // Highest price observed during active period
+	RangeLow              float64   // Lowest price observed during active period
 }
 
 type SublevelEngine struct {
@@ -52,9 +54,12 @@ func (e *SublevelEngine) GetState(levelID string) LevelState {
 func (e *SublevelEngine) UpdateState(levelID string, updateFn func(*LevelState)) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if s, ok := e.states[levelID]; ok {
-		updateFn(s)
+	s, ok := e.states[levelID]
+	if !ok {
+		s = &LevelState{}
+		e.states[levelID] = s
 	}
+	updateFn(s)
 }
 
 func (e *SublevelEngine) ResetState(levelID string) {

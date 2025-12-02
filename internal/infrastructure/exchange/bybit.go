@@ -779,3 +779,55 @@ func (b *BybitAdapter) GetInstruments(ctx context.Context, category string) ([]d
 
 	return instruments, nil
 }
+
+func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domain.Ticker, error) {
+	if category == "" {
+		category = "linear"
+	}
+
+	path := fmt.Sprintf("/v5/market/tickers?category=%s", category)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				Symbol       string `json:"symbol"`
+				LastPrice    string `json:"lastPrice"`
+				Price24hPcnt string `json:"price24hPcnt"`
+				Turnover24h  string `json:"turnover24h"`
+				OpenInterest string `json:"openInterest"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit api error: %s", result.RetMsg)
+	}
+
+	var tickers []domain.Ticker
+	for _, item := range result.Result.List {
+		lastPrice, _ := strconv.ParseFloat(item.LastPrice, 64)
+		price24hPcnt, _ := strconv.ParseFloat(item.Price24hPcnt, 64)
+		volume24h, _ := strconv.ParseFloat(item.Turnover24h, 64)
+		openInterest, _ := strconv.ParseFloat(item.OpenInterest, 64)
+
+		tickers = append(tickers, domain.Ticker{
+			Symbol:       item.Symbol,
+			LastPrice:    lastPrice,
+			Price24hPcnt: price24hPcnt,
+			Volume24h:    volume24h,
+			OpenInterest: openInterest,
+		})
+	}
+
+	return tickers, nil
+}

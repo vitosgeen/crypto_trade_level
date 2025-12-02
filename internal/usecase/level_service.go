@@ -235,13 +235,22 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	for _, l := range relevantLevels {
 		if l.DisableSpeedClose {
 			speedCloseDisabled = true
-			break
 		}
+		// Update Range High/Low
+		s.engine.UpdateState(l.ID, func(ls *LevelState) {
+			if ls.RangeHigh == 0 || price > ls.RangeHigh {
+				ls.RangeHigh = price
+			}
+			if ls.RangeLow == 0 || price < ls.RangeLow {
+				ls.RangeLow = price
+			}
+		})
 	}
 
 	// Check Position for Exit Logic (TP and Sentiment)
 	pos, err := s.getPosition(ctx, symbol)
 	if err == nil && pos.Size > 0 {
+
 		// --- STOP LOSS AT BASE LOGIC ---
 		// Find relevant level (closest to entry)
 		// We already found tpLevel, let's reuse or find again if needed.
@@ -262,6 +271,7 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		}
 
 		if activeLevel != nil {
+
 			// Check TP
 			// Check TP
 			if activeLevel.TakeProfitPct > 0 || activeLevel.TakeProfitMode == "liquidity" {
@@ -675,18 +685,23 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 					ls.ConsecutiveBaseCloses = 0
 					log.Printf("AUDIT: Level %s disabled until %v due to max base closes.", activeLevel.ID, ls.DisabledUntil)
 
-					// --- AUTO-LEVEL CREATION LOGIC (DISABLED) ---
-					// if activeLevel.AutoModeEnabled {
-					// 	go func(oldLevel *domain.Level) {
-					// 		if err := s.AutoCreateNextLevel(context.Background(), oldLevel.ID); err != nil {
-					// 			log.Printf("AUTO-LEVEL: Failed to create next level for %s: %v", oldLevel.ID, err)
-					// 		}
-					// 	}(activeLevel)
-					// }
+					// --- AUTO-LEVEL SPLIT LOGIC ---
+					if activeLevel.AutoModeEnabled && ls.RangeHigh > 0 && ls.RangeLow > 0 {
+						go func(oldLevel *domain.Level, high, low float64) {
+							// Ensure high > low to avoid errors, though logic implies it
+							if high > low {
+								if err := s.SplitLevel(context.Background(), oldLevel, high, low); err != nil {
+									log.Printf("AUTO-LEVEL: Failed to split level %s: %v", oldLevel.ID, err)
+								}
+							}
+						}(activeLevel, ls.RangeHigh, ls.RangeLow)
+					}
 				}
 			} else {
 				// Not a Base Close
 				ls.ConsecutiveBaseCloses = 0 // Reset base close streak
+				ls.RangeHigh = 0
+				ls.RangeLow = 0
 
 				if realizedPnL > 0 {
 					ls.ConsecutiveWins++
@@ -947,4 +962,70 @@ func (s *LevelService) CalculateLiquidityTP(ctx context.Context, symbol string, 
 	}
 
 	return tpPrice, nil
+}
+
+// SplitLevel creates two new levels at the high and low prices of the range.
+func (s *LevelService) SplitLevel(ctx context.Context, originalLevel *domain.Level, high, low float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Create High Level
+	highLevel := &domain.Level{
+		ID:                       fmt.Sprintf("auto-split-%d-high", time.Now().UnixNano()),
+		Exchange:                 originalLevel.Exchange,
+		Symbol:                   originalLevel.Symbol,
+		LevelPrice:               high,
+		BaseSize:                 originalLevel.BaseSize,
+		Leverage:                 originalLevel.Leverage,
+		MarginType:               originalLevel.MarginType,
+		CoolDownMs:               originalLevel.CoolDownMs,
+		StopLossAtBase:           originalLevel.StopLossAtBase,
+		StopLossMode:             originalLevel.StopLossMode,
+		DisableSpeedClose:        originalLevel.DisableSpeedClose,
+		MaxConsecutiveBaseCloses: originalLevel.MaxConsecutiveBaseCloses,
+		BaseCloseCooldownMs:      originalLevel.BaseCloseCooldownMs,
+		TakeProfitPct:            originalLevel.TakeProfitPct,
+		TakeProfitMode:           originalLevel.TakeProfitMode,
+		IsAuto:                   true,
+		AutoModeEnabled:          true,
+		Source:                   "auto-split",
+		CreatedAt:                time.Now(),
+	}
+
+	// Create Low Level
+	lowLevel := &domain.Level{
+		ID:                       fmt.Sprintf("auto-split-%d-low", time.Now().UnixNano()),
+		Exchange:                 originalLevel.Exchange,
+		Symbol:                   originalLevel.Symbol,
+		LevelPrice:               low,
+		BaseSize:                 originalLevel.BaseSize,
+		Leverage:                 originalLevel.Leverage,
+		MarginType:               originalLevel.MarginType,
+		CoolDownMs:               originalLevel.CoolDownMs,
+		StopLossAtBase:           originalLevel.StopLossAtBase,
+		StopLossMode:             originalLevel.StopLossMode,
+		DisableSpeedClose:        originalLevel.DisableSpeedClose,
+		MaxConsecutiveBaseCloses: originalLevel.MaxConsecutiveBaseCloses,
+		BaseCloseCooldownMs:      originalLevel.BaseCloseCooldownMs,
+		TakeProfitPct:            originalLevel.TakeProfitPct,
+		TakeProfitMode:           originalLevel.TakeProfitMode,
+		IsAuto:                   true,
+		AutoModeEnabled:          true,
+		Source:                   "auto-split",
+		CreatedAt:                time.Now(),
+	}
+
+	// Save both levels
+	if err := s.levelRepo.SaveLevel(ctx, highLevel); err != nil {
+		return fmt.Errorf("failed to save high split level: %w", err)
+	}
+	if err := s.levelRepo.SaveLevel(ctx, lowLevel); err != nil {
+		return fmt.Errorf("failed to save low split level: %w", err)
+	}
+
+	// Update cache
+	s.levelsCache[originalLevel.Symbol] = append(s.levelsCache[originalLevel.Symbol], highLevel, lowLevel)
+
+	log.Printf("SPLIT LEVEL: Created new levels at High: %f and Low: %f from %s", high, low, originalLevel.ID)
+	return nil
 }

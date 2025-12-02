@@ -361,16 +361,61 @@ func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stats)
 }
 
+type CoinData struct {
+	Symbol            string
+	BaseCoin          string
+	QuoteCoin         string
+	Status            string
+	LastPrice         float64
+	Price24hPcnt      float64
+	Volume24h         float64
+	OpenInterest      float64
+	OpenInterestValue float64
+}
+
 func (s *Server) handleSpeedBot(w http.ResponseWriter, r *http.Request) {
-	instruments, err := s.service.GetExchange().GetInstruments(r.Context(), "linear")
+	ctx := r.Context()
+	instruments, err := s.service.GetExchange().GetInstruments(ctx, "linear")
 	if err != nil {
 		s.logger.Error("Failed to get instruments", zap.Error(err))
 		http.Error(w, "Failed to fetch instruments", http.StatusInternalServerError)
 		return
 	}
 
+	tickers, err := s.service.GetExchange().GetTickers(ctx, "linear")
+	if err != nil {
+		s.logger.Error("Failed to get tickers", zap.Error(err))
+		http.Error(w, "Failed to fetch tickers", http.StatusInternalServerError)
+		return
+	}
+
+	// Map tickers by symbol for easy lookup
+	tickerMap := make(map[string]domain.Ticker)
+	for _, t := range tickers {
+		tickerMap[t.Symbol] = t
+	}
+
+	var coins []CoinData
+	for _, inst := range instruments {
+		t, ok := tickerMap[inst.Symbol]
+		coin := CoinData{
+			Symbol:    inst.Symbol,
+			BaseCoin:  inst.BaseCoin,
+			QuoteCoin: inst.QuoteCoin,
+			Status:    inst.Status,
+		}
+		if ok {
+			coin.LastPrice = t.LastPrice
+			coin.Price24hPcnt = t.Price24hPcnt
+			coin.Volume24h = t.Volume24h
+			coin.OpenInterest = t.OpenInterest
+			coin.OpenInterestValue = t.OpenInterest * t.LastPrice
+		}
+		coins = append(coins, coin)
+	}
+
 	data := map[string]interface{}{
-		"Instruments": instruments,
+		"Instruments": coins,
 	}
 
 	if err := templates.ExecuteTemplate(w, "coins.html", data); err != nil {
