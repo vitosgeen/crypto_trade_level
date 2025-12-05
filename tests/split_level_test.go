@@ -98,9 +98,9 @@ func TestSplitLevel(t *testing.T) {
 		t.Fatalf("Failed to list levels: %v", err)
 	}
 
-	// Should have 3 levels: Original (Disabled) + 2 New
-	if len(levels) != 3 {
-		t.Errorf("Expected 3 levels, got %d", len(levels))
+	// Should have 2 levels: 2 New (Original Deleted)
+	if len(levels) != 2 {
+		t.Errorf("Expected 2 levels, got %d", len(levels))
 		for _, l := range levels {
 			t.Logf("Level: %s Price: %f", l.ID, l.LevelPrice)
 		}
@@ -109,7 +109,7 @@ func TestSplitLevel(t *testing.T) {
 	var highLevel, lowLevel *domain.Level
 	for _, l := range levels {
 		if l.ID == "auto-level-split-test" {
-			// Original
+			t.Error("Original level should be deleted")
 		} else if l.LevelPrice == 51000 {
 			// Use a pointer to the loop variable copy? No, loop var `l` is a copy (struct) or pointer?
 			// ListLevels returns []*Level. So l is *Level.

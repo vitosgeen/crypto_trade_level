@@ -443,16 +443,62 @@
         let chart = null;
         let candleSeries = null;
         let liquiditySeries = null;
+        let rsiSeries = null;
         let currentLiquidityLines = [];
         let lastCandle = null;
+
+        // Conclusion Chart
+        let conclusionChart = null;
+        let conclusionSeries = null;
+
+        function calculateRSI(candles, period = 14) {
+            if (candles.length < period + 1) return [];
+
+            const rsiData = [];
+            let avgGain = 0;
+            let avgLoss = 0;
+
+            // First RSI value
+            for (let i = 1; i <= period; i++) {
+                const change = candles[i].close - candles[i - 1].close;
+                if (change > 0) avgGain += change;
+                else avgLoss += Math.abs(change);
+            }
+
+            avgGain /= period;
+            avgLoss /= period;
+
+            let rs = avgGain / avgLoss;
+            let rsi = 100 - (100 / (1 + rs));
+
+            rsiData.push({ time: candles[period].time, value: rsi });
+
+            // Subsequent values
+            for (let i = period + 1; i < candles.length; i++) {
+                const change = candles[i].close - candles[i - 1].close;
+                let gain = change > 0 ? change : 0;
+                let loss = change < 0 ? Math.abs(change) : 0;
+
+                avgGain = (avgGain * (period - 1) + gain) / period;
+                avgLoss = (avgLoss * (period - 1) + loss) / period;
+
+                rs = avgGain / avgLoss;
+                rsi = 100 - (100 / (1 + rs));
+
+                rsiData.push({ time: candles[i].time, value: rsi });
+            }
+
+            return rsiData;
+        }
 
         function initChart() {
             const chartContainer = document.getElementById('levelChart');
             if (!chartContainer) return;
 
+            // --- Main Chart (Price + RSI) ---
             chart = LightweightCharts.createChart(chartContainer, {
                 width: chartContainer.clientWidth || 800,
-                height: 400,
+                height: 500, // Increased height for RSI pane
                 layout: {
                     background: { type: 'solid', color: 'white' },
                     textColor: 'black',
@@ -463,6 +509,10 @@
                 },
                 rightPriceScale: {
                     borderColor: '#d1d4dc',
+                    scaleMargins: {
+                        top: 0.05,
+                        bottom: 0.35, // Leave space for RSI
+                    },
                 },
                 timeScale: {
                     borderColor: '#d1d4dc',
@@ -499,9 +549,90 @@
                 },
             });
 
+            // RSI Series
+            rsiSeries = chart.addLineSeries({
+                color: '#9c27b0', // Purple
+                lineWidth: 2,
+                priceScaleId: 'rsi', // Separate scale
+                scaleMargins: {
+                    top: 0.75, // Position at bottom
+                    bottom: 0.05,
+                },
+            });
+
+            // RSI Levels
+            rsiSeries.createPriceLine({
+                price: 70,
+                color: '#9c27b0',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dotted,
+                axisLabelVisible: false,
+                title: '',
+            });
+            rsiSeries.createPriceLine({
+                price: 30,
+                color: '#9c27b0',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dotted,
+                axisLabelVisible: false,
+                title: '',
+            });
+
+            // --- Conclusion Chart ---
+            // Create container dynamically if not exists (or assume user adds it to HTML, but let's append it for now)
+            // Actually, let's insert it after the main chart
+            let conclusionContainer = document.getElementById('conclusionChart');
+            if (!conclusionContainer) {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = '<h2>Conclusion Score (Live)</h2><div id="conclusionChart" style="width: 100%; height: 200px;"></div>';
+                chartContainer.parentElement.after(card);
+                conclusionContainer = card.querySelector('#conclusionChart');
+            }
+
+            conclusionChart = LightweightCharts.createChart(conclusionContainer, {
+                width: conclusionContainer.clientWidth || 800,
+                height: 200,
+                layout: {
+                    background: { type: 'solid', color: 'white' },
+                    textColor: 'black',
+                },
+                grid: {
+                    vertLines: { color: '#eee' },
+                    horzLines: { color: '#eee' },
+                },
+                rightPriceScale: {
+                    borderColor: '#d1d4dc',
+                    visible: true,
+                },
+                timeScale: {
+                    borderColor: '#d1d4dc',
+                    timeVisible: true,
+                    secondsVisible: true,
+                },
+            });
+
+            conclusionSeries = conclusionChart.addLineSeries({
+                color: '#2962FF',
+                lineWidth: 2,
+            });
+
+            // Zero line
+            conclusionSeries.createPriceLine({
+                price: 0,
+                color: '#000',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: false,
+                title: '',
+            });
+
             window.addEventListener('resize', () => {
                 if (chart && chartContainer) {
                     chart.applyOptions({ width: chartContainer.clientWidth });
+                }
+                if (conclusionChart && conclusionContainer) {
+                    conclusionChart.applyOptions({ width: conclusionContainer.clientWidth });
                 }
             });
 
@@ -520,6 +651,10 @@
                     // Sync liquidity series
                     const lineData = candles.map(c => ({ time: c.time, value: c.close }));
                     liquiditySeries.setData(lineData);
+
+                    // Calculate and set RSI
+                    const rsiData = calculateRSI(candles);
+                    rsiSeries.setData(rsiData);
 
                     chart.timeScale().fitContent();
 
@@ -575,7 +710,7 @@
         // Update chart with real-time price (simulated via periodic candle refresh)
         async function updateChart() {
             try {
-                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=5`);
+                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`); // Fetch more to recalc RSI accurately
                 const candles = await response.json();
                 if (candles && candles.length > 0) {
                     candles.sort((a, b) => a.time - b.time);
@@ -590,6 +725,20 @@
                         // New candle
                         candleSeries.update(latestCandle);
                         liquiditySeries.update({ time: latestCandle.time, value: latestCandle.close });
+                    }
+
+                    // Recalculate RSI for the latest data
+                    // Optimization: We could just calc the last point if we had state, but full recalc is safer/easier for now
+                    const rsiData = calculateRSI(candles);
+                    if (rsiData.length > 0) {
+                        // Update RSI series (Lightweight charts handles updates efficiently)
+                        // But setData might be heavy? update() is better for single point.
+                        // Let's just use setData for simplicity or update the last point.
+                        // For RSI, the previous values might change slightly as the moving average settles?
+                        // No, standard RSI only changes the current candle's RSI.
+                        // So we can just update the last point.
+                        const lastRSI = rsiData[rsiData.length - 1];
+                        rsiSeries.update(lastRSI);
                     }
 
                     lastCandle = latestCandle;
@@ -766,6 +915,15 @@
                 if (bearCircle) bearCircle.style.opacity = bearOpacity;
                 if (bullCircle) bullCircle.style.opacity = bullOpacity;
                 if (scoreText) scoreText.textContent = `${(finalScore * 100).toFixed(0)}%`;
+
+                // Update Conclusion Chart
+                if (conclusionSeries) {
+                    const now = Math.floor(Date.now() / 1000);
+                    conclusionSeries.update({
+                        time: now,
+                        value: finalScore
+                    });
+                }
 
             } catch (e) {
                 console.error("Failed to fetch market stats", e);

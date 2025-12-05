@@ -235,3 +235,35 @@ func (s *SQLiteStore) ListPositionHistory(ctx context.Context, limit int) ([]*do
 	}
 	return history, nil
 }
+func (s *SQLiteStore) GetLevelsBySymbol(ctx context.Context, symbol string) ([]*domain.Level, error) {
+	query := `SELECT id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, source, created_at FROM levels WHERE symbol = ?`
+	rows, err := s.db.QueryContext(ctx, query, symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var levels []*domain.Level
+	for rows.Next() {
+		var l domain.Level
+		if err := rows.Scan(
+			&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs,
+			&l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs,
+			&l.TakeProfitPct, &l.TakeProfitMode, &l.IsAuto, &l.AutoModeEnabled, &l.Source, &l.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		levels = append(levels, &l)
+	}
+	return levels, nil
+}
+
+func (s *SQLiteStore) CountActiveLevels(ctx context.Context, symbol string) (int, error) {
+	query := `SELECT COUNT(*) FROM levels WHERE symbol = ?`
+	var count int
+	err := s.db.QueryRowContext(ctx, query, symbol).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}

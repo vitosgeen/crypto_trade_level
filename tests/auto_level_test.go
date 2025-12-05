@@ -111,33 +111,46 @@ func TestAutoLevelCreation(t *testing.T) {
 		t.Errorf("Expected old level to be deleted, but found it: %v", oldLevel)
 	}
 
-	// 8. Verify New Level Created
+	// 8. Verify New Levels Created
 	levels, err := store.ListLevels(ctx)
 	if err != nil {
 		t.Fatalf("Failed to list levels: %v", err)
 	}
-	if len(levels) != 1 {
-		t.Fatalf("Expected 1 level (new), got %d", len(levels))
+	if len(levels) != 2 {
+		t.Fatalf("Expected 2 levels (High/Low), got %d", len(levels))
 	}
 
-	newLevel := levels[0]
-	if newLevel.ID == "auto-level-1" {
-		t.Errorf("New level has same ID as old level")
-	}
-	if !newLevel.IsAuto {
-		t.Errorf("New level should be IsAuto=true")
-	}
-	if !newLevel.AutoModeEnabled {
-		t.Errorf("New level should have AutoModeEnabled=true")
+	for _, newLevel := range levels {
+		if newLevel.ID == "auto-level-1" {
+			t.Errorf("New level has same ID as old level")
+		}
+		if !newLevel.IsAuto {
+			t.Errorf("New level should be IsAuto=true")
+		}
+		if !newLevel.AutoModeEnabled {
+			t.Errorf("New level should have AutoModeEnabled=true")
+		}
+		if newLevel.Source != "auto-split" {
+			t.Errorf("New level Source should be 'auto-split', got '%s'", newLevel.Source)
+		}
 	}
 
-	// 9. Verify Price Logic (Best Liquidity Cluster)
-	// We mocked Bids at 49500 (Size 10) and 49000 (Size 5).
-	// Current Price ~50000.
-	// Logic searches for clusters > 0.5% away.
-	// 49500 is 1% away. Size 10 is max.
-	// So expected price is 49500.
-	if newLevel.LevelPrice != 49500.0 {
-		t.Errorf("Expected new level price 49500.0, got %f", newLevel.LevelPrice)
+	// 9. Verify Price Logic (Default Range +/- 0.5%)
+	// Level Price 50000.
+	// High: 50250. Low: 49750.
+	var foundHigh, foundLow bool
+	for _, l := range levels {
+		if l.LevelPrice == 50250.0 {
+			foundHigh = true
+		} else if l.LevelPrice == 49750.0 {
+			foundLow = true
+		}
+	}
+
+	if !foundHigh {
+		t.Error("Expected High level at 50250.0")
+	}
+	if !foundLow {
+		t.Error("Expected Low level at 49750.0")
 	}
 }

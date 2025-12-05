@@ -51,7 +51,9 @@ type LevelRepository interface {
 	SaveLevel(ctx context.Context, level *Level) error
 	GetLevel(ctx context.Context, id string) (*Level, error)
 	ListLevels(ctx context.Context) ([]*Level, error)
+	GetLevelsBySymbol(ctx context.Context, symbol string) ([]*Level, error)
 	DeleteLevel(ctx context.Context, id string) error
+	CountActiveLevels(ctx context.Context, symbol string) (int, error)
 
 	SaveSymbolTiers(ctx context.Context, tiers *SymbolTiers) error
 	GetSymbolTiers(ctx context.Context, exchange, symbol string) (*SymbolTiers, error)

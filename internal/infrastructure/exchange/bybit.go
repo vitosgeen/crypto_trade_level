@@ -801,6 +801,7 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 				Price24hPcnt string `json:"price24hPcnt"`
 				Turnover24h  string `json:"turnover24h"`
 				OpenInterest string `json:"openInterest"`
+				FundingRate  string `json:"fundingRate"`
 			} `json:"list"`
 		} `json:"result"`
 	}
@@ -819,6 +820,7 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 		price24hPcnt, _ := strconv.ParseFloat(item.Price24hPcnt, 64)
 		volume24h, _ := strconv.ParseFloat(item.Turnover24h, 64)
 		openInterest, _ := strconv.ParseFloat(item.OpenInterest, 64)
+		fundingRate, _ := strconv.ParseFloat(item.FundingRate, 64)
 
 		tickers = append(tickers, domain.Ticker{
 			Symbol:       item.Symbol,
@@ -826,6 +828,7 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 			Price24hPcnt: price24hPcnt,
 			Volume24h:    volume24h,
 			OpenInterest: openInterest,
+			FundingRate:  fundingRate,
 		})
 	}
 

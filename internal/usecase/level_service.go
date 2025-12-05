@@ -146,6 +146,19 @@ func (s *LevelService) UpdateCache(ctx context.Context) error {
 	return nil
 }
 
+// CreateLevel creates a new level
+func (s *LevelService) CreateLevel(ctx context.Context, level *domain.Level) error {
+	// Limit check removed for manual levels as per user request.
+
+	// 2. Save Level
+	if err := s.levelRepo.SaveLevel(ctx, level); err != nil {
+		return fmt.Errorf("failed to save level: %w", err)
+	}
+
+	// 3. Update Cache
+	return s.UpdateCache(ctx)
+}
+
 func (s *LevelService) getPosition(ctx context.Context, symbol string) (*domain.Position, error) {
 	s.mu.RLock()
 	cached, ok := s.positionCache[symbol]
@@ -972,7 +985,8 @@ func (s *LevelService) CalculateLiquidityTP(ctx context.Context, symbol string, 
 				if bestCluster == nil || c.Volume > bestCluster.Volume {
 					// We want the biggest wall
 					// But maybe we also want the closest big wall?
-					// For now, let's just pick the biggest volume one within reasonable range?
+					// CreateLevel creates a new level
+
 					// Or the first big one?
 					// Let's stick to "Highest Volume" as per spec.
 					// But we should probably limit the range, e.g. within 5%
@@ -1012,10 +1026,28 @@ func (s *LevelService) CalculateLiquidityTP(ctx context.Context, symbol string, 
 	return tpPrice, nil
 }
 
-// SplitLevel creates two new levels at the high and low prices of the range.
+// SplitLevel splits a level into two new levels based on the range, deleting the original and other auto levels.
 func (s *LevelService) SplitLevel(ctx context.Context, originalLevel *domain.Level, high, low float64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// 1. Cleanup Old Auto Levels
+	// We want to remove ALL existing auto levels for this symbol to ensure we only have the new ones.
+	// We also remove the originalLevel (whether manual or auto) because it is being split.
+
+	existingLevels, err := s.levelRepo.GetLevelsBySymbol(ctx, originalLevel.Symbol)
+	if err != nil {
+		return fmt.Errorf("failed to get levels for symbol %s: %w", originalLevel.Symbol, err)
+	}
+
+	for _, l := range existingLevels {
+		// Delete if it's the original level OR if it's an auto level
+		if l.ID == originalLevel.ID || l.IsAuto {
+			if err := s.levelRepo.DeleteLevel(ctx, l.ID); err != nil {
+				log.Printf("Warning: Failed to delete level %s during split cleanup: %v", l.ID, err)
+				// Continue trying to delete others
+			} else {
+				log.Printf("SPLIT: Deleted level %s (IsAuto: %v)", l.ID, l.IsAuto)
+			}
+		}
+	}
 
 	// Create High Level
 	highLevel := &domain.Level{
@@ -1072,8 +1104,73 @@ func (s *LevelService) SplitLevel(ctx context.Context, originalLevel *domain.Lev
 	}
 
 	// Update cache
-	s.levelsCache[originalLevel.Symbol] = append(s.levelsCache[originalLevel.Symbol], highLevel, lowLevel)
+	return s.UpdateCache(ctx)
+}
 
-	log.Printf("SPLIT LEVEL: Created new levels at High: %f and Low: %f from %s", high, low, originalLevel.ID)
+// IncrementBaseCloses manually increments the base close counter for a level
+// and triggers the split logic if the max is reached.
+func (s *LevelService) IncrementBaseCloses(ctx context.Context, levelID string) error {
+	s.mu.RLock()
+	// Find the level
+	var targetLevel *domain.Level
+	for _, levels := range s.levelsCache {
+		for _, l := range levels {
+			if l.ID == levelID {
+				targetLevel = l
+				break
+			}
+		}
+		if targetLevel != nil {
+			break
+		}
+	}
+	s.mu.RUnlock()
+
+	if targetLevel == nil {
+		return fmt.Errorf("level not found: %s", levelID)
+	}
+
+	// Update State
+	var currentCloses int
+	var rangeHigh, rangeLow float64
+
+	s.engine.UpdateState(levelID, func(ls *LevelState) {
+		ls.ConsecutiveBaseCloses++
+		currentCloses = ls.ConsecutiveBaseCloses
+		rangeHigh = ls.RangeHigh
+		rangeLow = ls.RangeLow
+
+		// If range is empty (e.g. manually added level without ticks), set a default range around the level price
+		if rangeHigh == 0 || rangeLow == 0 {
+			rangeHigh = targetLevel.LevelPrice * 1.005 // +0.5%
+			rangeLow = targetLevel.LevelPrice * 0.995  // -0.5%
+			ls.RangeHigh = rangeHigh
+			ls.RangeLow = rangeLow
+		}
+	})
+
+	log.Printf("MANUAL: Incremented Base Closes for %s. Count: %d", levelID, currentCloses)
+
+	// Check for Max Closes Trigger
+	if targetLevel.MaxConsecutiveBaseCloses > 0 && currentCloses >= targetLevel.MaxConsecutiveBaseCloses {
+		// Trigger Split Logic
+		// We reuse the logic from finalizePosition, but here we call SplitLevel directly.
+
+		// Disable the old level
+		s.engine.UpdateState(levelID, func(ls *LevelState) {
+			ls.DisabledUntil = time.Now().Add(time.Duration(targetLevel.BaseCloseCooldownMs) * time.Millisecond)
+		})
+		log.Printf("AUDIT: Level %s disabled until %v due to manual max base closes.", targetLevel.ID, time.Now().Add(time.Duration(targetLevel.BaseCloseCooldownMs)*time.Millisecond))
+
+		// Split Logic
+		if targetLevel.AutoModeEnabled { // Check AutoModeEnabled (which we enabled for manual levels too)
+			go func(oldLevel *domain.Level, high, low float64) {
+				if err := s.SplitLevel(context.Background(), oldLevel, high, low); err != nil {
+					log.Printf("ERROR: Failed to split level %s: %v", oldLevel.ID, err)
+				}
+			}(targetLevel, rangeHigh, rangeLow)
+		}
+	}
+
 	return nil
 }

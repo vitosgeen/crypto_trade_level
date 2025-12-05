@@ -176,6 +176,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	maxConsecutiveBaseCloses, _ := strconv.Atoi(r.FormValue("max_consecutive_base_closes"))
 	baseCloseCooldownMinutes, _ := strconv.Atoi(r.FormValue("base_close_cooldown_minutes"))
 	baseCloseCooldownMs := int64(baseCloseCooldownMinutes) * 60 * 1000
+	autoModeEnabled := r.FormValue("auto_mode_enabled") == "on"
 
 	level := &domain.Level{
 		ID:                       fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -194,18 +195,23 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		TakeProfitPct:            takeProfitPct,
 		TakeProfitMode:           takeProfitMode,
 		IsAuto:                   false,
-		AutoModeEnabled:          false, // Disabled by default, manual trigger only
+		AutoModeEnabled:          autoModeEnabled, // Enabled if checkbox checked
 		Source:                   "manual-web",
 		CreatedAt:                time.Now(),
 	}
 
-	if err := s.levelRepo.SaveLevel(r.Context(), level); err != nil {
-		s.logger.Error("Failed to save level", zap.Error(err))
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := s.service.CreateLevel(r.Context(), level); err != nil {
+		s.logger.Error("Failed to create level", zap.Error(err))
+		// Check if it's a limit error
+		if err.Error() == fmt.Sprintf("active levels limit reached for %s (max 2)", symbol) {
+			http.Error(w, err.Error(), http.StatusConflict) // 409 Conflict
+		} else {
+			http.Error(w, "Failed to save level", http.StatusInternalServerError)
+		}
 		return
 	}
 
-	// Save Tiers
+	// Create Tiers
 	tiers := &domain.SymbolTiers{
 		Exchange:  exchange,
 		Symbol:    symbol,
@@ -259,6 +265,24 @@ func (s *Server) handlePositionsTable(w http.ResponseWriter, r *http.Request) {
 	if err := templates.ExecuteTemplate(w, "positions_table", positions); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
 	}
+}
+
+func (s *Server) handleIncrementCloses(w http.ResponseWriter, r *http.Request) {
+	levelID := r.PathValue("id")
+	if levelID == "" {
+		http.Error(w, "Missing level ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.service.IncrementBaseCloses(r.Context(), levelID); err != nil {
+		s.logger.Error("Error incrementing base closes", zap.Error(err))
+		http.Error(w, "Failed to increment base closes", http.StatusInternalServerError)
+		return
+	}
+
+	// Trigger table refresh
+	w.Header().Set("HX-Trigger", "levelsUpdated")
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) handleClosePosition(w http.ResponseWriter, r *http.Request) {

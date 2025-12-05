@@ -30,6 +30,26 @@ func (m *MockLevelRepo) SaveSymbolTiers(ctx context.Context, tiers *domain.Symbo
 	return nil
 }
 
+func (m *MockLevelRepo) CountActiveLevels(ctx context.Context, symbol string) (int, error) {
+	count := 0
+	for _, l := range m.Levels {
+		if l.Symbol == symbol {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (m *MockLevelRepo) GetLevelsBySymbol(ctx context.Context, symbol string) ([]*domain.Level, error) {
+	var levels []*domain.Level
+	for _, l := range m.Levels {
+		if l.Symbol == symbol {
+			levels = append(levels, l)
+		}
+	}
+	return levels, nil
+}
+
 // MockTradeRepo
 type MockTradeRepo struct {
 	LastTrade   *domain.Order
