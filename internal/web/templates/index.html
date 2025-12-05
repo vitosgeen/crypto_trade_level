@@ -655,6 +655,8 @@
                     <span id="book-order-info" style="display: none; margin-left: 10px;"> | Book: <span
                             id="book-order-value"
                             style="font-family: 'Inter', monospace; font-weight: 600;">0</span></span>
+                    <span id="rsi-legend" style="margin-left: 10px; display: none;"> | RSI: <span id="rsi-value"
+                            style="font-family: 'Inter', monospace; font-weight: 600; color: #9c27b0;">0.00</span></span>
                 </div>
             </div>
 
@@ -927,6 +929,8 @@
                             percentSpan.textContent = '0.00%';
                             percentSpan.style.color = 'var(--text-muted)';
                         }
+                        const rsiLegend = document.getElementById('rsi-legend');
+                        if (rsiLegend) rsiLegend.style.display = 'none';
                         return;
                     }
 
@@ -972,6 +976,19 @@
                             bookValue.style.color = closest.type === 'bid' ? '#00ff88' : '#dc3545';
                         } else {
                             bookInfo.style.display = 'none';
+                        }
+                    }
+
+                    // RSI Legend Logic
+                    const rsiLegend = document.getElementById('rsi-legend');
+                    const rsiValueSpan = document.getElementById('rsi-value');
+                    if (rsiLegend && rsiValueSpan && rsiSeries) {
+                        const rsiData = param.seriesData.get(rsiSeries);
+                        if (rsiData) {
+                            rsiLegend.style.display = 'inline';
+                            rsiValueSpan.textContent = rsiData.value.toFixed(2);
+                        } else {
+                            rsiLegend.style.display = 'none';
                         }
                     }
 
@@ -1266,8 +1283,8 @@
                             if (opacity < 0.1) opacity = 0.1;
 
                             const color = c.type === 'bid'
-                                ? `rgba(0, 255, 136, ${opacity.toFixed(2)})`
-                                : `rgba(220, 53, 69, ${opacity.toFixed(2)})`;
+                                ? `rgba(0, 188, 212, ${opacity.toFixed(2)})` // Cyan
+                                : `rgba(255, 152, 0, ${opacity.toFixed(2)})`; // Orange
 
                             window.currentLiquidityLines.push(liquiditySeries.createPriceLine({
                                 price: c.price,
