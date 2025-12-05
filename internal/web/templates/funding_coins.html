@@ -3,101 +3,216 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Funding Bot - Opportunities</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: sans-serif;
-            padding: 20px;
-            background: #f0f2f5;
+        :root {
+            --bg-color: #0a0b1e;
+            --text-color: #e0e0e0;
+            --text-muted: #a0a0a0;
+            --accent-color: #00ff88;
+            --accent-hover: #00cc6a;
+            --secondary-color: #7000ff;
+            --card-bg: #151632;
+            --nav-bg: rgba(10, 11, 30, 0.95);
+            --border-color: rgba(255, 255, 255, 0.05);
+            --input-bg: #0f1025;
+            --success: #28a745;
+            --danger: #dc3545;
+            --warning: #ffc107;
+            --info: #007bff;
         }
 
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding-top: 80px;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            padding: 1rem 2rem;
+            background: var(--nav-bg);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            text-decoration: none;
+            letter-spacing: 1px;
+        }
+
+        .nav-links a {
+            color: var(--text-color);
+            text-decoration: none;
+            margin-left: 2rem;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent-color);
+        }
+
+        .cta-button {
+            background: linear-gradient(45deg, var(--accent-color), var(--secondary-color));
+            color: #000;
+            padding: 0.5rem 1.2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
+        }
+
+        /* Layout */
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
+            padding: 20px;
         }
 
         .card {
-            background: white;
+            background: var(--card-bg);
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: var(--text-color);
+            margin-bottom: 5px;
+            font-size: 1.8rem;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
             margin-bottom: 20px;
         }
 
+        /* Search Box */
         .search-box {
             width: 100%;
-            padding: 10px;
+            padding: 12px;
             margin-bottom: 20px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 16px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-color);
+            font-size: 1rem;
         }
 
+        .search-box:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        /* Table */
         table {
             width: 100%;
             border-collapse: collapse;
-        }
-
-        th,
-        td {
-            text-align: left;
-            padding: 12px;
-            border-bottom: 1px solid #eee;
+            font-size: 0.95rem;
         }
 
         th {
-            background: #f8f9fa;
+            text-align: left;
+            padding: 15px;
+            color: var(--text-muted);
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
             cursor: pointer;
             user-select: none;
         }
 
         th:hover {
-            background: #e9ecef;
+            color: var(--accent-color);
         }
 
-        .positive-rate {
-            color: #28a745;
-            font-weight: bold;
+        td {
+            padding: 15px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-color);
         }
 
-        .negative-rate {
-            color: #dc3545;
-            font-weight: bold;
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
         }
 
-        a {
-            color: #007bff;
+        /* Status Colors */
+        .text-success {
+            color: var(--success);
+        }
+
+        .text-danger {
+            color: var(--danger);
+        }
+
+        .text-muted {
+            color: var(--text-muted);
+        }
+
+        .countdown {
+            font-family: 'Inter', monospace;
+            font-weight: 600;
+            color: var(--warning);
+        }
+
+        a.action-link {
+            color: var(--accent-color);
             text-decoration: none;
+            font-weight: 500;
         }
 
-        a:hover {
+        a.action-link:hover {
             text-decoration: underline;
-        }
-
-        .back-link {
-            display: inline-block;
-            margin-bottom: 20px;
-            padding: 8px 16px;
-            background: #6c757d;
-            color: white;
-            border-radius: 4px;
-        }
-
-        .back-link:hover {
-            background: #5a6268;
-            text-decoration: none;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <a href="/" class="back-link">← Home</a>
-        <a href="/dashboard" class="back-link">← Back to Dashboard</a>
 
+    <nav>
+        <a href="/" class="logo">CRYPTOBOT</a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/speed-bot">Speed Bot</a>
+            <a href="/funding-bot" style="color: var(--accent-color);">Funding Bot</a>
+            <a href="/dashboard">Dashboard</a>
+        </div>
+        <a href="/dashboard" class="cta-button">Launch App</a>
+    </nav>
+
+    <div class="container">
         <div class="card">
             <h1>Funding Opportunities</h1>
-            <p>Showing coins with non-zero funding rates.</p>
+            <p class="subtitle">Showing coins with non-zero funding rates.</p>
             <input type="text" id="searchBox" class="search-box" placeholder="Search by symbol..."
                 onkeyup="filterTable()">
 
@@ -114,14 +229,14 @@
                 <tbody>
                     {{range .Instruments}}
                     <tr>
-                        <td>{{.Symbol}}</td>
+                        <td style="font-weight: 600;">{{.Symbol}}</td>
                         <td
-                            class="{{if gt .FundingRate 0.0}}positive-rate{{else if lt .FundingRate 0.0}}negative-rate{{end}}">
+                            class="{{if gt .FundingRate 0.0}}text-success{{else if lt .FundingRate 0.0}}text-danger{{end}}">
                             {{printf "%.4f%%" .FundingRate}}
                         </td>
                         <td>{{printf "%.4f%%" .AbsFundingRate}}</td>
                         <td class="countdown" data-time="{{.NextFundingTime}}">--:--:--</td>
-                        <td><a href="/funding-bot/coin/{{.Symbol}}">Trade →</a></td>
+                        <td><a href="/funding-bot/coin/{{.Symbol}}" class="action-link">Trade →</a></td>
                     </tr>
                     {{end}}
                 </tbody>
