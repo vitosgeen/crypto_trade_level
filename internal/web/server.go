@@ -88,6 +88,10 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /speed-bot", s.handleSpeedBot)
 	s.router.HandleFunc("GET /speed-bot/coin/{symbol}", s.handleCoinDetail)
 
+	// Funding Bot
+	s.router.HandleFunc("GET /funding-bot", s.handleFundingBot)
+	s.router.HandleFunc("GET /funding-bot/coin/{symbol}", s.handleCoinDetail)
+
 	// Speed Bot API
 	s.router.HandleFunc("POST /api/speedbot/start", s.handleStartSpeedBot)
 	s.router.HandleFunc("POST /api/speedbot/stop", s.handleStopSpeedBot)

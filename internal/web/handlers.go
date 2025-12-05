@@ -19,7 +19,12 @@ var templates *template.Template
 
 func InitTemplates(dir string) error {
 	var err error
-	templates, err = template.ParseGlob(filepath.Join(dir, "*.html"))
+	funcMap := template.FuncMap{
+		"mul": func(a, b float64) float64 {
+			return a * b
+		},
+	}
+	templates, err = template.New("").Funcs(funcMap).ParseGlob(filepath.Join(dir, "*.html"))
 	return err
 }
 
@@ -202,12 +207,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.service.CreateLevel(r.Context(), level); err != nil {
 		s.logger.Error("Failed to create level", zap.Error(err))
-		// Check if it's a limit error
-		if err.Error() == fmt.Sprintf("active levels limit reached for %s (max 2)", symbol) {
-			http.Error(w, err.Error(), http.StatusConflict) // 409 Conflict
-		} else {
-			http.Error(w, "Failed to save level", http.StatusInternalServerError)
-		}
+		http.Error(w, "Failed to save level", http.StatusInternalServerError)
 		return
 	}
 
@@ -443,6 +443,57 @@ func (s *Server) handleSpeedBot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := templates.ExecuteTemplate(w, "coins.html", data); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+type FundingCoinData struct {
+	Symbol          string
+	FundingRate     float64
+	AbsFundingRate  float64
+	NextFundingTime int64
+}
+
+func (s *Server) handleFundingBot(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	tickers, err := s.service.GetExchange().GetTickers(ctx, "linear")
+	if err != nil {
+		s.logger.Error("Failed to get tickers", zap.Error(err))
+		http.Error(w, "Failed to fetch tickers", http.StatusInternalServerError)
+		return
+	}
+
+	var coins []FundingCoinData
+	for _, t := range tickers {
+		// Filter non-zero funding rates (or active instruments)
+		// We can filter by FundingRate != 0, but sometimes it's very small.
+		// Let's include everything for now, or maybe filter very small ones?
+		// User said "page for symbols with funding rate + - not zero".
+		if t.FundingRate != 0 {
+			absRate := t.FundingRate
+			if absRate < 0 {
+				absRate = -absRate
+			}
+			coins = append(coins, FundingCoinData{
+				Symbol:      t.Symbol,
+				FundingRate: t.FundingRate * 100, // Convert to percentage for display if needed, but template handles it. Wait, template uses %.4f%%, so it expects decimal? Usually API returns 0.0001 for 0.01%.
+				// Let's check Bybit API. Funding Rate is e.g. "0.0001".
+				// So 0.0001 * 100 = 0.01%.
+				// The template uses {{printf "%.4f%%" .FundingRate}}.
+				// If I pass 0.0001, it prints "0.0001%". That's wrong. It should be "0.0100%".
+				// So I should multiply by 100 here.
+				AbsFundingRate:  absRate * 100,
+				NextFundingTime: t.NextFundingTime,
+			})
+		}
+	}
+
+	data := map[string]interface{}{
+		"Instruments": coins,
+	}
+
+	if err := templates.ExecuteTemplate(w, "funding_coins.html", data); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}

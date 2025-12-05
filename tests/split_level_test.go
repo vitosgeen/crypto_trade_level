@@ -111,11 +111,6 @@ func TestSplitLevel(t *testing.T) {
 		if l.ID == "auto-level-split-test" {
 			t.Error("Original level should be deleted")
 		} else if l.LevelPrice == 51000 {
-			// Use a pointer to the loop variable copy? No, loop var `l` is a copy (struct) or pointer?
-			// ListLevels returns []*Level. So l is *Level.
-			// We need to be careful with loop variable capture if taking address, but l is already a pointer.
-			// Wait, ListLevels returns []*Level. So `l` is `*Level`.
-			// So `l` is safe to assign.
 			highLevel = l
 		} else if l.LevelPrice == 49000 {
 			lowLevel = l

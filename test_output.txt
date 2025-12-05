@@ -1,0 +1,372 @@
+=== RUN   TestAutoLevelCreation
+2025/12/05 18:52:00 DEBUG: Eval Short. Prev: 49700.000000, Curr: 49760.000000, T1: 49750.000000, T2: 49850.000000, T3: 49925.000000
+2025/12/05 18:52:00 AUDIT: Tier 1 Triggered (Short). Level auto-level-1. Price 49700.000000 -> 49760.000000. Boundary: 49750.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:00 AUDIT: Action Triggered: OPEN. Level: auto-level-1, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:00 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:00 STOP LOSS (Base): SHORT on BTCUSDT. Price 50000.000000 >= Level 50000.000000. Closing...
+2025/12/05 18:52:00 FINALIZE: Closed SHORT on BTCUSDT. Reason: Stop Loss (Base). PnL: 0.000000
+2025/12/05 18:52:00 AUDIT: Base Close recorded for Level auto-level-1. Count: 1 (PnL: 0.000000)
+2025/12/05 18:52:00 AUDIT: Level auto-level-1 disabled until 2025-12-05 18:52:01.863443388 +0200 EET m=+1.020917093 due to max base closes.
+2025/12/05 18:52:00 SPLIT: Deleted level auto-level-1 (IsAuto: true)
+    auto_level_test.go:151: Expected High level at 50250.0
+    auto_level_test.go:154: Expected Low level at 49750.0
+--- FAIL: TestAutoLevelCreation (0.22s)
+=== RUN   TestEndToEnd_LevelDefense
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 51000.000000, Curr: 50240.000000, T1: 50250.000000, T2: 50150.000000, T3: 50075.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level test-level-1. Price 51000.000000 -> 50240.000000. Boundary: 50250.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: test-level-1, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+--- PASS: TestEndToEnd_LevelDefense (0.02s)
+=== RUN   TestLevelLimit
+2025/12/05 18:52:01 Warning: Failed to fetch tiers for BTCUSDT: sql: no rows in result set
+2025/12/05 18:52:01 Warning: Failed to fetch tiers for BTCUSDT: sql: no rows in result set
+2025/12/05 18:52:01 Warning: Failed to fetch tiers for BTCUSDT: sql: no rows in result set
+--- PASS: TestLevelLimit (0.00s)
+=== RUN   TestRepro_StopLossAtBase_Failure
+2025/12/05 18:52:01 STOP LOSS (Base): LONG on BTCUSDT. Price 99.000000 <= Level 100.000000. Closing...
+2025/12/05 18:52:01 FINALIZE: Closed LONG on BTCUSDT. Reason: Stop Loss (Base). PnL: -0.150000
+2025/12/05 18:52:01 AUDIT: Loss recorded for Level repro-level-1. Streak reset.
+    repro_bug_test.go:80: Success: Position closed correctly.
+--- PASS: TestRepro_StopLossAtBase_Failure (0.02s)
+=== RUN   TestScenario_A1_InitLastPrice
+--- PASS: TestScenario_A1_InitLastPrice (0.00s)
+=== RUN   TestScenario_A2_IgnoreZeroPrice
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 0.000000, Curr: -100.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+--- PASS: TestScenario_A2_IgnoreZeroPrice (0.00s)
+=== RUN   TestScenario_A3_NoAction_PriceEqualsPrev
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10100.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+--- PASS: TestScenario_A3_NoAction_PriceEqualsPrev (0.00s)
+=== RUN   TestScenario_B1_Short_Open_Tier1
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+--- PASS: TestScenario_B1_Short_Open_Tier1 (0.00s)
+=== RUN   TestScenario_B2_Short_Open_Tier2
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9960.000000, Curr: 9975.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 2 Triggered (Short). Level scenario-level. Price 9960.000000 -> 9975.000000. Boundary: 9970.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: ADD. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: ADD on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9960.000000, Curr: 9975.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 2 Triggered (Short). Level scenario-level. Price 9960.000000 -> 9975.000000. Boundary: 9970.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: ADD. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: ADD on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+--- PASS: TestScenario_B2_Short_Open_Tier2 (0.01s)
+=== RUN   TestScenario_B3_Short_Open_Tier3
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9960.000000, Curr: 9975.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 2 Triggered (Short). Level scenario-level. Price 9960.000000 -> 9975.000000. Boundary: 9970.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: ADD. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: ADD on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9975.000000, Curr: 9990.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 3 Triggered (Short). Level scenario-level. Price 9975.000000 -> 9990.000000. Boundary: 9985.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: ADD. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.200000
+2025/12/05 18:52:01 Triggered: ADD on mock BTCUSDT (Side: SHORT, Size: 0.200000)
+--- PASS: TestScenario_B3_Short_Open_Tier3 (0.01s)
+=== RUN   TestScenario_B4_Short_Bounce_NoDoubleTrigger
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9960.000000, Curr: 9940.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9940.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+--- PASS: TestScenario_B4_Short_Bounce_NoDoubleTrigger (0.01s)
+=== RUN   TestScenario_B5_Short_MultipleEntries_Profitable
+    scenarios_test.go:233: Deferred: Ambiguous requirement regarding profit doubling
+--- SKIP: TestScenario_B5_Short_MultipleEntries_Profitable (0.00s)
+=== RUN   TestScenario_B6_Short_NoRepeat
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9960.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+--- PASS: TestScenario_B6_Short_NoRepeat (0.00s)
+=== RUN   TestScenario_C1_CloseShort_HitsBase
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 STOP LOSS (Base): SHORT on BTCUSDT. Price 10000.000000 >= Level 10000.000000. Closing...
+2025/12/05 18:52:01 FINALIZE: Closed SHORT on BTCUSDT. Reason: Stop Loss (Base). PnL: -4.000000
+2025/12/05 18:52:01 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: -4.000000)
+--- PASS: TestScenario_C1_CloseShort_HitsBase (0.00s)
+=== RUN   TestScenario_C2_CloseShort_CrossesBase
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 STOP LOSS (Base): SHORT on BTCUSDT. Price 10010.000000 >= Level 10000.000000. Closing...
+2025/12/05 18:52:01 FINALIZE: Closed SHORT on BTCUSDT. Reason: Stop Loss (Base). PnL: -5.000000
+2025/12/05 18:52:01 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: -5.000000)
+--- PASS: TestScenario_C2_CloseShort_CrossesBase (0.00s)
+=== RUN   TestScenario_C3_CloseShort_Fails_ResetState
+    scenarios_test.go:306: Deferred: Requires MockExchange failure simulation
+--- SKIP: TestScenario_C3_CloseShort_Fails_ResetState (0.00s)
+=== RUN   TestScenario_C4_CloseShort_Reopen_ReverseDown
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 STOP LOSS (Base): SHORT on BTCUSDT. Price 10000.000000 >= Level 10000.000000. Closing...
+2025/12/05 18:52:01 FINALIZE: Closed SHORT on BTCUSDT. Reason: Stop Loss (Base). PnL: -4.000000
+2025/12/05 18:52:01 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: -4.000000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 10000.000000, Curr: 9900.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+--- PASS: TestScenario_C4_CloseShort_Reopen_ReverseDown (0.01s)
+=== RUN   TestScenario_C5_StopLossDisabled_NoClose
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 9960.000000, Curr: 10000.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+--- PASS: TestScenario_C5_StopLossDisabled_NoClose (0.00s)
+=== RUN   TestScenario_D1_Switch_ShortToLong
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 STOP LOSS (Base): SHORT on BTCUSDT. Price 10000.000000 >= Level 10000.000000. Closing...
+2025/12/05 18:52:01 FINALIZE: Closed SHORT on BTCUSDT. Reason: Stop Loss (Base). PnL: -4.000000
+2025/12/05 18:52:01 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: -4.000000)
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10000.000000, Curr: 10100.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+--- PASS: TestScenario_D1_Switch_ShortToLong (0.01s)
+=== RUN   TestScenario_D2_Long_Open_AfterShortClose
+    scenarios_test.go:356: Covered by D1
+--- SKIP: TestScenario_D2_Long_Open_AfterShortClose (0.00s)
+=== RUN   TestScenario_D3_NoShortReentry_AboveBase
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10060.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+--- PASS: TestScenario_D3_NoShortReentry_AboveBase (0.00s)
+=== RUN   TestScenario_D4_Long_KeepOpen_Profitable
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10040.000000, Curr: 10200.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+--- PASS: TestScenario_D4_Long_KeepOpen_Profitable (0.00s)
+=== RUN   TestScenario_E1_Long_Open_Tier1
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+--- PASS: TestScenario_E1_Long_Open_Tier1 (0.00s)
+=== RUN   TestScenario_E2_Long_Open_Tier2
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10040.000000, Curr: 10020.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 2 Triggered (Long). Level scenario-level. Price 10040.000000 -> 10020.000000. Boundary: 10030.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: ADD. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: ADD on mock BTCUSDT (Side: LONG, Size: 0.100000)
+--- PASS: TestScenario_E2_Long_Open_Tier2 (0.00s)
+=== RUN   TestScenario_E3_Long_Open_Tier3
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10040.000000, Curr: 10020.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 2 Triggered (Long). Level scenario-level. Price 10040.000000 -> 10020.000000. Boundary: 10030.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: ADD. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: ADD on mock BTCUSDT (Side: LONG, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10020.000000, Curr: 10010.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 3 Triggered (Long). Level scenario-level. Price 10020.000000 -> 10010.000000. Boundary: 10015.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: ADD. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.200000
+2025/12/05 18:52:01 Triggered: ADD on mock BTCUSDT (Side: LONG, Size: 0.200000)
+--- PASS: TestScenario_E3_Long_Open_Tier3 (0.01s)
+=== RUN   TestScenario_E5_Long_NoRepeat
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10040.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+--- PASS: TestScenario_E5_Long_NoRepeat (0.00s)
+=== RUN   TestScenario_F1_CloseLong_HitsBase
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+2025/12/05 18:52:01 STOP LOSS (Base): LONG on BTCUSDT. Price 10000.000000 <= Level 10000.000000. Closing...
+2025/12/05 18:52:01 FINALIZE: Closed LONG on BTCUSDT. Reason: Stop Loss (Base). PnL: -4.000000
+2025/12/05 18:52:01 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: -4.000000)
+--- PASS: TestScenario_F1_CloseLong_HitsBase (0.00s)
+=== RUN   TestScenario_F2_CloseLong_CrossesBase
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+2025/12/05 18:52:01 STOP LOSS (Base): LONG on BTCUSDT. Price 9990.000000 <= Level 10000.000000. Closing...
+2025/12/05 18:52:01 FINALIZE: Closed LONG on BTCUSDT. Reason: Stop Loss (Base). PnL: -5.000000
+2025/12/05 18:52:01 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: -5.000000)
+--- PASS: TestScenario_F2_CloseLong_CrossesBase (0.00s)
+=== RUN   TestScenario_F4_CloseLong_Reopen_ReverseUp
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+2025/12/05 18:52:01 STOP LOSS (Base): LONG on BTCUSDT. Price 10000.000000 <= Level 10000.000000. Closing...
+2025/12/05 18:52:01 FINALIZE: Closed LONG on BTCUSDT. Reason: Stop Loss (Base). PnL: -4.000000
+2025/12/05 18:52:01 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: -4.000000)
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10000.000000, Curr: 10100.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+--- PASS: TestScenario_F4_CloseLong_Reopen_ReverseUp (0.01s)
+=== RUN   TestScenario_F5_StopLossDisabled_NoClose_Long
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10040.000000, Curr: 10000.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 2 Triggered (Long). Level scenario-level. Price 10040.000000 -> 10000.000000. Boundary: 10030.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: ADD. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: ADD on mock BTCUSDT (Side: LONG, Size: 0.100000)
+--- PASS: TestScenario_F5_StopLossDisabled_NoClose_Long (0.00s)
+=== RUN   TestScenario_G1_Switch_LongToShort
+2025/12/05 18:52:01 DEBUG: Eval Long. Prev: 10100.000000, Curr: 10040.000000, T1: 10050.000000, T2: 10030.000000, T3: 10015.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Long). Level scenario-level. Price 10100.000000 -> 10040.000000. Boundary: 10050.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: LONG, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: LONG, Size: 0.100000)
+2025/12/05 18:52:01 STOP LOSS (Base): LONG on BTCUSDT. Price 10000.000000 <= Level 10000.000000. Closing...
+2025/12/05 18:52:01 FINALIZE: Closed LONG on BTCUSDT. Reason: Stop Loss (Base). PnL: -4.000000
+2025/12/05 18:52:01 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: -4.000000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 10000.000000, Curr: 9900.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+--- PASS: TestScenario_G1_Switch_LongToShort (0.01s)
+=== RUN   TestScenario_G2_Short_Open_Tier1_AfterLongClose
+    scenarios_test.go:506: Covered by G1
+--- SKIP: TestScenario_G2_Short_Open_Tier1_AfterLongClose (0.00s)
+=== RUN   TestScenario_G3_NoLongReentry_WhenBelowBase
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9940.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+--- PASS: TestScenario_G3_NoLongReentry_WhenBelowBase (0.00s)
+=== RUN   TestScenario_G4_Short_KeepOpen_While_Profitable_Downtrend
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9960.000000, Curr: 9800.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+--- PASS: TestScenario_G4_Short_KeepOpen_While_Profitable_Downtrend (0.00s)
+=== RUN   TestScenario_H1_Multiplier_Reset_OnClose
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 STOP LOSS (Base): SHORT on BTCUSDT. Price 10000.000000 >= Level 10000.000000. Closing...
+2025/12/05 18:52:01 FINALIZE: Closed SHORT on BTCUSDT. Reason: Stop Loss (Base). PnL: -4.000000
+2025/12/05 18:52:01 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: -4.000000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 10000.000000, Curr: 9900.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+--- PASS: TestScenario_H1_Multiplier_Reset_OnClose (0.01s)
+=== RUN   TestScenario_H2_Multiplier_Double_OnProfit
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:01 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:01 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9960.000000, Curr: 9900.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:01 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:02 STOP LOSS (Base): SHORT on BTCUSDT. Price 10000.000000 >= Level 10000.000000. Closing...
+2025/12/05 18:52:02 FINALIZE: Closed SHORT on BTCUSDT. Reason: Stop Loss (Base). PnL: 10.000000
+2025/12/05 18:52:02 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: 10.000000)
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 10000.000000, Curr: 9900.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:02 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:02 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:02 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+    scenarios_test.go:119: Expected last trade size 0.200000, got 0.100000
+--- FAIL: TestScenario_H2_Multiplier_Double_OnProfit (1.11s)
+=== RUN   TestScenario_H3_Multiplier_NoGrow_When_Loss
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:02 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:02 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:02 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 9960.000000, Curr: 9975.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:02 AUDIT: Tier 2 Triggered (Short). Level scenario-level. Price 9960.000000 -> 9975.000000. Boundary: 9970.000000
+2025/12/05 18:52:02 AUDIT: Action Triggered: ADD. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:02 Triggered: ADD on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+--- PASS: TestScenario_H3_Multiplier_NoGrow_When_Loss (0.01s)
+=== RUN   TestScenario_H4_LastPrice_UpdatesEveryTick
+--- PASS: TestScenario_H4_LastPrice_UpdatesEveryTick (0.00s)
+=== RUN   TestScenario_H5_NoPanic_OnMissingTiers
+--- PASS: TestScenario_H5_NoPanic_OnMissingTiers (0.00s)
+=== RUN   TestScenario_H6_NoPanic_OnMissingLevel
+--- PASS: TestScenario_H6_NoPanic_OnMissingLevel (0.00s)
+=== RUN   TestScenario_I1_GetSymbolTiers_Error_Handled
+    scenarios_test.go:729: Requires mock store error injection
+--- SKIP: TestScenario_I1_GetSymbolTiers_Error_Handled (0.00s)
+=== RUN   TestScenario_I2_SaveLevel_Error_Handled
+    scenarios_test.go:733: Requires mock store error injection
+--- SKIP: TestScenario_I2_SaveLevel_Error_Handled (0.00s)
+=== RUN   TestScenario_I3_ExchangeBuy_Fails_NoStateCorruption
+    scenarios_test.go:737: Requires mock exchange failure simulation
+--- SKIP: TestScenario_I3_ExchangeBuy_Fails_NoStateCorruption (0.00s)
+=== RUN   TestScenario_T1_Tier_Triggers_Once
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:02 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:02 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:02 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 9960.000000, Curr: 9940.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 9940.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+--- PASS: TestScenario_T1_Tier_Triggers_Once (0.01s)
+=== RUN   TestScenario_T2_Tier_Resets_After_Base
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:02 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:02 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:02 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+2025/12/05 18:52:02 STOP LOSS (Base): SHORT on BTCUSDT. Price 10000.000000 >= Level 10000.000000. Closing...
+2025/12/05 18:52:02 FINALIZE: Closed SHORT on BTCUSDT. Reason: Stop Loss (Base). PnL: -4.000000
+2025/12/05 18:52:02 AUDIT: Base Close recorded for Level scenario-level. Count: 1 (PnL: -4.000000)
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 10000.000000, Curr: 9900.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 9900.000000, Curr: 9960.000000, T1: 9950.000000, T2: 9970.000000, T3: 9985.000000
+2025/12/05 18:52:02 AUDIT: Tier 1 Triggered (Short). Level scenario-level. Price 9900.000000 -> 9960.000000. Boundary: 9950.000000. Wins: 0. Mult: 1.000000
+2025/12/05 18:52:02 AUDIT: Action Triggered: OPEN. Level: scenario-level, Symbol: BTCUSDT, Side: SHORT, Size: 0.100000
+2025/12/05 18:52:02 Triggered: OPEN on mock BTCUSDT (Side: SHORT, Size: 0.100000)
+--- PASS: TestScenario_T2_Tier_Resets_After_Base (0.01s)
+=== RUN   TestSentimentTP_Execution
+2025/12/05 18:52:02 TAKE PROFIT: LONG on BTCUSDT. Price 51600.000000 >= TP 51469.696970. Closing...
+2025/12/05 18:52:02 FINALIZE: Closed LONG on BTCUSDT. Reason: Take Profit. PnL: 160.000000
+2025/12/05 18:52:02 AUDIT: Win recorded for Level sentiment-level. Consecutive Wins: 1
+--- PASS: TestSentimentTP_Execution (0.02s)
+=== RUN   TestSplitLevel
+2025/12/05 18:52:02 DEBUG: Eval Long. Prev: 50500.000000, Curr: 51000.000000, T1: 50250.000000, T2: 50150.000000, T3: 50075.000000
+2025/12/05 18:52:02 DEBUG: Eval Short. Prev: 51000.000000, Curr: 49000.000000, T1: 49750.000000, T2: 49850.000000, T3: 49925.000000
+2025/12/05 18:52:02 DEBUG: Eval Long. Prev: 49000.000000, Curr: 50000.000000, T1: 50250.000000, T2: 50150.000000, T3: 50075.000000
+2025/12/05 18:52:03 STOP LOSS (Base): SHORT on BTCUSDT. Price 50000.000000 >= Level 50000.000000. Closing...
+2025/12/05 18:52:03 FINALIZE: Closed SHORT on BTCUSDT. Reason: Stop Loss (Base). PnL: 0.000000
+2025/12/05 18:52:03 AUDIT: Base Close recorded for Level auto-level-split-test. Count: 1 (PnL: 0.000000)
+2025/12/05 18:52:04 STOP LOSS (Base): SHORT on BTCUSDT. Price 50000.000000 >= Level 50000.000000. Closing...
+2025/12/05 18:52:04 FINALIZE: Closed SHORT on BTCUSDT. Reason: Stop Loss (Base). PnL: 0.000000
+2025/12/05 18:52:04 AUDIT: Base Close recorded for Level auto-level-split-test. Count: 2 (PnL: 0.000000)
+2025/12/05 18:52:04 AUDIT: Level auto-level-split-test disabled until 2025-12-05 18:52:05.596656643 +0200 EET m=+4.754130347 due to max base closes.
+2025/12/05 18:52:04 SPLIT: Deleted level auto-level-split-test (IsAuto: true)
+--- PASS: TestSplitLevel (2.42s)
+=== RUN   TestSplitLimit
+2025/12/05 18:52:04 Warning: Failed to fetch tiers for BTCUSDT: sql: no rows in result set
+2025/12/05 18:52:04 SPLIT: Deleted level l1 (IsAuto: false)
+2025/12/05 18:52:04 Warning: Failed to fetch tiers for BTCUSDT: sql: no rows in result set
+2025/12/05 18:52:04 SPLIT: Deleted level auto-split-1764953524797711241-high (IsAuto: true)
+2025/12/05 18:52:04 SPLIT: Deleted level auto-split-1764953524797712009-low (IsAuto: true)
+2025/12/05 18:52:04 Warning: Failed to fetch tiers for BTCUSDT: sql: no rows in result set
+--- PASS: TestSplitLimit (0.00s)
+FAIL
+FAIL	github.com/vitos/crypto_trade_level/tests	3.957s
+FAIL

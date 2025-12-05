@@ -148,7 +148,6 @@ func (s *LevelService) UpdateCache(ctx context.Context) error {
 
 // CreateLevel creates a new level
 func (s *LevelService) CreateLevel(ctx context.Context, level *domain.Level) error {
-	// Limit check removed for manual levels as per user request.
 
 	// 2. Save Level
 	if err := s.levelRepo.SaveLevel(ctx, level); err != nil {
@@ -248,6 +247,7 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	for _, l := range relevantLevels {
 		if l.DisableSpeedClose {
 			speedCloseDisabled = true
+			break
 		}
 		// Update Range High/Low
 		s.engine.UpdateState(l.ID, func(ls *LevelState) {
@@ -354,7 +354,6 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 					} else {
 						tpPrice = pos.EntryPrice * (1 - adjustedPct)
 					}
-					// log.Printf("DEBUG: Sentiment TP for %s. Score: %f, Base: %f, Adj: %f, Price: %f", symbol, score, baseTP, adjustedPct, tpPrice)
 
 				} else {
 					// Fixed TP
@@ -738,7 +737,12 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 
 			if isBaseClose && (reason == "Stop Loss (Base)" || reason == "Level Cross" || reason == "Safety Exit") {
 				ls.ConsecutiveBaseCloses++
-				ls.ConsecutiveWins = 0 // Reset wins on base close
+				if realizedPnL > 0 {
+					ls.ConsecutiveWins++
+					log.Printf("AUDIT: Base Close (Win) recorded for Level %s. Consecutive Wins: %d", levelID, ls.ConsecutiveWins)
+				} else {
+					ls.ConsecutiveWins = 0 // Reset wins on loss
+				}
 				log.Printf("AUDIT: Base Close recorded for Level %s. Count: %d (PnL: %f)", levelID, ls.ConsecutiveBaseCloses, realizedPnL)
 
 				if activeLevel != nil && activeLevel.MaxConsecutiveBaseCloses > 0 && ls.ConsecutiveBaseCloses >= activeLevel.MaxConsecutiveBaseCloses {
@@ -780,8 +784,8 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 
 // AutoCreateNextLevel attempts to find a better level based on liquidity and create it.
 // It creates levels for the best Bid (Support) and/or best Ask (Resistance).
-// It limits auto-levels to 2 per symbol and handles overlap by prioritizing volume.
-// It deletes ALL previous auto-levels for the symbol.
+// Replaces all existing auto-levels for the symbol with up to 2 new levels based on best bid/ask liquidity.
+// Handles overlap by prioritizing volume.
 func (s *LevelService) AutoCreateNextLevel(ctx context.Context, oldLevelID string) error {
 	// 1. Get Old Level to identify Symbol and Exchange
 	s.mu.RLock()
@@ -948,8 +952,9 @@ func (s *LevelService) AutoCreateNextLevel(ctx context.Context, oldLevelID strin
 			CreatedAt:                time.Now(),
 		}
 		// Ensure unique ID
-		time.Sleep(1 * time.Nanosecond)
-		newLevel.ID = fmt.Sprintf("%d", time.Now().UnixNano())
+		// Ensure unique ID using atomic counter or just high precision
+		// Using a simple suffix to ensure uniqueness if called rapidly
+		newLevel.ID = fmt.Sprintf("%d-%d", time.Now().UnixNano(), time.Now().UnixMicro()%1000)
 
 		if err := s.levelRepo.SaveLevel(ctx, newLevel); err != nil {
 			log.Printf("AUTO-LEVEL: Failed to save new %s level: %v", c.Type, err)
@@ -985,7 +990,6 @@ func (s *LevelService) CalculateLiquidityTP(ctx context.Context, symbol string, 
 				if bestCluster == nil || c.Volume > bestCluster.Volume {
 					// We want the biggest wall
 					// But maybe we also want the closest big wall?
-					// CreateLevel creates a new level
 
 					// Or the first big one?
 					// Let's stick to "Highest Volume" as per spec.

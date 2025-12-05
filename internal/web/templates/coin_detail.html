@@ -468,8 +468,8 @@
             avgGain /= period;
             avgLoss /= period;
 
-            let rs = avgGain / avgLoss;
-            let rsi = 100 - (100 / (1 + rs));
+            let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+            let rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
 
             rsiData.push({ time: candles[period].time, value: rsi });
 
@@ -482,8 +482,8 @@
                 avgGain = (avgGain * (period - 1) + gain) / period;
                 avgLoss = (avgLoss * (period - 1) + loss) / period;
 
-                rs = avgGain / avgLoss;
-                rsi = 100 - (100 / (1 + rs));
+                rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+                rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
 
                 rsiData.push({ time: candles[i].time, value: rsi });
             }
@@ -728,24 +728,16 @@
                     }
 
                     // Recalculate RSI for the latest data
-                    // Optimization: We could just calc the last point if we had state, but full recalc is safer/easier for now
-                    const rsiData = calculateRSI(candles);
-                    if (rsiData.length > 0) {
-                        // Update RSI series (Lightweight charts handles updates efficiently)
-                        // But setData might be heavy? update() is better for single point.
-                        // Let's just use setData for simplicity or update the last point.
-                        // For RSI, the previous values might change slightly as the moving average settles?
-                        // No, standard RSI only changes the current candle's RSI.
-                        // So we can just update the last point.
-                        const lastRSI = rsiData[rsiData.length - 1];
-                        rsiSeries.update(lastRSI);
-                    }
-
-                    lastCandle = latestCandle;
+                    // Update RSI series
+                    const lastRSI = rsiData[rsiData.length - 1];
+                    rsiSeries.update(lastRSI);
                 }
-            } catch (e) {
-                console.error("Failed to update chart", e);
+
+                lastCandle = latestCandle;
             }
+            } catch (e) {
+            console.error("Failed to update chart", e);
+        }
         }
 
         async function updateMarketStats() {

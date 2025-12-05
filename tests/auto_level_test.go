@@ -135,22 +135,22 @@ func TestAutoLevelCreation(t *testing.T) {
 		}
 	}
 
-	// 9. Verify Price Logic (Default Range +/- 0.5%)
-	// Level Price 50000.
-	// High: 50250. Low: 49750.
+	// 9. Verify Price Logic (Observed Range)
+	// Ticks: 49700 (Low), 49760, 50000 (High/Close).
+	// High: 50000. Low: 49700.
 	var foundHigh, foundLow bool
 	for _, l := range levels {
-		if l.LevelPrice == 50250.0 {
+		if l.LevelPrice == 50000.0 {
 			foundHigh = true
-		} else if l.LevelPrice == 49750.0 {
+		} else if l.LevelPrice == 49700.0 {
 			foundLow = true
 		}
 	}
 
 	if !foundHigh {
-		t.Error("Expected High level at 50250.0")
+		t.Error("Expected High level at 50000.0")
 	}
 	if !foundLow {
-		t.Error("Expected Low level at 49750.0")
+		t.Error("Expected Low level at 49700.0")
 	}
 }

@@ -343,7 +343,10 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 	// Frontend: const cvdRatio = stats.cvd / maxCvd;
 	// We need a MaxCVD.
 	maxCvd := 10000.0 // Arbitrary baseline
-	cvdScore := cvd / maxCvd
+	var cvdScore float64
+	if maxCvd > 0 {
+		cvdScore = cvd / maxCvd
+	}
 	if cvdScore > 1 {
 		cvdScore = 1
 	} else if cvdScore < -1 {

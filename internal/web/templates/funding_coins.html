@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Funding Bot - High Funding Coins</title>
+    <title>Funding Bot - Opportunities</title>
     <style>
         body {
             font-family: sans-serif;
@@ -55,13 +55,14 @@
             background: #e9ecef;
         }
 
-        .status-trading {
+        .positive-rate {
             color: #28a745;
             font-weight: bold;
         }
 
-        .status-other {
-            color: #6c757d;
+        .negative-rate {
+            color: #dc3545;
+            font-weight: bold;
         }
 
         a {
@@ -95,21 +96,18 @@
         <a href="/dashboard" class="back-link">← Back to Dashboard</a>
 
         <div class="card">
-            <h1>Funding Bot - High Funding Coins (> 0.8%)</h1>
-            <input type="text" id="searchBox" class="search-box" placeholder="Search by symbol or base coin..."
+            <h1>Funding Opportunities</h1>
+            <p>Showing coins with non-zero funding rates.</p>
+            <input type="text" id="searchBox" class="search-box" placeholder="Search by symbol..."
                 onkeyup="filterTable()">
 
-            <table id="coinsTable">
+            <table id="fundingTable">
                 <thead>
                     <tr>
                         <th onclick="sortTable(0)">Symbol ▼</th>
-                        <th onclick="sortTable(1)">Base Coin ▼</th>
-                        <th onclick="sortTable(2)">Quote Coin ▼</th>
-                        <th onclick="sortTable(3)">Last Price ▼</th>
-                        <th onclick="sortTable(4)">Funding Rate ▼</th>
-                        <th onclick="sortTable(5)">24h Change % ▼</th>
-                        <th onclick="sortTable(6)">24h Volume (USD) ▼</th>
-                        <th onclick="sortTable(7)">Open Interest (USD) ▼</th>
+                        <th onclick="sortTable(1)">Funding Rate ▼</th>
+                        <th onclick="sortTable(2)">Abs Funding Rate ▼</th>
+                        <th onclick="sortTable(3)">Countdown ▼</th>
                         <th>Action</th>
                     </tr>
                 </thead>
@@ -117,20 +115,13 @@
                     {{range .Instruments}}
                     <tr>
                         <td>{{.Symbol}}</td>
-                        <td>{{.BaseCoin}}</td>
-                        <td>{{.QuoteCoin}}</td>
-                        <td>{{printf "%.4f" .LastPrice}}</td>
                         <td
-                            style="color: {{if gt .FundingRate 0.0}}green{{else if lt .FundingRate 0.0}}red{{else}}black{{end}}; font-weight: bold;">
-
+                            class="{{if gt .FundingRate 0.0}}positive-rate{{else if lt .FundingRate 0.0}}negative-rate{{end}}">
+                            {{printf "%.4f%%" .FundingRate}}
                         </td>
-                        <td
-                            style="color: {{if gt .Price24hPcnt 0.0}}green{{else if lt .Price24hPcnt 0.0}}red{{else}}black{{end}}">
-                            {{printf "%.2f%%" .Price24hPcnt}}
-                        </td>
-                        <td>{{printf "%.0f" .Volume24h}}</td>
-                        <td>{{printf "%.0f" .OpenInterestValue}}</td>
-                        <td><a href="/funding-bot/coin/{{.Symbol}}">View Details →</a></td>
+                        <td>{{printf "%.4f%%" .AbsFundingRate}}</td>
+                        <td class="countdown" data-time="{{.NextFundingTime}}">--:--:--</td>
+                        <td><a href="/funding-bot/coin/{{.Symbol}}">Trade →</a></td>
                     </tr>
                     {{end}}
                 </tbody>
@@ -139,37 +130,58 @@
     </div>
 
     <script>
+        // Countdown Timer Logic
+        function updateCountdowns() {
+            const now = Date.now();
+            document.querySelectorAll('.countdown').forEach(el => {
+                const targetTime = parseInt(el.getAttribute('data-time'));
+                if (!targetTime) return;
+
+                const diff = targetTime - now;
+                if (diff <= 0) {
+                    el.textContent = "00:00:00";
+                    return;
+                }
+
+                const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+                el.textContent =
+                    (hours < 10 ? "0" + hours : hours) + ":" +
+                    (minutes < 10 ? "0" + minutes : minutes) + ":" +
+                    (seconds < 10 ? "0" + seconds : seconds);
+            });
+        }
+
+        setInterval(updateCountdowns, 1000);
+        updateCountdowns();
+
         // Search/Filter functionality
         function filterTable() {
             const input = document.getElementById('searchBox');
             const filter = input.value.toUpperCase();
-            const table = document.getElementById('coinsTable');
+            const table = document.getElementById('fundingTable');
             const rows = table.getElementsByTagName('tr');
 
             for (let i = 1; i < rows.length; i++) {
                 const cells = rows[i].getElementsByTagName('td');
-                let found = false;
-
-                // Search in Symbol (0) and Base Coin (1)
-                for (let j = 0; j < 2; j++) {
-                    if (cells[j]) {
-                        const txtValue = cells[j].textContent || cells[j].innerText;
-                        if (txtValue.toUpperCase().indexOf(filter) > -1) {
-                            found = true;
-                            break;
-                        }
+                if (cells[0]) {
+                    const txtValue = cells[0].textContent || cells[0].innerText;
+                    if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                        rows[i].style.display = '';
+                    } else {
+                        rows[i].style.display = 'none';
                     }
                 }
-
-                rows[i].style.display = found ? '' : 'none';
             }
         }
 
         // Sort functionality
-        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1, 1]; // 1 = ascending, -1 = descending
+        let sortDirection = [1, 1, 1, 1]; // 1 = ascending, -1 = descending
 
         function sortTable(columnIndex) {
-            const table = document.getElementById('coinsTable');
+            const table = document.getElementById('fundingTable');
             const tbody = table.getElementsByTagName('tbody')[0];
             const rows = Array.from(tbody.getElementsByTagName('tr'));
 
@@ -179,12 +191,18 @@
                 const aText = a.getElementsByTagName('td')[columnIndex].textContent.trim();
                 const bText = b.getElementsByTagName('td')[columnIndex].textContent.trim();
 
-                // Numeric sorting for columns 3, 4, 5, 6, 7
-                if ([3, 4, 5, 6, 7].includes(columnIndex)) {
-                    // Remove non-numeric chars like % or ,
+                // Numeric sorting for columns 1 (Funding Rate) and 2 (Abs Funding Rate)
+                if ([1, 2].includes(columnIndex)) {
                     const aNum = parseFloat(aText.replace(/[^0-9.-]/g, ''));
                     const bNum = parseFloat(bText.replace(/[^0-9.-]/g, ''));
                     return (aNum - bNum) * direction;
+                }
+
+                // Countdown sorting (3)
+                if (columnIndex === 3) {
+                    const aTime = parseInt(a.getElementsByTagName('td')[columnIndex].getAttribute('data-time')) || 0;
+                    const bTime = parseInt(b.getElementsByTagName('td')[columnIndex].getAttribute('data-time')) || 0;
+                    return (aTime - bTime) * direction;
                 }
 
                 if (aText < bText) return -1 * direction;

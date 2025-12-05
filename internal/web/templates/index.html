@@ -415,7 +415,7 @@
                             <option value="fixed">Fixed %</option>
                             <option value="liquidity">Liquidity</option>
                             <option value="sentiment">Sentiment</option>
-                        </select> </select>
+                        </select>
                     </div>
                 </div>
 
@@ -457,8 +457,8 @@
                 </div>
 
                 <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                    <input type="checkbox" name="auto_mode_enabled" id="auto_mode_enabled" checked>
-                    <label for="auto_mode_enabled" style="margin: 0;">Auto-Level Mode (Recreate on Failure)</label>
+                    <input type="checkbox" name="auto_mode_enabled" id="auto_level_mode_enabled" checked>
+                    <label for="auto_level_mode_enabled" style="margin: 0;">Auto-Level Mode (Recreate on Failure)</label>
                 </div>
 
                 <div class="checkbox-wrapper">
@@ -739,8 +739,8 @@
             }
             avgGain /= period;
             avgLoss /= period;
-            let rs = avgGain / avgLoss;
-            let rsi = 100 - (100 / (1 + rs));
+            let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+            let rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
             rsiData.push({ time: candles[period].time, value: rsi });
             for (let i = period + 1; i < candles.length; i++) {
                 const change = candles[i].close - candles[i - 1].close;
@@ -748,8 +748,8 @@
                 let loss = change < 0 ? Math.abs(change) : 0;
                 avgGain = (avgGain * (period - 1) + gain) / period;
                 avgLoss = (avgLoss * (period - 1) + loss) / period;
-                rs = avgGain / avgLoss;
-                rsi = 100 - (100 / (1 + rs));
+                rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+                rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
                 rsiData.push({ time: candles[i].time, value: rsi });
             }
             return rsiData;
@@ -1068,7 +1068,7 @@
         }
 
         async function updateChart() {
-            console.log("updateChart called");
+            // console.log("updateChart called");
             let lastCandleTime = null;
             if (!chart) {
                 initChart();
