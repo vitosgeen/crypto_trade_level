@@ -30,6 +30,26 @@ func (m *MockLevelRepo) SaveSymbolTiers(ctx context.Context, tiers *domain.Symbo
 	return nil
 }
 
+func (m *MockLevelRepo) CountActiveLevels(ctx context.Context, symbol string) (int, error) {
+	count := 0
+	for _, l := range m.Levels {
+		if l.Symbol == symbol {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (m *MockLevelRepo) GetLevelsBySymbol(ctx context.Context, symbol string) ([]*domain.Level, error) {
+	var levels []*domain.Level
+	for _, l := range m.Levels {
+		if l.Symbol == symbol {
+			levels = append(levels, l)
+		}
+	}
+	return levels, nil
+}
+
 // MockTradeRepo
 type MockTradeRepo struct {
 	LastTrade   *domain.Order
@@ -84,6 +104,10 @@ func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category
 func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return nil, nil
 }
+func (m *MockExchange) GetTickers(ctx context.Context, category string) ([]domain.Ticker, error) {
+	return nil, nil
+}
+
 func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 }
 func (m *MockExchange) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
@@ -206,6 +230,10 @@ func (m *MockExchangeForService) GetCandles(ctx context.Context, symbol, interva
 func (m *MockExchangeForService) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
 	return nil, nil
 }
+func (m *MockExchangeForService) GetTickers(ctx context.Context, category string) ([]domain.Ticker, error) {
+	return nil, nil
+}
+
 func (m *MockExchangeForService) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 	m.TradeCallback = callback
 }

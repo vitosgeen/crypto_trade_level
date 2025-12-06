@@ -19,16 +19,22 @@ var templates *template.Template
 
 func InitTemplates(dir string) error {
 	var err error
-	templates, err = template.ParseGlob(filepath.Join(dir, "*.html"))
+	funcMap := template.FuncMap{
+		"mul": func(a, b float64) float64 {
+			return a * b
+		},
+	}
+	templates, err = template.New("").Funcs(funcMap).ParseGlob(filepath.Join(dir, "*.html"))
 	return err
 }
 
 type LevelView struct {
 	*domain.Level
-	CurrentPrice float64
-	Side         domain.Side
-	LongTiers    []float64
-	ShortTiers   []float64
+	CurrentPrice          float64
+	Side                  domain.Side
+	LongTiers             []float64
+	ShortTiers            []float64
+	ConsecutiveBaseCloses int
 }
 
 func (s *Server) handleLanding(w http.ResponseWriter, r *http.Request) {
@@ -64,12 +70,16 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		longTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideLong)
 		shortTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideShort)
 
+		// Get Runtime State
+		state := s.service.GetLevelState(l.ID)
+
 		views = append(views, LevelView{
-			Level:        l,
-			CurrentPrice: price,
-			Side:         side,
-			LongTiers:    longTiers,
-			ShortTiers:   shortTiers,
+			Level:                 l,
+			CurrentPrice:          price,
+			Side:                  side,
+			LongTiers:             longTiers,
+			ShortTiers:            shortTiers,
+			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
 		})
 	}
 
@@ -108,12 +118,16 @@ func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 		longTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideLong)
 		shortTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideShort)
 
+		// Get Runtime State
+		state := s.service.GetLevelState(l.ID)
+
 		views = append(views, LevelView{
-			Level:        l,
-			CurrentPrice: price,
-			Side:         side,
-			LongTiers:    longTiers,
-			ShortTiers:   shortTiers,
+			Level:                 l,
+			CurrentPrice:          price,
+			Side:                  side,
+			LongTiers:             longTiers,
+			ShortTiers:            shortTiers,
+			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
 		})
 	}
 
@@ -149,6 +163,11 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	}
 	takeProfitPct = takeProfitPct / 100
 
+	takeProfitMode := r.FormValue("take_profit_mode")
+	if takeProfitMode == "" {
+		takeProfitMode = "fixed"
+	}
+
 	exchange := r.FormValue("exchange")
 	symbol := r.FormValue("symbol")
 	marginType := r.FormValue("margin_type")
@@ -162,6 +181,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	maxConsecutiveBaseCloses, _ := strconv.Atoi(r.FormValue("max_consecutive_base_closes"))
 	baseCloseCooldownMinutes, _ := strconv.Atoi(r.FormValue("base_close_cooldown_minutes"))
 	baseCloseCooldownMs := int64(baseCloseCooldownMinutes) * 60 * 1000
+	autoModeEnabled := r.FormValue("auto_mode_enabled") == "on"
 
 	level := &domain.Level{
 		ID:                       fmt.Sprintf("%d", time.Now().UnixNano()),
@@ -178,17 +198,20 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		MaxConsecutiveBaseCloses: maxConsecutiveBaseCloses,
 		BaseCloseCooldownMs:      baseCloseCooldownMs,
 		TakeProfitPct:            takeProfitPct,
+		TakeProfitMode:           takeProfitMode,
+		IsAuto:                   false,
+		AutoModeEnabled:          autoModeEnabled, // Enabled if checkbox checked
 		Source:                   "manual-web",
 		CreatedAt:                time.Now(),
 	}
 
-	if err := s.levelRepo.SaveLevel(r.Context(), level); err != nil {
-		s.logger.Error("Failed to save level", zap.Error(err))
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := s.service.CreateLevel(r.Context(), level); err != nil {
+		s.logger.Error("Failed to create level", zap.Error(err))
+		http.Error(w, "Failed to save level", http.StatusInternalServerError)
 		return
 	}
 
-	// Save Tiers
+	// Create Tiers
 	tiers := &domain.SymbolTiers{
 		Exchange:  exchange,
 		Symbol:    symbol,
@@ -216,6 +239,16 @@ func (s *Server) handleDeleteLevel(w http.ResponseWriter, r *http.Request) {
 	s.handleLevelsTable(w, r)
 }
 
+func (s *Server) handleAutoCreateLevel(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.service.AutoCreateNextLevel(r.Context(), id); err != nil {
+		s.logger.Error("Failed to auto-create level", zap.Error(err))
+		http.Error(w, fmt.Sprintf("Failed to auto-create level: %v", err), http.StatusInternalServerError)
+		return
+	}
+	s.handleLevelsTable(w, r)
+}
+
 func (s *Server) handleUpdateTiers(w http.ResponseWriter, r *http.Request) {
 	// Implementation for updating tiers
 	// ...
@@ -232,6 +265,24 @@ func (s *Server) handlePositionsTable(w http.ResponseWriter, r *http.Request) {
 	if err := templates.ExecuteTemplate(w, "positions_table", positions); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
 	}
+}
+
+func (s *Server) handleIncrementCloses(w http.ResponseWriter, r *http.Request) {
+	levelID := r.PathValue("id")
+	if levelID == "" {
+		http.Error(w, "Missing level ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.service.IncrementBaseCloses(r.Context(), levelID); err != nil {
+		s.logger.Error("Error incrementing base closes", zap.Error(err))
+		http.Error(w, "Failed to increment base closes", http.StatusInternalServerError)
+		return
+	}
+
+	// Trigger table refresh
+	w.Header().Set("HX-Trigger", "levelsUpdated")
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) handleClosePosition(w http.ResponseWriter, r *http.Request) {
@@ -334,19 +385,115 @@ func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stats)
 }
 
+type CoinData struct {
+	Symbol            string
+	BaseCoin          string
+	QuoteCoin         string
+	Status            string
+	LastPrice         float64
+	Price24hPcnt      float64
+	Volume24h         float64
+	OpenInterest      float64
+	OpenInterestValue float64
+}
+
 func (s *Server) handleSpeedBot(w http.ResponseWriter, r *http.Request) {
-	instruments, err := s.service.GetExchange().GetInstruments(r.Context(), "linear")
+	ctx := r.Context()
+	instruments, err := s.service.GetExchange().GetInstruments(ctx, "linear")
 	if err != nil {
 		s.logger.Error("Failed to get instruments", zap.Error(err))
 		http.Error(w, "Failed to fetch instruments", http.StatusInternalServerError)
 		return
 	}
 
+	tickers, err := s.service.GetExchange().GetTickers(ctx, "linear")
+	if err != nil {
+		s.logger.Error("Failed to get tickers", zap.Error(err))
+		http.Error(w, "Failed to fetch tickers", http.StatusInternalServerError)
+		return
+	}
+
+	// Map tickers by symbol for easy lookup
+	tickerMap := make(map[string]domain.Ticker)
+	for _, t := range tickers {
+		tickerMap[t.Symbol] = t
+	}
+
+	var coins []CoinData
+	for _, inst := range instruments {
+		t, ok := tickerMap[inst.Symbol]
+		coin := CoinData{
+			Symbol:    inst.Symbol,
+			BaseCoin:  inst.BaseCoin,
+			QuoteCoin: inst.QuoteCoin,
+			Status:    inst.Status,
+		}
+		if ok {
+			coin.LastPrice = t.LastPrice
+			coin.Price24hPcnt = t.Price24hPcnt
+			coin.Volume24h = t.Volume24h
+			coin.OpenInterest = t.OpenInterest
+			coin.OpenInterestValue = t.OpenInterest * t.LastPrice
+		}
+		coins = append(coins, coin)
+	}
+
 	data := map[string]interface{}{
-		"Instruments": instruments,
+		"Instruments": coins,
 	}
 
 	if err := templates.ExecuteTemplate(w, "coins.html", data); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+type FundingCoinData struct {
+	Symbol          string
+	FundingRate     float64
+	AbsFundingRate  float64
+	NextFundingTime int64
+}
+
+func (s *Server) handleFundingBot(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	tickers, err := s.service.GetExchange().GetTickers(ctx, "linear")
+	if err != nil {
+		s.logger.Error("Failed to get tickers", zap.Error(err))
+		http.Error(w, "Failed to fetch tickers", http.StatusInternalServerError)
+		return
+	}
+
+	var coins []FundingCoinData
+	for _, t := range tickers {
+		// Filter non-zero funding rates (or active instruments)
+		// We can filter by FundingRate != 0, but sometimes it's very small.
+		// Let's include everything for now, or maybe filter very small ones?
+		// User said "page for symbols with funding rate + - not zero".
+		if t.FundingRate != 0 {
+			absRate := t.FundingRate
+			if absRate < 0 {
+				absRate = -absRate
+			}
+			coins = append(coins, FundingCoinData{
+				Symbol:      t.Symbol,
+				FundingRate: t.FundingRate * 100, // Convert to percentage for display if needed, but template handles it. Wait, template uses %.4f%%, so it expects decimal? Usually API returns 0.0001 for 0.01%.
+				// Let's check Bybit API. Funding Rate is e.g. "0.0001".
+				// So 0.0001 * 100 = 0.01%.
+				// The template uses {{printf "%.4f%%" .FundingRate}}.
+				// If I pass 0.0001, it prints "0.0001%". That's wrong. It should be "0.0100%".
+				// So I should multiply by 100 here.
+				AbsFundingRate:  absRate * 100,
+				NextFundingTime: t.NextFundingTime,
+			})
+		}
+	}
+
+	data := map[string]interface{}{
+		"Instruments": coins,
+	}
+
+	if err := templates.ExecuteTemplate(w, "funding_coins.html", data); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}

@@ -13,6 +13,7 @@ type Exchange interface {
 	GetOrderBook(ctx context.Context, symbol string, category string) (*OrderBook, error)
 	GetRecentTrades(ctx context.Context, symbol string, limit int) ([]PublicTrade, error)
 	GetInstruments(ctx context.Context, category string) ([]Instrument, error)
+	GetTickers(ctx context.Context, category string) ([]Ticker, error)
 	OnTradeUpdate(callback func(symbol string, side string, size float64, price float64))
 	Subscribe(symbols []string) error
 }
@@ -50,7 +51,9 @@ type LevelRepository interface {
 	SaveLevel(ctx context.Context, level *Level) error
 	GetLevel(ctx context.Context, id string) (*Level, error)
 	ListLevels(ctx context.Context) ([]*Level, error)
+	GetLevelsBySymbol(ctx context.Context, symbol string) ([]*Level, error)
 	DeleteLevel(ctx context.Context, id string) error
+	CountActiveLevels(ctx context.Context, symbol string) (int, error)
 
 	SaveSymbolTiers(ctx context.Context, tiers *SymbolTiers) error
 	GetSymbolTiers(ctx context.Context, exchange, symbol string) (*SymbolTiers, error)

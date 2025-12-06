@@ -231,6 +231,26 @@
             color: white;
         }
 
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .badge-purple {
+            background: rgba(112, 0, 255, 0.2);
+            color: #b388ff;
+            border: 1px solid #7000ff;
+        }
+
+        .badge-blue {
+            background: rgba(0, 123, 255, 0.2);
+            color: #80bdff;
+            border: 1px solid #007bff;
+        }
+
         /* Gauges */
         .gauges-grid {
             display: flex;
@@ -380,11 +400,23 @@
                     <option value="cross">Cross</option>
                 </select>
 
+                <input type="number" name="cool_down_ms" placeholder="Cooldown (ms)" value="5000" required>
+
+
+
                 <div class="flex-row">
-                    <input type="number" name="cool_down_ms" placeholder="Cooldown (ms)" value="5000" required
-                        class="flex-1">
-                    <input type="number" step="0.1" name="take_profit_pct" placeholder="TP %" value="2.0" required
-                        class="flex-1">
+                    <div class="flex-1">
+                        <label style="margin-bottom: 2px;">TP %</label>
+                        <input type="number" step="0.1" name="take_profit_pct" placeholder="TP %" value="2.0" required>
+                    </div>
+                    <div class="flex-1">
+                        <label style="margin-bottom: 2px;">TP Mode</label>
+                        <select name="take_profit_mode">
+                            <option value="fixed">Fixed %</option>
+                            <option value="liquidity">Liquidity</option>
+                            <option value="sentiment">Sentiment</option>
+                        </select>
+                    </div>
                 </div>
 
                 <label>Tiers (%):</label>
@@ -412,10 +444,21 @@
                         value="0">
                 </div>
 
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="auto_mode_enabled" name="auto_mode_enabled" style="width: auto;">
+                    <label for="auto_mode_enabled" style="margin: 0;">Enable Auto Split (Create 2 levels on Max
+                        Closes)</label>
+                </div>
+
                 <div class="form-group">
                     <label for="base_close_cooldown_minutes">Cooldown (Minutes):</label>
                     <input type="number" id="base_close_cooldown_minutes" name="base_close_cooldown_minutes" step="1"
                         value="5">
+                </div>
+
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
+                    <input type="checkbox" name="auto_mode_enabled" id="auto_level_mode_enabled" checked>
+                    <label for="auto_level_mode_enabled" style="margin: 0;">Auto-Level Mode (Recreate on Failure)</label>
                 </div>
 
                 <div class="checkbox-wrapper">
@@ -599,7 +642,8 @@
                         </select>
                     </div>
                 </div>
-                <div id="levelChart" style="width: 100%; height: 400px;"></div>
+                <div id="levelChart" style="width: 100%; height: 500px;"></div>
+                <div id="conclusionChart" style="width: 100%; height: 200px; margin-top: 20px;"></div>
                 <div style="margin-top: 10px; font-size: 0.85rem; color: var(--text-muted); text-align: center;">
                     <span style="color: #000; background: #fff; padding: 0 4px; border-radius: 2px;">━</span> Base Level
                     |
@@ -611,6 +655,8 @@
                     <span id="book-order-info" style="display: none; margin-left: 10px;"> | Book: <span
                             id="book-order-value"
                             style="font-family: 'Inter', monospace; font-weight: 600;">0</span></span>
+                    <span id="rsi-legend" style="margin-left: 10px; display: none;"> | RSI: <span id="rsi-value"
+                            style="font-family: 'Inter', monospace; font-weight: 600; color: #9c27b0;">0.00</span></span>
                 </div>
             </div>
 
@@ -653,6 +699,9 @@
         let chart = null;
         let candleSeries = null;
         let liquiditySeries = null;
+        let rsiSeries = null;
+        let conclusionChart = null;
+        let conclusionSeries = null;
         let selectedLevelId = null;
         let currentPriceLines = [];
         let previewPriceLines = [];
@@ -678,6 +727,34 @@
             }
         });
 
+        function calculateRSI(candles, period = 14) {
+            if (candles.length < period + 1) return [];
+            const rsiData = [];
+            let avgGain = 0;
+            let avgLoss = 0;
+            for (let i = 1; i <= period; i++) {
+                const change = candles[i].close - candles[i - 1].close;
+                if (change > 0) avgGain += change;
+                else avgLoss += Math.abs(change);
+            }
+            avgGain /= period;
+            avgLoss /= period;
+            let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+            let rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
+            rsiData.push({ time: candles[period].time, value: rsi });
+            for (let i = period + 1; i < candles.length; i++) {
+                const change = candles[i].close - candles[i - 1].close;
+                let gain = change > 0 ? change : 0;
+                let loss = change < 0 ? Math.abs(change) : 0;
+                avgGain = (avgGain * (period - 1) + gain) / period;
+                avgLoss = (avgLoss * (period - 1) + loss) / period;
+                rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+                rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
+                rsiData.push({ time: candles[i].time, value: rsi });
+            }
+            return rsiData;
+        }
+
         function initChart() {
             const chartContainer = document.getElementById('levelChart');
             if (!chartContainer) return;
@@ -689,7 +766,7 @@
             try {
                 chart = LightweightCharts.createChart(chartContainer, {
                     width: chartContainer.clientWidth,
-                    height: 400,
+                    height: 500,
                     layout: {
                         background: { type: 'solid', color: '#151632' },
                         textColor: '#e0e0e0',
@@ -700,12 +777,42 @@
                     },
                     rightPriceScale: {
                         borderColor: 'rgba(255, 255, 255, 0.1)',
+                        scaleMargins: {
+                            top: 0.05,
+                            bottom: 0.35, // Leave space for RSI
+                        },
                     },
                     timeScale: {
-                        borderColor: 'rgba(255, 255, 255, 0.1)',
                         timeVisible: true,
                         secondsVisible: false,
                     },
+                });
+
+                // RSI Series
+                rsiSeries = chart.addLineSeries({
+                    color: '#9c27b0',
+                    lineWidth: 2,
+                    priceScaleId: 'rsi',
+                    scaleMargins: {
+                        top: 0.75,
+                        bottom: 0.05,
+                    },
+                });
+                rsiSeries.createPriceLine({
+                    price: 70,
+                    color: '#9c27b0',
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Dotted,
+                    axisLabelVisible: false,
+                    title: '',
+                });
+                rsiSeries.createPriceLine({
+                    price: 30,
+                    color: '#9c27b0',
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Dotted,
+                    axisLabelVisible: false,
+                    title: '',
                 });
 
                 liquiditySeries = chart.addLineSeries({
@@ -721,6 +828,44 @@
                     },
                 });
 
+                // Conclusion Chart
+                const conclusionContainer = document.getElementById('conclusionChart');
+                if (conclusionContainer) {
+                    conclusionChart = LightweightCharts.createChart(conclusionContainer, {
+                        width: conclusionContainer.clientWidth,
+                        height: 200,
+                        layout: {
+                            background: { type: 'solid', color: '#151632' },
+                            textColor: '#e0e0e0',
+                        },
+                        grid: {
+                            vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                            horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                        },
+                        rightPriceScale: {
+                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                            visible: true,
+                        },
+                        timeScale: {
+                            timeVisible: true,
+                            secondsVisible: true,
+                        },
+                    });
+
+                    conclusionSeries = conclusionChart.addLineSeries({
+                        color: '#2962FF',
+                        lineWidth: 2,
+                    });
+                    conclusionSeries.createPriceLine({
+                        price: 0,
+                        color: '#e0e0e0',
+                        lineWidth: 1,
+                        lineStyle: LightweightCharts.LineStyle.Dashed,
+                        axisLabelVisible: false,
+                        title: '',
+                    });
+                }
+
                 candleSeries = chart.addCandlestickSeries({
                     upColor: '#00ff88',
                     downColor: '#dc3545',
@@ -733,6 +878,7 @@
                         minMove: 0.000001,
                     },
                 });
+
                 chart.timeScale().fitContent();
 
                 const chartElement = chart.chartElement();
@@ -783,6 +929,8 @@
                             percentSpan.textContent = '0.00%';
                             percentSpan.style.color = 'var(--text-muted)';
                         }
+                        const rsiLegend = document.getElementById('rsi-legend');
+                        if (rsiLegend) rsiLegend.style.display = 'none';
                         return;
                     }
 
@@ -828,6 +976,19 @@
                             bookValue.style.color = closest.type === 'bid' ? '#00ff88' : '#dc3545';
                         } else {
                             bookInfo.style.display = 'none';
+                        }
+                    }
+
+                    // RSI Legend Logic
+                    const rsiLegend = document.getElementById('rsi-legend');
+                    const rsiValueSpan = document.getElementById('rsi-value');
+                    if (rsiLegend && rsiValueSpan && rsiSeries) {
+                        const rsiData = param.seriesData.get(rsiSeries);
+                        if (rsiData) {
+                            rsiLegend.style.display = 'inline';
+                            rsiValueSpan.textContent = rsiData.value.toFixed(2);
+                        } else {
+                            rsiLegend.style.display = 'none';
                         }
                     }
 
@@ -907,6 +1068,8 @@
         }
 
         async function updateChart() {
+            // console.log("updateChart called");
+            let lastCandleTime = null;
             if (!chart) {
                 initChart();
                 if (!chart) return;
@@ -934,7 +1097,7 @@
                 const cells = row.querySelectorAll('td');
                 if (cells.length < 3) return;
                 const symbol = cells[1].textContent.trim();
-                const levelPrice = parseFloat(cells[2].textContent);
+                const levelPrice = parseFloat(cells[3].textContent);
                 const id = `${symbol}-${levelPrice}`;
                 activeIds.push(id);
                 availableLevels.push({ id, text: `${symbol} @ ${levelPrice}` });
@@ -963,7 +1126,7 @@
                 const cells = row.querySelectorAll('td');
                 if (cells.length < 3) return;
                 const symbol = cells[1].textContent.trim();
-                const levelPrice = parseFloat(cells[2].textContent);
+                const levelPrice = parseFloat(cells[3].textContent);
                 const id = `${symbol}-${levelPrice}`;
                 if (id === selectedLevelId) {
                     targetRow = row;
@@ -974,11 +1137,14 @@
 
             const cells = targetRow.querySelectorAll('td');
             const symbol = cells[1].textContent.trim();
-            const levelPrice = parseFloat(cells[2].textContent);
+            const levelPrice = parseFloat(cells[3].textContent);
 
             try {
-                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`);
+                const response = await fetch(`/api/candles?symbol=${symbol}&interval=60&limit=200`);
                 const candles = await response.json();
+                if (candles && candles.length > 0) {
+                    lastCandleTime = candles[candles.length - 1].time;
+                }
                 if (candles && candles.length > 0) {
                     candles.sort((a, b) => a.time - b.time);
                     const uniqueCandles = [];
@@ -993,6 +1159,12 @@
                     const lineData = uniqueCandles.map(c => ({ time: c.time, value: c.close }));
                     liquiditySeries.setData(lineData);
 
+                    // RSI
+                    const rsiData = calculateRSI(uniqueCandles);
+                    if (rsiData.length > 0) {
+                        rsiSeries.setData(rsiData);
+                    }
+
                     if (window.lastChartSymbol !== symbol) {
                         chart.timeScale().fitContent();
                         chart.priceScale('right').applyOptions({ autoScale: true });
@@ -1004,7 +1176,7 @@
             }
 
             // Tiers
-            const tierCell = cells[4];
+            const tierCell = cells[5];
             let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
 
             // Parse from the div/span structure
@@ -1111,8 +1283,8 @@
                             if (opacity < 0.1) opacity = 0.1;
 
                             const color = c.type === 'bid'
-                                ? `rgba(0, 255, 136, ${opacity.toFixed(2)})`
-                                : `rgba(220, 53, 69, ${opacity.toFixed(2)})`;
+                                ? `rgba(0, 188, 212, ${opacity.toFixed(2)})` // Cyan
+                                : `rgba(255, 152, 0, ${opacity.toFixed(2)})`; // Orange
 
                             window.currentLiquidityLines.push(liquiditySeries.createPriceLine({
                                 price: c.price,
@@ -1129,6 +1301,8 @@
             } catch (e) {
                 console.error("Failed to fetch liquidity", e);
             }
+
+            // Conclusion Score update moved to updateMarketStats
         }
 
         document.body.addEventListener('htmx:afterSwap', function (event) {
@@ -1328,6 +1502,15 @@
                 if (bullCircle) bullCircle.style.opacity = bullOpacity;
                 if (scoreText) scoreText.textContent = `${(finalScore * 100).toFixed(0)}%`;
 
+                // Update Conclusion Chart
+                if (conclusionSeries) {
+                    const now = Math.floor(Date.now() / 1000);
+                    conclusionSeries.update({
+                        time: now,
+                        value: finalScore
+                    });
+                }
+
             } catch (e) {
                 console.error("Failed to fetch market stats", e);
             }
@@ -1367,10 +1550,12 @@
         <tr>
             <th>Exchange</th>
             <th>Symbol</th>
+            <th>Mode</th>
             <th>Level Price</th>
             <th>Current Price</th>
             <th>Zone/Tiers</th>
             <th>Size</th>
+            <th>Closes</th>
             <th>Lev</th>
             <th>Margin</th>
             <th>Cooldown</th>
@@ -1384,6 +1569,13 @@
             <td onclick="selectLevel('{{.Symbol}}-{{.LevelPrice}}')" style="cursor: pointer; transition: color 0.2s;"
                 title="Click to view on chart">
                 <strong style="color: var(--accent-color);">{{ .Symbol }}</strong>
+            </td>
+            <td>
+                {{if .IsAuto}}
+                <span class="badge bg-info-subtle text-info">Auto</span>
+                {{else}}
+                <span class="badge bg-secondary-subtle text-secondary">Manual</span>
+                {{end}}
             </td>
             <td>{{ printf "%.6f" .LevelPrice }}</td>
             <td>{{ printf "%.6f" .CurrentPrice }}</td>
@@ -1410,6 +1602,17 @@
                 </div>
             </td>
             <td>{{ .BaseSize }}</td>
+            <td>
+                {{if gt .ConsecutiveBaseCloses 0}}
+                <span class="text-warning" style="font-weight: bold;">{{.ConsecutiveBaseCloses}}</span>
+                {{else}}
+                <span class="text-muted">0</span>
+                {{end}}
+                <button class="btn btn-sm btn-outline-secondary"
+                    style="padding: 0px 4px; font-size: 0.7em; margin-left: 4px;"
+                    hx-post="/levels/{{.ID}}/increment-closes" hx-target="#levels-table" hx-swap="outerHTML"
+                    title="Increment Base Closes (Test)">+</button>
+            </td>
             <td>{{ .Leverage }}x</td>
             <td style="color: {{ if eq .MarginType " isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
                 font-weight: bold;">
@@ -1420,6 +1623,10 @@
             </td>
             <td>
                 <button class="delete-btn" hx-delete="/levels/{{ .ID }}" hx-target="#levels-table">Delete</button>
+                <button class="cta-button"
+                    style="font-size: 0.7rem; padding: 4px 8px; background: var(--secondary-color);"
+                    hx-post="/levels/{{ .ID }}/auto" hx-target="#levels-table" title="Find best next level">Auto
+                    Next</button>
             </td>
         </tr>
         {{ end }}

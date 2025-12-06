@@ -58,6 +58,8 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /levels", s.handleLevelsTable)
 	s.router.HandleFunc("POST /levels", s.handleAddLevel)
 	s.router.HandleFunc("DELETE /levels/{id}", s.handleDeleteLevel)
+	s.router.HandleFunc("POST /levels/{id}/increment-closes", s.handleIncrementCloses)
+	s.router.HandleFunc("POST /levels/{id}/auto", s.handleAutoCreateLevel)
 
 	// Tiers
 	s.router.HandleFunc("POST /tiers", s.handleUpdateTiers)
@@ -85,6 +87,10 @@ func (s *Server) routes() {
 	// Speed Bot
 	s.router.HandleFunc("GET /speed-bot", s.handleSpeedBot)
 	s.router.HandleFunc("GET /speed-bot/coin/{symbol}", s.handleCoinDetail)
+
+	// Funding Bot
+	s.router.HandleFunc("GET /funding-bot", s.handleFundingBot)
+	s.router.HandleFunc("GET /funding-bot/coin/{symbol}", s.handleCoinDetail)
 
 	// Speed Bot API
 	s.router.HandleFunc("POST /api/speedbot/start", s.handleStartSpeedBot)
