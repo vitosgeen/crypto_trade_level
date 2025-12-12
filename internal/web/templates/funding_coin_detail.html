@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{.Symbol}} - Funding Bot</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        :root {
+            --bg-color: #0a0b1e;
+            --text-color: #e0e0e0;
+            --accent-color: #00ff88;
+            --accent-hover: #00cc6a;
+            --secondary-color: #7000ff;
+            --card-bg: #151632;
+            --nav-bg: rgba(10, 11, 30, 0.95);
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: var(--text-color);
+        }
+
+        h1 {
+            background: linear-gradient(to right, #fff, #a5a5a5);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: var(--accent-color);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .back-link:hover {
+            color: var(--accent-hover);
+            text-decoration: none;
+        }
+
+        /* Table styling */
+        .table-container {
+            overflow-x: auto;
+            max-height: 300px;
+        }
+
+        .table-container table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table-container th,
+        .table-container td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            text-align: left;
+            font-size: 14px;
+            color: var(--text-color);
+        }
+
+        .table-container th {
+            background: rgba(255, 255, 255, 0.05);
+            font-weight: 600;
+            color: var(--accent-color);
+            position: sticky;
+            top: 0;
+        }
+
+        .table-container tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Form Elements */
+        input,
+        select {
+            background: rgba(0, 0, 0, 0.2) !important;
+            border: 1px solid var(--border-color) !important;
+            color: var(--text-color) !important;
+        }
+
+        input:focus,
+        select:focus {
+            border-color: var(--accent-color) !important;
+            outline: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <a href="/funding-bot" class="back-link">← Back to All Coins</a>
+
+        <div class="card">
+            <h1>{{.Symbol}} Analysis</h1>
+        </div>
+
+        <div class="card">
+            <h2>Price Chart</h2>
+            <div id="levelChart" style="width: 100%; height: 500px;"></div>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                <h2 style="margin: 0; white-space: nowrap;">💰 Funding Bot Controls</h2>
+                <div
+                    style="font-size: 0.9em; opacity: 0.9; background: rgba(0,0,0,0.2); padding: 8px 15px; border-radius: 6px;">
+                    <span id="funding-countdown">Scan...</span> <span style="margin: 0 8px; color: #555;">|</span>
+                    Rate: <span id="live-funding-rate"
+                        style="font-weight: bold; color: #ffeb3b; font-family: monospace;">Loading...</span>
+                </div>
+            </div>
+
+            <!-- Bot Status Card -->
+            <div id="bot-status-card"
+                style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <h3 style="margin: 0; font-size: 20px;">🤖 Funding Bot: <span
+                                id="bot-running-status">Running</span></h3>
+                        <p id="bot-signal-text" style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">Waiting
+                            for signal...</p>
+                    </div>
+                    <div id="bot-position-info"
+                        style="display: none; flex: 1; min-width: 300px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px;">
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px;">
+                            <div>
+                                <div style="font-size: 12px; opacity: 0.8;">Position</div>
+                                <div style="font-size: 18px; font-weight: bold;" id="bot-position-side">LONG</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; opacity: 0.8;">Size</div>
+                                <div style="font-size: 18px; font-weight: bold;" id="bot-position-size">0.001</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; opacity: 0.8;">Entry</div>
+                                <div style="font-size: 18px; font-weight: bold;" id="bot-entry-price">$0.00</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; opacity: 0.8;">P&L</div>
+                                <div style="font-size: 18px; font-weight: bold;" id="bot-pnl">$0.00</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <form id="speed-bot-form">
+                <!-- Position Settings -->
+                <div
+                    style="background: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+                    <h3 style="margin: 0 0 15px 0; font-size: 16px; color: var(--text-color);">📊 Position Settings</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                        <div>
+                            <label for="position-size"
+                                style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Position
+                                Size</label>
+                            <input type="number" id="position-size" name="position_size" step="0.001" min="0.001"
+                                placeholder="0.1"
+                                style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label for="leverage"
+                                style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Leverage</label>
+                            <input type="number" id="leverage" name="leverage" min="1" max="100" value="1"
+                                style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div>
+                            <label for="margin-type"
+                                style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Margin
+                                Type</label>
+                            <select id="margin-type" name="margin_type"
+                                style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; background: white;">
+                                <option value="isolated">🔒 Isolated</option>
+                                <option value="cross">🌐 Cross</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Funding Bot Settings -->
+                <div
+                    style="background: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid var(--border-color);">
+                    <h3 style="margin: 0 0 20px 0; font-size: 16px; color: var(--text-color);">💰 Funding Bot Settings
+                    </h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 25px;">
+                        <div>
+                            <label for="countdown-threshold"
+                                style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">
+                                ⏱️ Countdown Threshold
+                            </label>
+                            <input type="number" id="countdown-threshold" name="countdown_threshold" min="10" step="10"
+                                value="60" placeholder="60"
+                                style="width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; margin-bottom: 5px;">
+                            <small style="display: block; color: #6c757d; font-size: 12px; margin-top: 5px;">Seconds
+                                before funding to place
+                                order</small>
+                        </div>
+                        <div>
+                            <label for="min-funding-rate"
+                                style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">
+                                📊 Min Funding Rate (%)
+                            </label>
+                            <input type="number" id="min-funding-rate" name="min_funding_rate" step="0.01" min="0"
+                                value="0.01" placeholder="0.01"
+                                style="width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; margin-bottom: 5px;">
+                            <small style="display: block; color: #6c757d; font-size: 12px; margin-top: 5px;">
+                                Example: 1 = 1%, 0.8 = 0.8%
+                            </small>
+                        </div>
+                        <div>
+                            <label for="wall-check"
+                                style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">
+                                🧱 Wall Detection
+                            </label>
+                            <select id="wall-check" name="wall_check_enabled"
+                                style="width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; background: white; margin-bottom: 5px;">
+                                <option value="true">✅ Enabled</option>
+                                <option value="false">❌ Disabled</option>
+                            </select>
+                            <small style="display: block; color: #6c757d; font-size: 12px; margin-top: 5px;">Checks
+                                order
+                                book for resistance</small>
+                        </div>
+                        <div>
+                            <label for="wall-threshold"
+                                style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">
+                                🧱 Wall Threshold Multiplier
+                            </label>
+                            <input type="number" id="wall-threshold" name="wall_threshold_multiplier" step="0.1" min="1"
+                                value="2.0" placeholder="2.0"
+                                style="width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; margin-bottom: 5px;">
+                            <small style="display: block; color: #6c757d; font-size: 12px; margin-top: 5px;">x times
+                                average volume</small>
+                        </div>
+                        <div>
+                            <label for="stop-loss"
+                                style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">
+                                🛡️ Stop Loss (%)
+                            </label>
+                            <input type="number" id="stop-loss" name="stop_loss_percentage" step="0.1" min="0"
+                                value="0.5" placeholder="0.5"
+                                style="width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; margin-bottom: 5px;">
+                            <small style="display: block; color: #6c757d; font-size: 12px; margin-top: 5px;">
+                                Closing order if price moves against
+                            </small>
+                        </div>
+                        <div>
+                            <label for="take-profit"
+                                style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">
+                                💰 Take Profit (%)
+                            </label>
+                            <input type="number" id="take-profit" name="take_profit_percentage" step="0.1" min="0"
+                                value="0.5" placeholder="0.5"
+                                style="width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px; margin-bottom: 5px;">
+                            <small style="display: block; color: #6c757d; font-size: 12px; margin-top: 5px;">
+                                Target profit (Price + Funding)
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Control Buttons -->
+                <div style="display: flex; gap: 15px; justify-content: center;">
+                    <button type="button" id="start-bot-btn"
+                        style="flex: 1; max-width: 250px; padding: 15px 30px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(40, 167, 69, 0.3); transition: all 0.3s;">
+                        <span style="font-size: 18px;">▶</span> Start Bot
+                    </button>
+                    <button type="button" id="stop-bot-btn"
+                        style="flex: 1; max-width: 250px; padding: 15px 30px; background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 53, 69, 0.3); transition: all 0.3s;">
+                        <span style="font-size: 18px;">■</span> Stop Bot
+                    </button>
+                </div>
+            </form>
+
+            <div id="config-status"
+                style="margin-top: 20px; padding: 15px; border-radius: 8px; display: none; text-align: center; font-weight: 600;">
+            </div>
+        </div>
+
+
+
+        <div class="card">
+            <h2>Active Positions</h2>
+            <div class="table-container" id="positions-table" hx-get="/positions" hx-trigger="load, every 5s">
+                <!-- Loaded via HTMX -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Recent Trades</h2>
+            <div class="table-container" hx-get="/trades" hx-trigger="load, every 5s">
+                <!-- Loaded via HTMX -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Quick Actions</h2>
+            <p>
+                <a href="/dashboard">Create Level for {{.Symbol}}</a>
+            </p>
+        </div>
+    </div>
+
+    <div id="next-funding-time-data" style="display: none;">{{ if .NextFundingTime }}{{ .NextFundingTime }}{{ end }}
+    </div>
+    <script>
+        const symbol = "{{.Symbol}}";
+        const botType = "funding";
+        const nextFundingTimeData = document.getElementById('next-funding-time-data').textContent;
+        const nextFundingTime = nextFundingTimeData ? parseInt(nextFundingTimeData) : null;
+        let chart = null;
+        let candleSeries = null;
+        let liquiditySeries = null;
+        let rsiSeries = null;
+        let currentLiquidityLines = [];
+        let lastCandle = null;
+
+
+
+        // Update funding countdown
+        function updateCountdown() {
+            if (!nextFundingTime) return;
+            const now = Date.now();
+            const diff = nextFundingTime - now;
+
+            if (diff <= 0) {
+                const el = document.getElementById('funding-countdown');
+                if (el) el.textContent = '(Funding event passed)';
+                return;
+            }
+
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+            const el = document.getElementById('funding-countdown');
+            if (el) {
+                el.textContent = `(Next funding in ${hours}h ${minutes}m ${seconds}s)`;
+            }
+        }
+
+        function calculateRSI(candles, period = 14) {
+            if (candles.length < period + 1) return [];
+
+            const rsiData = [];
+            let avgGain = 0;
+            let avgLoss = 0;
+
+            // First RSI value
+            for (let i = 1; i <= period; i++) {
+                const change = candles[i].close - candles[i - 1].close;
+                if (change > 0) avgGain += change;
+                else avgLoss += Math.abs(change);
+            }
+
+            avgGain /= period;
+            avgLoss /= period;
+
+            let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+            let rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
+
+            rsiData.push({ time: candles[period].time, value: rsi });
+
+            // Subsequent values
+            for (let i = period + 1; i < candles.length; i++) {
+                const change = candles[i].close - candles[i - 1].close;
+                let gain = change > 0 ? change : 0;
+                let loss = change < 0 ? Math.abs(change) : 0;
+
+                avgGain = (avgGain * (period - 1) + gain) / period;
+                avgLoss = (avgLoss * (period - 1) + loss) / period;
+
+                rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+                rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
+
+                rsiData.push({ time: candles[i].time, value: rsi });
+            }
+
+            return rsiData;
+        }
+
+        function initChart() {
+            const chartContainer = document.getElementById('levelChart');
+            if (!chartContainer) return;
+
+            // --- Main Chart (Price + RSI) ---
+            chart = LightweightCharts.createChart(chartContainer, {
+                width: chartContainer.clientWidth || 800,
+                height: 500, // Increased height for RSI pane
+                layout: {
+                    background: { type: 'solid', color: '#151632' },
+                    textColor: '#e0e0e0',
+                },
+                grid: {
+                    vertLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                    horzLines: { color: 'rgba(255, 255, 255, 0.1)' },
+                },
+                rightPriceScale: {
+                    borderColor: 'rgba(255, 255, 255, 0.2)',
+                    scaleMargins: {
+                        top: 0.05,
+                        bottom: 0.4, // Leave space for RSI and Volume
+                    },
+                },
+                timeScale: {
+                    borderColor: 'rgba(255, 255, 255, 0.2)',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+            });
+
+            // Liquidity series (background)
+            liquiditySeries = chart.addLineSeries({
+                color: 'transparent',
+                lineWidth: 0,
+                crosshairMarkerVisible: false,
+                lastValueVisible: false,
+                priceLineVisible: false,
+                priceFormat: {
+                    type: 'price',
+                    precision: 6,
+                    minMove: 0.000001,
+                },
+            });
+
+            // Candle series (foreground)
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#26a69a',
+                downColor: '#ef5350',
+                borderVisible: false,
+                wickUpColor: '#26a69a',
+                wickDownColor: '#ef5350',
+                priceFormat: {
+                    type: 'price',
+                    precision: 6,
+                    minMove: 0.000001,
+                },
+            });
+
+            // RSI Series
+            rsiSeries = chart.addLineSeries({
+                color: '#9c27b0', // Purple
+                lineWidth: 2,
+                priceScaleId: 'rsi', // Separate scale
+                scaleMargins: {
+                    top: 0.8, // Position at bottom
+                    bottom: 0.05,
+                },
+            });
+
+            // Volume Series
+            volumeSeries = chart.addHistogramSeries({
+                priceFormat: {
+                    type: 'volume',
+                },
+                priceScaleId: 'volume', // Separate scale
+                scaleMargins: {
+                    top: 0.7, // Position below price, overlapping slightly with bottom or separate
+                    bottom: 0.0,
+                },
+            });
+
+            // RSI Levels
+            rsiSeries.createPriceLine({
+                price: 70,
+                color: '#9c27b0',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dotted,
+                axisLabelVisible: false,
+                title: '',
+            });
+            rsiSeries.createPriceLine({
+                price: 30,
+                color: '#9c27b0',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dotted,
+                axisLabelVisible: false,
+                title: '',
+            });
+
+            window.addEventListener('resize', () => {
+                if (chart && chartContainer) {
+                    chart.applyOptions({ width: chartContainer.clientWidth });
+                }
+            });
+
+            loadChartData();
+            loadLiquidity();
+        }
+
+        async function loadChartData() {
+            try {
+                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`);
+                const candles = await response.json();
+                if (candles && candles.length > 0) {
+                    candles.sort((a, b) => a.time - b.time);
+                    candleSeries.setData(candles);
+
+                    // Sync liquidity series
+                    const lineData = candles.map(c => ({ time: c.time, value: c.close }));
+                    liquiditySeries.setData(lineData);
+
+                    // Calculate and set RSI
+                    const rsiData = calculateRSI(candles);
+                    rsiSeries.setData(rsiData);
+
+                    // Volume Data
+                    const volumeData = candles.map(c => ({
+                        time: c.time,
+                        value: c.volume,
+                        color: c.close >= c.open ? 'rgba(0, 150, 136, 0.5)' : 'rgba(255, 82, 82, 0.5)',
+                    }));
+                    volumeSeries.setData(volumeData);
+
+                    chart.timeScale().fitContent();
+
+                    // Store last candle for updates
+                    lastCandle = candles[candles.length - 1];
+                }
+            } catch (e) {
+                console.error("Failed to fetch candles", e);
+            }
+        }
+
+        async function loadLiquidity() {
+            try {
+                const response = await fetch(`/api/liquidity?symbol=${symbol}`);
+                const clusters = await response.json();
+
+                // Clear old liquidity lines
+                if (currentLiquidityLines) {
+                    currentLiquidityLines.forEach(line => liquiditySeries.removePriceLine(line));
+                }
+                currentLiquidityLines = [];
+
+                if (clusters && clusters.length > 0) {
+                    const maxVol = Math.max(...clusters.map(c => c.volume));
+
+                    clusters.forEach(c => {
+                        let opacity = 0.0;
+                        if (maxVol > 0) {
+                            opacity = c.volume / maxVol;
+                            if (opacity > 1.0) opacity = 1.0;
+                            if (opacity < 0.1) opacity = 0.1;
+                        }
+
+                        const color = c.type === 'bid'
+                            ? `rgba(0, 255, 0, ${opacity.toFixed(2)})`
+                            : `rgba(255, 105, 180, ${opacity.toFixed(2)})`;
+
+                        currentLiquidityLines.push(liquiditySeries.createPriceLine({
+                            price: c.price,
+                            color: color,
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Solid,
+                            axisLabelVisible: false,
+                            title: '',
+                        }));
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to fetch liquidity", e);
+            }
+        }
+
+        // Update chart with real-time price (simulated via periodic candle refresh)
+        async function updateChart() {
+            try {
+                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`); // Fetch more to recalc RSI accurately
+                const candles = await response.json();
+                let latestCandle = null;
+                if (candles && candles.length > 0) {
+                    candles.sort((a, b) => a.time - b.time);
+                    latestCandle = candles[candles.length - 1];
+
+                    // Update the last candle
+                    if (lastCandle && latestCandle.time === lastCandle.time) {
+                        // Same candle, update it
+                        candleSeries.update(latestCandle);
+                        liquiditySeries.update({ time: latestCandle.time, value: latestCandle.close });
+                    } else if (latestCandle.time > (lastCandle?.time || 0)) {
+                        // New candle
+                        candleSeries.update(latestCandle);
+                        liquiditySeries.update({ time: latestCandle.time, value: latestCandle.close });
+                    }
+
+                    // Recalculate RSI for the latest data
+                    const rsiData = calculateRSI(candles);
+                    if (rsiData && rsiData.length > 0) {
+                        const lastRSI = rsiData[rsiData.length - 1];
+                        rsiSeries.update(lastRSI);
+                    }
+
+                    // Update Volume
+                    if (latestCandle) {
+                        volumeSeries.update({
+                            time: latestCandle.time,
+                            value: latestCandle.volume,
+                            color: latestCandle.close >= latestCandle.open ? 'rgba(0, 150, 136, 0.5)' : 'rgba(255, 82, 82, 0.5)',
+                        });
+                    }
+                }
+
+                if (latestCandle) {
+                    lastCandle = latestCandle;
+                }
+            } catch (e) {
+                console.error("Failed to update chart", e);
+            }
+        }
+
+
+        // Speed Bot Configuration
+        let statusPollingInterval = null;
+
+        async function startBot() {
+            const config = {
+                symbol: symbol,
+                position_size: parseFloat(document.getElementById('position-size').value),
+                leverage: parseInt(document.getElementById('leverage').value),
+                margin_type: document.getElementById('margin-type').value,
+                countdown_threshold: parseInt(document.getElementById('countdown-threshold').value),
+                min_funding_rate: parseFloat(document.getElementById('min-funding-rate').value) / 100, // Convert percentage to decimal
+                wall_check_enabled: document.getElementById('wall-check').value === 'true',
+                wall_threshold_multiplier: parseFloat(document.getElementById('wall-threshold').value),
+                stop_loss_percentage: parseFloat(document.getElementById('stop-loss').value) / 100, // Convert % to decimal
+                take_profit_percentage: parseFloat(document.getElementById('take-profit').value) / 100, // Convert % to decimal
+            };
+
+            // Validate
+            if (!config.position_size || config.position_size <= 0) {
+                showStatus('Please enter a valid position size', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/fundingbot/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
+                updateButtonStates(true);
+                showStatus('Funding Bot started!', 'success');
+                startStatusPolling();
+            } catch (e) {
+                showStatus(`Error: ${e.message}`, 'error');
+            }
+        }
+
+        async function stopBot() {
+            try {
+                const response = await fetch(`/api/fundingbot/stop?symbol=${symbol}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
+                updateButtonStates(false);
+                showStatus('Funding Bot stopped', 'info');
+                stopStatusPolling();
+            } catch (e) {
+                showStatus(`Error: ${e.message}`, 'error');
+            }
+        }
+
+        async function updateBotStatus() {
+            try {
+                const response = await fetch(`/api/fundingbot/status?symbol=${symbol}`);
+                const status = await response.json();
+
+                // Update funding rate display
+                const rateEl = document.getElementById('live-funding-rate');
+                if (rateEl && status.funding_rate !== undefined) {
+                    const ratePct = (status.funding_rate * 100).toFixed(4);
+                    rateEl.textContent = `${ratePct}%`;
+                    // Color code
+                    if (status.funding_rate > 0) rateEl.style.color = '#28a745';
+                    else if (status.funding_rate < 0) rateEl.style.color = '#dc3545';
+                    else rateEl.style.color = '#ffeb3b';
+                }
+
+                const card = document.getElementById('bot-status-card');
+                const signalText = document.getElementById('bot-signal-text');
+                const positionInfo = document.getElementById('bot-position-info');
+
+                if (status.running) {
+                    card.style.display = 'block';
+                    signalText.textContent = status.signal || 'Scanning market...';
+
+                    // Show position info if active
+                    if (status.position && status.position.size > 0) {
+                        positionInfo.style.display = 'block';
+                        document.getElementById('bot-position-side').textContent = status.position.side;
+                        document.getElementById('bot-position-size').textContent = status.position.size.toFixed(4);
+                        document.getElementById('bot-entry-price').textContent = `$${status.position.entry_price.toFixed(2)}`;
+
+                        const pnl = status.position.unrealized_pnl || 0;
+                        const pnlEl = document.getElementById('bot-pnl');
+                        pnlEl.textContent = `$${pnl.toFixed(2)}`;
+                        pnlEl.style.color = pnl >= 0 ? '#4ade80' : '#f87171';
+                    } else {
+                        positionInfo.style.display = 'none';
+                    }
+                } else {
+                    card.style.display = 'none';
+                }
+            } catch (e) {
+                console.error('Failed to fetch bot status', e);
+            }
+        }
+
+        function startStatusPolling() {
+            updateBotStatus(); // Initial update
+            statusPollingInterval = setInterval(updateBotStatus, 2000); // Poll every 2 seconds
+        }
+
+        function stopStatusPolling() {
+            if (statusPollingInterval) {
+                clearInterval(statusPollingInterval);
+                statusPollingInterval = null;
+            }
+            document.getElementById('bot-status-card').style.display = 'none';
+        }
+
+        function updateButtonStates(running) {
+            const startBtn = document.getElementById('start-bot-btn');
+            const stopBtn = document.getElementById('stop-bot-btn');
+
+            if (running) {
+                startBtn.style.opacity = '0.5';
+                startBtn.style.cursor = 'not-allowed';
+                startBtn.disabled = true;
+                stopBtn.style.opacity = '1';
+                stopBtn.style.cursor = 'pointer';
+                stopBtn.disabled = false;
+            } else {
+                startBtn.style.opacity = '1';
+                startBtn.style.cursor = 'pointer';
+                startBtn.disabled = false;
+                stopBtn.style.opacity = '0.5';
+                stopBtn.style.cursor = 'not-allowed';
+                stopBtn.disabled = true;
+            }
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('config-status');
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+
+            if (type === 'success') {
+                statusDiv.style.background = '#d4edda';
+                statusDiv.style.color = '#155724';
+                statusDiv.style.border = '1px solid #c3e6cb';
+            } else if (type === 'error') {
+                statusDiv.style.background = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                statusDiv.style.border = '1px solid #f5c6cb';
+            } else {
+                statusDiv.style.background = '#d1ecf1';
+                statusDiv.style.color = '#0c5460';
+                statusDiv.style.border = '1px solid #bee5eb';
+            }
+
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function () {
+            initChart();
+
+            // Button handlers
+            document.getElementById('start-bot-btn').addEventListener('click', startBot);
+            document.getElementById('stop-bot-btn').addEventListener('click', stopBot);
+
+            // Check if bot is running and start polling
+            startStatusPolling();
+
+            // Update chart every 2 seconds
+            setInterval(updateChart, 2000);
+
+            // Update liquidity every 10 seconds
+            setInterval(loadLiquidity, 10000);
+
+            // Update funding countdown every second
+            updateCountdown(); // Initial update
+            setInterval(updateCountdown, 1000);
+        });
+    </script>
+</body>
+
+</html>

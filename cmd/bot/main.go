@@ -182,7 +182,15 @@ func main() {
 	// Init Speed Bot Service
 	speedBotService := usecase.NewSpeedBotService(bybitAdapter, marketService, log)
 
-	server := web.NewServer(port, store, store, svc, marketService, speedBotService, log)
+	// Init Funding Bot Service
+	fundingLogger, err := logger.NewFileLogger("funding_bot.log", "debug") // Force debug for now as requested
+	if err != nil {
+		log.Error("Failed to init funding logger, using default", zap.Error(err))
+		fundingLogger = log
+	}
+	fundingBotService := usecase.NewFundingBotService(bybitAdapter, marketService, fundingLogger)
+
+	server := web.NewServer(port, store, store, svc, marketService, speedBotService, fundingBotService, log)
 
 	// 8. Start Server
 	go func() {

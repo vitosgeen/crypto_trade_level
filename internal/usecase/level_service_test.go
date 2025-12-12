@@ -121,6 +121,32 @@ func (m *MockExchange) Subscribe(symbols []string) error {
 	return nil
 }
 
+
+func (m *MockExchange) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
+return order, nil
+}
+
+func (m *MockExchange) GetOrder(ctx context.Context, symbol, orderID string) (*domain.Order, error) {
+return &domain.Order{OrderID: orderID, Symbol: symbol, Status: "Filled"}, nil
+}
+
+func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) error {
+return nil
+}
+
+
+func (m *MockExchangeForService) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
+return order, nil
+}
+
+func (m *MockExchangeForService) GetOrder(ctx context.Context, symbol, orderID string) (*domain.Order, error) {
+return &domain.Order{OrderID: orderID, Symbol: symbol, Status: "Filled"}, nil
+}
+
+func (m *MockExchangeForService) CancelOrder(ctx context.Context, symbol, orderID string) error {
+return nil
+}
+
 func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 	// Setup
 	level := &domain.Level{

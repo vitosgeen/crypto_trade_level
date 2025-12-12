@@ -11,6 +11,19 @@ import (
 	"github.com/vitos/crypto_trade_level/internal/usecase"
 )
 
+
+func (m *MockExchange) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
+return order, nil
+}
+
+func (m *MockExchange) GetOrder(ctx context.Context, symbol, orderID string) (*domain.Order, error) {
+return &domain.Order{OrderID: orderID, Symbol: symbol, Status: "Filled"}, nil
+}
+
+func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) error {
+return nil
+}
+
 func TestRepro_StopLossAtBase_Failure(t *testing.T) {
 	// 1. Setup SQLite
 	dbPath := "test_repro.db"

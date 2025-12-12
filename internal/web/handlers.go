@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/vitos/crypto_trade_level/internal/domain"
@@ -506,6 +507,15 @@ func (s *Server) handleCoinDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine bot type from URL
+	if strings.Contains(r.URL.Path, "/funding-bot/") {
+		s.handleFundingCoinDetail(w, r, symbol)
+	} else {
+		s.handleSpeedCoinDetail(w, r, symbol)
+	}
+}
+
+func (s *Server) handleSpeedCoinDetail(w http.ResponseWriter, r *http.Request, symbol string) {
 	// Fetch market stats for the symbol
 	stats, err := s.marketService.GetMarketStats(r.Context(), symbol)
 	if err != nil {
@@ -519,6 +529,40 @@ func (s *Server) handleCoinDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := templates.ExecuteTemplate(w, "coin_detail.html", data); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleFundingCoinDetail(w http.ResponseWriter, r *http.Request, symbol string) {
+	// Fetch market stats for the symbol
+	stats, err := s.marketService.GetMarketStats(r.Context(), symbol)
+	if err != nil {
+		s.logger.Error("Failed to get market stats", zap.Error(err))
+		stats = &usecase.MarketStats{} // Use empty stats on error
+	}
+
+	// Get funding time
+	var nextFundingTime int64
+	tickers, err := s.service.GetExchange().GetTickers(r.Context(), "linear")
+	if err == nil {
+		for _, t := range tickers {
+			if t.Symbol == symbol {
+				nextFundingTime = t.NextFundingTime
+				break
+			}
+		}
+	} else {
+		s.logger.Error("Failed to get tickers for funding time", zap.Error(err))
+	}
+
+	data := map[string]interface{}{
+		"Symbol":          symbol,
+		"Stats":           stats,
+		"NextFundingTime": nextFundingTime,
+	}
+
+	if err := templates.ExecuteTemplate(w, "funding_coin_detail.html", data); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}

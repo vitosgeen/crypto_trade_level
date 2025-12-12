@@ -16,6 +16,11 @@ type Exchange interface {
 	GetTickers(ctx context.Context, category string) ([]Ticker, error)
 	OnTradeUpdate(callback func(symbol string, side string, size float64, price float64))
 	Subscribe(symbols []string) error
+
+	// Order management for funding bot
+	PlaceOrder(ctx context.Context, order *Order) (*Order, error)
+	GetOrder(ctx context.Context, symbol, orderID string) (*Order, error)
+	CancelOrder(ctx context.Context, symbol, orderID string) error
 }
 
 type Candle struct {

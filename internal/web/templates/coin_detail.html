@@ -7,10 +7,22 @@
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <style>
+        :root {
+            --bg-color: #0a0b1e;
+            --text-color: #e0e0e0;
+            --accent-color: #00ff88;
+            --accent-hover: #00cc6a;
+            --secondary-color: #7000ff;
+            --card-bg: #151632;
+            --nav-bg: rgba(10, 11, 30, 0.95);
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
         body {
-            font-family: sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             padding: 20px;
-            background: #f0f2f5;
+            background-color: var(--bg-color);
+            color: var(--text-color);
         }
 
         .container {
@@ -19,24 +31,41 @@
         }
 
         .card {
-            background: white;
+            background: var(--card-bg);
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
             margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: var(--text-color);
+        }
+
+        h1 {
+            background: linear-gradient(to right, #fff, #a5a5a5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
         .back-link {
+            display: inline-block;
             margin-bottom: 20px;
-            color: #007bff;
+            color: var(--accent-color);
             text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
         }
 
         .back-link:hover {
-            text-decoration: underline;
+            color: var(--accent-hover);
+            text-decoration: none;
         }
 
-        /* Table styling for Active Positions and Recent Trades */
+        /* Table styling */
         .table-container {
             overflow-x: auto;
             max-height: 300px;
@@ -49,88 +78,37 @@
 
         .table-container th,
         .table-container td {
-            padding: 8px;
-            border-bottom: 1px solid #ddd;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
             text-align: left;
             font-size: 14px;
+            color: var(--text-color);
         }
 
         .table-container th {
-            background: #f2f2f2;
+            background: rgba(255, 255, 255, 0.05);
             font-weight: 600;
-        }
-
-        .table-container tr:nth-child(even) {
-            background: #fafafa;
+            color: var(--accent-color);
+            position: sticky;
+            top: 0;
         }
 
         .table-container tr:hover {
-            background: #e9f5ff;
+            background: rgba(255, 255, 255, 0.05);
         }
 
-        /* Gauge Styles */
-        .gauge-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+        /* Form Elements */
+        input,
+        select {
+            background: rgba(0, 0, 0, 0.2) !important;
+            border: 1px solid var(--border-color) !important;
+            color: var(--text-color) !important;
         }
 
-        .gauge {
-            position: relative;
-            width: 200px;
-            height: 100px;
-            overflow: hidden;
-        }
-
-        .gauge-bg {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 200px;
-            height: 200px;
-            border-radius: 50%;
-            background: conic-gradient(from 270deg, #dc3545 0deg 90deg, #28a745 90deg 180deg, transparent 180deg);
-            clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
-        }
-
-        .gauge-needle {
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            width: 4px;
-            height: 90px;
-            background: #333;
-            transform-origin: bottom center;
-            transform: rotate(-90deg);
-            transition: transform 0.5s cubic-bezier(0.4, 0.0, 0.2, 1);
-            z-index: 2;
-            border-radius: 2px;
-        }
-
-        .gauge-center {
-            position: absolute;
-            bottom: -10px;
-            left: 50%;
-            width: 20px;
-            height: 20px;
-            background: #333;
-            border-radius: 50%;
-            transform: translateX(-50%);
-            z-index: 3;
-        }
-
-        .gauge-labels {
-            display: flex;
-            justify-content: space-between;
-            width: 200px;
-            margin-top: 5px;
-            font-weight: bold;
-        }
-
-        .gauge-value {
-            margin-top: 5px;
-            font-family: monospace;
-            font-size: 1.1em;
+        input:focus,
+        select:focus {
+            border-color: var(--accent-color) !important;
+            outline: none;
         }
     </style>
 </head>

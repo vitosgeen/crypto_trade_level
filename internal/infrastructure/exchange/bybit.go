@@ -335,6 +335,168 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 	}, nil
 }
 
+// PlaceOrder places a limit or market order on Bybit
+func (b *BybitAdapter) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
+	// Set margin mode and leverage
+	if order.Type == "Limit" {
+		// For limit orders, we still need to set margin mode
+		// Leverage will be set when position is opened
+		b.setMarginMode(ctx, order.Symbol, "isolated") // Default to isolated for funding bot
+	}
+
+	payload := map[string]interface{}{
+		"category":    "linear",
+		"symbol":      order.Symbol,
+		"side":        string(order.Side),
+		"orderType":   order.Type,
+		"qty":         fmt.Sprintf("%f", order.Size),
+		"timeInForce": order.TimeInForce,
+	}
+
+	// Add price for limit orders
+	if order.Type == "Limit" {
+		payload["price"] = fmt.Sprintf("%f", order.Price)
+	}
+
+	// Add reduce only flag if set
+	if order.ReduceOnly {
+		payload["reduceOnly"] = true
+	}
+
+	// Add Stop Loss if set
+	if order.StopLoss > 0 {
+		payload["stopLoss"] = fmt.Sprintf("%f", order.StopLoss)
+	}
+
+	// Add Take Profit if set
+	if order.TakeProfit > 0 {
+		payload["takeProfit"] = fmt.Sprintf("%f", order.TakeProfit)
+	}
+
+	resp, err := b.sendRequest(ctx, "POST", "/v5/order/create", payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			OrderID string `json:"orderId"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit order error: %s", result.RetMsg)
+	}
+
+	// Update order with exchange order ID
+	order.OrderID = result.Result.OrderID
+	order.Status = "New"
+	order.CreatedAt = time.Now()
+
+	return order, nil
+}
+
+// GetOrder retrieves order status from Bybit
+func (b *BybitAdapter) GetOrder(ctx context.Context, symbol, orderID string) (*domain.Order, error) {
+	path := fmt.Sprintf("/v5/order/realtime?category=linear&symbol=%s&orderId=%s", symbol, orderID)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				OrderID     string `json:"orderId"`
+				Symbol      string `json:"symbol"`
+				Side        string `json:"side"`
+				OrderType   string `json:"orderType"`
+				Price       string `json:"price"`
+				Qty         string `json:"qty"`
+				OrderStatus string `json:"orderStatus"`
+				TimeInForce string `json:"timeInForce"`
+				ReduceOnly  bool   `json:"reduceOnly"`
+				CreatedTime string `json:"createdTime"`
+				UpdatedTime string `json:"updatedTime"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit api error: %s", result.RetMsg)
+	}
+
+	if len(result.Result.List) == 0 {
+		return nil, fmt.Errorf("order not found: %s", orderID)
+	}
+
+	raw := result.Result.List[0]
+	price, _ := strconv.ParseFloat(raw.Price, 64)
+	qty, _ := strconv.ParseFloat(raw.Qty, 64)
+	createdTime, _ := strconv.ParseInt(raw.CreatedTime, 10, 64)
+	updatedTime, _ := strconv.ParseInt(raw.UpdatedTime, 10, 64)
+
+	side := domain.SideLong
+	if raw.Side == "Sell" {
+		side = domain.SideShort
+	}
+
+	return &domain.Order{
+		OrderID:     raw.OrderID,
+		Symbol:      raw.Symbol,
+		Side:        side,
+		Type:        raw.OrderType,
+		Price:       price,
+		Size:        qty,
+		Status:      raw.OrderStatus,
+		TimeInForce: raw.TimeInForce,
+		ReduceOnly:  raw.ReduceOnly,
+		CreatedAt:   time.Unix(createdTime/1000, 0),
+		UpdatedAt:   time.Unix(updatedTime/1000, 0),
+	}, nil
+}
+
+// CancelOrder cancels an order on Bybit
+func (b *BybitAdapter) CancelOrder(ctx context.Context, symbol, orderID string) error {
+	payload := map[string]interface{}{
+		"category": "linear",
+		"symbol":   symbol,
+		"orderId":  orderID,
+	}
+
+	resp, err := b.sendRequest(ctx, "POST", "/v5/order/cancel", payload)
+	if err != nil {
+		return err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return err
+	}
+
+	if result.RetCode != 0 {
+		return fmt.Errorf("bybit cancel error: %s", result.RetMsg)
+	}
+
+	return nil
+}
+
 // --- WebSocket ---
 
 func (b *BybitAdapter) OnPriceUpdate(callback func(symbol string, price float64)) {
