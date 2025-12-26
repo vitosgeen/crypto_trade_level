@@ -198,7 +198,7 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		// So we check crossesUp.
 
 		// Debug Log
-		log.Printf("DEBUG: Eval Short. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
+		// log.Printf("DEBUG: Eval Short. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
 		// Tier 1
 		if !state.Tier1Triggered && crossesUp(prevPrice, currPrice, tier1Price) {
@@ -231,7 +231,7 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		// So we check crossesDown.
 
 		// Debug Log
-		log.Printf("DEBUG: Eval Long. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
+		// log.Printf("DEBUG: Eval Long. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
 		if !state.Tier1Triggered && crossesDown(prevPrice, currPrice, tier1Price) {
 			log.Printf("AUDIT: Tier 1 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f. Wins: %d. Mult: %f", level.ID, prevPrice, currPrice, tier1Price, state.ConsecutiveWins, multiplier)

@@ -103,6 +103,7 @@ func (s *Server) routes() {
 	// Funding Bot API
 	s.router.HandleFunc("POST /api/fundingbot/start", s.handleStartFundingBot)
 	s.router.HandleFunc("POST /api/fundingbot/stop", s.handleStopFundingBot)
+	s.router.HandleFunc("POST /api/fundingbot/test", s.handleTestFundingBot)
 	s.router.HandleFunc("GET /api/fundingbot/status", s.handleFundingBotStatus)
 }
 

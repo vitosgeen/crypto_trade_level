@@ -335,6 +335,71 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 	}, nil
 }
 
+func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, error) {
+	path := "/v5/position/list?category=linear"
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int `json:"retCode"`
+		Result  struct {
+			List []struct {
+				Symbol        string `json:"symbol"`
+				Side          string `json:"side"`
+				Size          string `json:"size"`
+				AvgPrice      string `json:"avgPrice"`
+				MarkPrice     string `json:"markPrice"`
+				UnrealisedPnl string `json:"unrealisedPnl"`
+				Leverage      string `json:"leverage"`
+				TradeMode     int    `json:"tradeMode"` // 0: cross margin, 1: isolated margin
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	var positions []*domain.Position
+	for _, raw := range result.Result.List {
+		size, _ := strconv.ParseFloat(raw.Size, 64)
+		if size == 0 {
+			continue
+		}
+
+		entry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
+		curr, _ := strconv.ParseFloat(raw.MarkPrice, 64)
+		pnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
+		lev, _ := strconv.Atoi(raw.Leverage)
+
+		side := domain.SideLong
+		if raw.Side == "Sell" {
+			side = domain.SideShort
+		}
+
+		marginType := "cross"
+		if raw.TradeMode == 1 {
+			marginType = "isolated"
+		}
+
+		positions = append(positions, &domain.Position{
+			Exchange:      "bybit",
+			Symbol:        raw.Symbol,
+			Side:          side,
+			Size:          size,
+			EntryPrice:    entry,
+			CurrentPrice:  curr,
+			UnrealizedPnL: pnl,
+			Leverage:      lev,
+			MarginType:    marginType,
+		})
+	}
+
+	return positions, nil
+}
+
 // PlaceOrder places a limit or market order on Bybit
 func (b *BybitAdapter) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
 	// Set margin mode and leverage
@@ -344,13 +409,28 @@ func (b *BybitAdapter) PlaceOrder(ctx context.Context, order *domain.Order) (*do
 		b.setMarginMode(ctx, order.Symbol, "isolated") // Default to isolated for funding bot
 	}
 
+	side := "Buy"
+	if order.Side == domain.SideShort {
+		side = "Sell"
+	}
+
+	// Map timeInForce
+	tif := order.TimeInForce
+	if tif == "GoodTillCancel" {
+		tif = "GTC"
+	} else if tif == "ImmediateOrCancel" {
+		tif = "IOC"
+	} else if tif == "FillOrKill" {
+		tif = "FOK"
+	}
+
 	payload := map[string]interface{}{
 		"category":    "linear",
 		"symbol":      order.Symbol,
-		"side":        string(order.Side),
+		"side":        side,
 		"orderType":   order.Type,
 		"qty":         fmt.Sprintf("%f", order.Size),
-		"timeInForce": order.TimeInForce,
+		"timeInForce": tif,
 	}
 
 	// Add price for limit orders
@@ -371,6 +451,11 @@ func (b *BybitAdapter) PlaceOrder(ctx context.Context, order *domain.Order) (*do
 	// Add Take Profit if set
 	if order.TakeProfit > 0 {
 		payload["takeProfit"] = fmt.Sprintf("%f", order.TakeProfit)
+	}
+
+	// Add Trigger Price if set
+	if order.TriggerPrice > 0 {
+		payload["triggerPrice"] = fmt.Sprintf("%f", order.TriggerPrice)
 	}
 
 	resp, err := b.sendRequest(ctx, "POST", "/v5/order/create", payload)

@@ -122,19 +122,6 @@ func (h *TestScenarioHelper) AssertLastTrade(side domain.Side, size float64) {
 
 // --- A. INITIALIZATION ---
 
-
-func (m *MockExchange) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
-return order, nil
-}
-
-func (m *MockExchange) GetOrder(ctx context.Context, symbol, orderID string) (*domain.Order, error) {
-return &domain.Order{OrderID: orderID, Symbol: symbol, Status: "Filled"}, nil
-}
-
-func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) error {
-return nil
-}
-
 func TestScenario_A1_InitLastPrice(t *testing.T) {
 	h := NewTestScenarioHelper(t)
 	h.SetupLevel(10000, true)

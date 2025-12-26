@@ -21,19 +21,6 @@ func (m *SentimentMockExchange) GetRecentTrades(ctx context.Context, symbol stri
 	return m.RecentTrades, nil
 }
 
-
-func (m *MockExchange) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
-return order, nil
-}
-
-func (m *MockExchange) GetOrder(ctx context.Context, symbol, orderID string) (*domain.Order, error) {
-return &domain.Order{OrderID: orderID, Symbol: symbol, Status: "Filled"}, nil
-}
-
-func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) error {
-return nil
-}
-
 func TestSentimentTP_Execution(t *testing.T) {
 	// 1. Setup SQLite
 	dbPath := "test_sentiment_tp_exec.db"

@@ -31,6 +31,9 @@ func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error {
 func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
 	return nil, nil
 }
+func (m *MockExchange) GetPositions(ctx context.Context) ([]*domain.Position, error) {
+	return nil, nil
+}
 func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return nil, nil
 }
@@ -53,17 +56,16 @@ func (m *MockExchange) Subscribe(symbols []string) error {
 	return nil
 }
 
-
 func (m *MockExchange) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
-return order, nil
+	return order, nil
 }
 
 func (m *MockExchange) GetOrder(ctx context.Context, symbol, orderID string) (*domain.Order, error) {
-return &domain.Order{OrderID: orderID, Symbol: symbol, Status: "Filled"}, nil
+	return &domain.Order{OrderID: orderID, Symbol: symbol, Status: "Filled"}, nil
 }
 
 func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) error {
-return nil
+	return nil
 }
 
 func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {

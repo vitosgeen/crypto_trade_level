@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -22,6 +23,8 @@ func (s *Server) handleStartFundingBot(w http.ResponseWriter, r *http.Request) {
 		MinFundingRate          float64 `json:"min_funding_rate"`
 		WallCheckEnabled        bool    `json:"wall_check_enabled"`
 		WallThresholdMultiplier float64 `json:"wall_threshold_multiplier"`
+		StopLossPercentage      float64 `json:"stop_loss_percentage"`
+		TakeProfitPercentage    float64 `json:"take_profit_percentage"`
 	}
 
 	var req FundingBotConfigRequest
@@ -65,6 +68,8 @@ func (s *Server) handleStartFundingBot(w http.ResponseWriter, r *http.Request) {
 		MinFundingRate:          req.MinFundingRate,
 		WallCheckEnabled:        req.WallCheckEnabled,
 		WallThresholdMultiplier: req.WallThresholdMultiplier,
+		StopLossPercentage:      req.StopLossPercentage,
+		TakeProfitPercentage:    req.TakeProfitPercentage,
 	}
 
 	if err := s.fundingBotService.StartBot(r.Context(), config); err != nil {
@@ -110,4 +115,21 @@ func (s *Server) handleFundingBotStatus(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+func (s *Server) handleTestFundingBot(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "symbol parameter required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.fundingBotService.TriggerTestEvent(r.Context(), symbol); err != nil {
+		s.logger.Error("Test funding event failed", zap.Error(err))
+		http.Error(w, fmt.Sprintf("Test event failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "test_triggered"})
 }

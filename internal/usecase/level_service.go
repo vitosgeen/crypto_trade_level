@@ -71,31 +71,9 @@ func (s *LevelService) GetExchange() domain.Exchange {
 	return s.exchange
 }
 
-// GetPositions fetches active positions for all symbols with levels
+// GetPositions fetches active positions for the entire exchange account
 func (s *LevelService) GetPositions(ctx context.Context) ([]*domain.Position, error) {
-	levels, err := s.levelRepo.ListLevels(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	uniqueSymbols := make(map[string]bool)
-	for _, l := range levels {
-		uniqueSymbols[l.Symbol] = true
-	}
-
-	var positions []*domain.Position
-	for symbol := range uniqueSymbols {
-		pos, err := s.getPosition(ctx, symbol)
-		if err != nil {
-			// Assuming a logger exists, otherwise log directly
-			log.Printf("Failed to get position for symbol %s: %v", symbol, err)
-			continue
-		}
-		if pos.Size > 0 { // Only add positions with actual size
-			positions = append(positions, pos)
-		}
-	}
-	return positions, nil
+	return s.exchange.GetPositions(ctx)
 }
 
 // UpdateCache refreshes the in-memory cache of levels and tiers

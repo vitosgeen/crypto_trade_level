@@ -42,6 +42,9 @@ type FundingBot struct {
 	cancel              context.CancelFunc
 	currentOrder        *domain.Order
 	lastNextFundingTime int64
+	expectedFundingRate float64
+	fundingEventTime    time.Time
+	tpOrder             *domain.Order
 	mu                  sync.Mutex
 }
 
@@ -236,7 +239,17 @@ func (b *FundingBot) evaluate(ctx context.Context) error {
 
 	// Calculate countdown
 	now := time.Now().Unix()
+	// Convert NextFundingTime from milliseconds to seconds if needed
+	if ticker.NextFundingTime > 1000000000000 { // Heuristic check: > year 2001 in ms
+		ticker.NextFundingTime = ticker.NextFundingTime / 1000
+	}
 	countdown := ticker.NextFundingTime - now
+
+	b.logger.Info("Funding countdown  ",
+		zap.Int64("countdown", countdown),
+		// funding rate in percentage
+		zap.Float64("funding_rate", ticker.FundingRate*100),
+	)
 
 	// Check if we are approaching funding time
 	thresholdSeconds := int64(b.config.CountdownThreshold.Seconds())
@@ -249,8 +262,19 @@ func (b *FundingBot) evaluate(ctx context.Context) error {
 			zap.Float64("min_rate_pct", b.config.MinFundingRate*100))
 	}
 
+	// get absolute value of funding rate
+	fundingRateAbs := math.Abs(ticker.FundingRate)
+	if fundingRateAbs < b.config.MinFundingRate {
+		b.logger.Info("Skipping funding entry: Rate below threshold",
+			zap.String("symbol", b.config.Symbol),
+			zap.Float64("current_rate_pct", ticker.FundingRate*100),
+			zap.Float64("min_rate_pct", b.config.MinFundingRate*100),
+			zap.Float64("funding_rate_abs", fundingRateAbs))
+		return nil
+	}
+
 	// Check funding rate
-	if ticker.FundingRate <= 0 || ticker.FundingRate < b.config.MinFundingRate {
+	if fundingRateAbs < b.config.MinFundingRate {
 		// Not profitable or negative funding
 
 		// If we are in the countdown window but rate is low, log it explicitly
@@ -291,10 +315,19 @@ func (b *FundingBot) evaluate(ctx context.Context) error {
 				zap.Int64("prefix_funding_time", b.lastNextFundingTime),
 				zap.Int64("new_funding_time", ticker.NextFundingTime),
 				zap.Float64("funding_rate_pct", ticker.FundingRate*100),
-				zap.Float64("countdown_threshold_seconds", b.config.CountdownThreshold.Seconds()),
+				zap.Int64("countdown_threshold_seconds", int64(b.config.CountdownThreshold.Seconds())),
 				zap.Bool("wall_check_enabled", b.config.WallCheckEnabled),
 				zap.String("reason", "no_active_order"))
 		}
+
+		// ROLLOVR DETECTED: Set closure timer
+		b.mu.Lock()
+		b.fundingEventTime = time.Now()
+		b.mu.Unlock()
+		b.logger.Info("Funding rollover detected! Scheduling position closure in 10s.",
+			zap.String("symbol", b.config.Symbol),
+			zap.Time("event_time", b.fundingEventTime))
+
 		b.lastNextFundingTime = ticker.NextFundingTime
 	}
 
@@ -305,49 +338,54 @@ func (b *FundingBot) evaluate(ctx context.Context) error {
 
 	if countdown > thresholdSeconds {
 		// Too early
+		b.logger.Info("Funding countdown not active (too early)")
 		return nil
 	}
 
-	// Check if we already have an order
-	b.mu.Lock()
-	if b.currentOrder != nil {
-		b.mu.Unlock()
-		// Order already placed, wait for funding event
-		return b.monitorFundingEvent(ctx, ticker.NextFundingTime)
+	// Trigger entry logic if within threshold
+	if countdown <= thresholdSeconds {
+		return b.handleFundingEvent(ctx)
 	}
+
+	// CHECK FOR DELAYED CLOSURE
+	b.mu.Lock()
+	hasEventTime := !b.fundingEventTime.IsZero()
+	eventTime := b.fundingEventTime
 	b.mu.Unlock()
 
-	// Get order book for wall detection
-	if b.config.WallCheckEnabled {
-		orderBook, err := b.exchange.GetOrderBook(ctx, b.config.Symbol, "linear")
-		if err != nil {
-			return fmt.Errorf("failed to get order book: %w", err)
-		}
-
-		limitPrice := b.calculateLimitPrice(ticker.LastPrice, ticker.FundingRate)
-		hasWall := b.hasBigAskWall(orderBook, limitPrice)
-
-		b.logger.Info("Performing wall check",
-			zap.String("symbol", b.config.Symbol),
-			zap.Float64("limit_price", limitPrice),
-			zap.Bool("has_wall", hasWall),
-			zap.Float64("multiplier", b.config.WallThresholdMultiplier))
-
-		if hasWall {
-			b.logger.Info("Big ask wall detected, skipping entry",
+	if hasEventTime {
+		elapsed := time.Since(eventTime)
+		if elapsed >= 10*time.Second {
+			b.logger.Info("10 seconds passed since funding event. Closing position.",
 				zap.String("symbol", b.config.Symbol),
-				zap.Float64("wall_price", limitPrice))
-			return nil
+				zap.Duration("elapsed", elapsed))
+
+			// Reset event time first to avoid re-triggering if closure takes time
+			b.mu.Lock()
+			b.fundingEventTime = time.Time{}
+			tpOrder := b.tpOrder
+			b.tpOrder = nil
+			b.mu.Unlock()
+
+			// Close position
+			if err := b.closePosition(ctx); err != nil {
+				b.logger.Error("Failed to close position after funding", zap.Error(err))
+			}
+
+			// Cancel TP order if it exists
+			if tpOrder != nil {
+				if err := b.exchange.CancelOrder(ctx, b.config.Symbol, tpOrder.OrderID); err != nil {
+					b.logger.Warn("Failed to cancel TP order after closure", zap.Error(err), zap.String("order_id", tpOrder.OrderID))
+				}
+			}
+		} else {
+			b.logger.Info("Waiting for 10s closure...",
+				zap.String("symbol", b.config.Symbol),
+				zap.Duration("remaining", 10*time.Second-elapsed))
 		}
 	}
 
-	b.logger.Info("Conditions met, placing short order",
-		zap.String("symbol", b.config.Symbol),
-		zap.Float64("funding_rate_pct", ticker.FundingRate*100),
-		zap.Int64("countdown", countdown))
-
-	// Place limit short order
-	return b.placeShortOrder(ctx, ticker)
+	return nil
 }
 
 func (b *FundingBot) calculateLimitPrice(currentPrice, fundingRate float64) float64 {
@@ -404,29 +442,7 @@ func (b *FundingBot) placeShortOrder(ctx context.Context, ticker domain.Ticker) 
 	}
 
 	limitPrice := b.calculateLimitPrice(ticker.LastPrice, ticker.FundingRate)
-
-	// Calculate SL/TP prices
-	var stopLossPrice, takeProfitPrice float64
-
-	if b.config.StopLossPercentage > 0 {
-		// Short position: SL is ABOVE entry price
-		stopLossPrice = limitPrice * (1 + b.config.StopLossPercentage)
-		// Round to 4 decimals for now (should utilize tick size in improved version)
-		stopLossPrice = math.Round(stopLossPrice*10000) / 10000
-	}
-
-	if b.config.TakeProfitPercentage > 0 {
-		// Short position: TP is BELOW entry price
-		// User requested: TP = UserTP + FundingRate
-		// If funding rate is positive (we are paid), we want to capture that + our target.
-		// Example: User wants 0.5% profit. Funding is 0.1%. Total target 0.6%.
-		// So we set TP price at Entry * (1 - 0.006).
-
-		totalTargetPct := b.config.TakeProfitPercentage + ticker.FundingRate
-		takeProfitPrice = limitPrice * (1 - totalTargetPct)
-		// Round
-		takeProfitPrice = math.Round(takeProfitPrice*10000) / 10000
-	}
+	b.expectedFundingRate = ticker.FundingRate
 
 	order := &domain.Order{
 		Symbol:      b.config.Symbol,
@@ -436,8 +452,7 @@ func (b *FundingBot) placeShortOrder(ctx context.Context, ticker domain.Ticker) 
 		Price:       limitPrice,
 		TimeInForce: "GoodTillCancel",
 		ReduceOnly:  false,
-		StopLoss:    stopLossPrice,
-		TakeProfit:  takeProfitPrice,
+		// SL/TP will be placed as separate orders after fill
 	}
 
 	placedOrder, err := b.exchange.PlaceOrder(ctx, order)
@@ -446,12 +461,10 @@ func (b *FundingBot) placeShortOrder(ctx context.Context, ticker domain.Ticker) 
 	}
 
 	b.currentOrder = placedOrder
-	b.logger.Info("Placed funding arbitrage order",
+	b.logger.Info("Placed funding arbitrage order (awaiting fill)",
 		zap.String("symbol", b.config.Symbol),
 		zap.String("order_id", placedOrder.OrderID),
 		zap.Float64("price", limitPrice),
-		zap.Float64("stop_loss", stopLossPrice),
-		zap.Float64("take_profit", takeProfitPrice),
 		zap.Float64("funding_rate_pct", ticker.FundingRate*100))
 
 	return nil
@@ -474,40 +487,103 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.currentOrder == nil {
+	// 1. Check opened position (if exist nothing to do)
+	position, err := b.exchange.GetPosition(ctx, b.config.Symbol)
+	if err == nil && position != nil && position.Size > 0 {
+		b.logger.Info("Position already exists, skipping funding entry",
+			zap.String("symbol", b.config.Symbol),
+			zap.Float64("size", position.Size))
 		return nil
 	}
 
-	// Check if order was filled
-	order, err := b.exchange.GetOrder(ctx, b.config.Symbol, b.currentOrder.OrderID)
+	// Get latest ticker and funding rate
+	tickers, err := b.exchange.GetTickers(ctx, "linear")
 	if err != nil {
-		b.logger.Error("Failed to get order status", zap.Error(err))
+		return fmt.Errorf("failed to get tickers: %w", err)
+	}
+
+	var ticker domain.Ticker
+	found := false
+	for _, t := range tickers {
+		if t.Symbol == b.config.Symbol {
+			ticker = t
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("symbol %s not found in tickers", b.config.Symbol)
+	}
+
+	// 2. Check big wall (if exist nothing to do, just write to logs)
+	if b.config.WallCheckEnabled {
+		orderBook, err := b.exchange.GetOrderBook(ctx, b.config.Symbol, "linear")
+		if err != nil {
+			return fmt.Errorf("failed to get order book: %w", err)
+		}
+
+		// Use LastPrice for wall check limit
+		limitPrice := ticker.LastPrice
+		hasWall := b.hasBigAskWall(orderBook, limitPrice)
+
+		if hasWall {
+			b.logger.Info("Big ask wall detected, skipping entry (logged)",
+				zap.String("symbol", b.config.Symbol),
+				zap.Float64("wall_check_price", limitPrice))
+			return nil
+		}
+	}
+
+	// 3. Open short postion(current price) and long limit order(funding rate + (0.5%)) at the same time
+	b.logger.Info("Opening simultaneous funding arbitrage positions",
+		zap.String("symbol", b.config.Symbol),
+		zap.Float64("current_price", ticker.LastPrice),
+		zap.Float64("funding_rate_pct", ticker.FundingRate*100))
+
+	// Short Position (Market order for immediate entry at current price)
+	shortOrder := &domain.Order{
+		Symbol:     b.config.Symbol,
+		Side:       domain.SideShort,
+		Type:       "Market",
+		Size:       b.config.PositionSize,
+		ReduceOnly: false,
+	}
+
+	placedShort, err := b.exchange.PlaceOrder(ctx, shortOrder)
+	if err != nil {
+		return fmt.Errorf("failed to place short order: %w", err)
+	}
+	b.logger.Info("Placed short market order", zap.String("order_id", placedShort.OrderID))
+
+	// Long Limit Order (Take Profit)
+	// Formula: currentPrice * (1 - (math.Abs(fundingRate) + 0.5%))
+	// We use the absolute value of the funding rate + 0.5% as the distance below current price
+	tpDistance := math.Abs(ticker.FundingRate) + 0.005
+	tpPrice := ticker.LastPrice * (1 - tpDistance)
+	tpPrice = math.Round(tpPrice*10000) / 10000 // Simple rounding for standard pairs
+
+	longOrder := &domain.Order{
+		Symbol:      b.config.Symbol,
+		Side:        domain.SideLong,
+		Type:        "Limit",
+		Size:        b.config.PositionSize,
+		Price:       tpPrice,
+		TimeInForce: "GoodTillCancel",
+		ReduceOnly:  true,
+	}
+
+	placedLong, err := b.exchange.PlaceOrder(ctx, longOrder)
+	if err != nil {
+		b.logger.Error("Failed to place long limit order (TP)", zap.Error(err))
 		return err
 	}
+	b.tpOrder = placedLong
+	b.logger.Info("Placed long limit order (TP)",
+		zap.String("order_id", placedLong.OrderID),
+		zap.Float64("tp_price", tpPrice),
+		zap.Float64("tp_distance_pct", tpDistance*100))
 
-	if order.Status == "Filled" {
-		b.logger.Info("Order filled, funding collected!",
-			zap.String("symbol", b.config.Symbol),
-			zap.String("order_id", order.OrderID))
-
-		// Close position immediately (market order)
-		if err := b.closePosition(ctx); err != nil {
-			b.logger.Error("Failed to close position", zap.Error(err))
-			return err
-		}
-	} else {
-		// Order not filled, cancel it
-		b.logger.Info("Order not filled, cancelling",
-			zap.String("symbol", b.config.Symbol),
-			zap.String("order_id", order.OrderID))
-
-		if err := b.cancelOrder(ctx); err != nil {
-			b.logger.Error("Failed to cancel order", zap.Error(err))
-			return err
-		}
-	}
-
-	b.currentOrder = nil
 	return nil
 }
 
@@ -610,4 +686,89 @@ func (b *FundingBot) getStatus(ctx context.Context) (*FundingBotStatus, error) {
 	}
 
 	return status, nil
+}
+
+func (s *FundingBotService) TriggerTestEvent(ctx context.Context, symbol string) error {
+	s.mu.Lock()
+	bot, exists := s.bots[symbol]
+	s.mu.Unlock()
+
+	if !exists || !bot.running {
+		return fmt.Errorf("no running funding bot found for %s", symbol)
+	}
+
+	return bot.TriggerTestEvent(ctx)
+}
+
+func (b *FundingBot) TriggerTestEvent(ctx context.Context) error {
+	b.mu.Lock()
+	if !b.running {
+		b.mu.Unlock()
+		return fmt.Errorf("bot is not running")
+	}
+	// Don't lock for the whole duration, just check running state
+	b.mu.Unlock()
+
+	b.logger.Info("⚡ TRIGGERING TEST FUNDING EVENT ⚡", zap.String("symbol", b.config.Symbol))
+
+	// Get funding data
+	tickers, err := b.exchange.GetTickers(ctx, "linear")
+	if err != nil {
+		return fmt.Errorf("failed to get tickers: %w", err)
+	}
+
+	var ticker domain.Ticker
+	found := false
+	for _, t := range tickers {
+		if t.Symbol == b.config.Symbol {
+			ticker = t
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("symbol %s not found in tickers", b.config.Symbol)
+	}
+
+	// BYPASS: Min Funding Rate check
+	// BYPASS: Countdown check
+
+	// Check if active order exists
+	b.mu.Lock()
+	if b.currentOrder != nil {
+		b.mu.Unlock()
+		return fmt.Errorf("active order already exists")
+	}
+	b.mu.Unlock()
+
+	// Wall Check (keep this logic as it's part of the strategy we want to test)
+	if b.config.WallCheckEnabled {
+		orderBook, err := b.exchange.GetOrderBook(ctx, b.config.Symbol, "linear")
+		if err != nil {
+			return fmt.Errorf("failed to get order book: %w", err)
+		}
+
+		limitPrice := b.calculateLimitPrice(ticker.LastPrice, ticker.FundingRate)
+		hasWall := b.hasBigAskWall(orderBook, limitPrice)
+
+		b.logger.Info("Test Event: Performing actual wall check",
+			zap.String("symbol", b.config.Symbol),
+			zap.Bool("has_wall", hasWall))
+
+		if hasWall {
+			b.logger.Info("Test Event: Wall detected! Order would be skipped in real scenario.",
+				zap.String("symbol", b.config.Symbol))
+			// For test, maybe we still want to force it? Or strictly follow logic?
+			// User said "imitating", implies following rules.
+			return fmt.Errorf("wall detected, test skipped order placement")
+		}
+	}
+
+	b.logger.Info("Test Event: Conditions OK. Triggering handleFundingEvent logic.",
+		zap.String("symbol", b.config.Symbol),
+		zap.Float64("current_funding_rate", ticker.FundingRate*100))
+
+	// Directly call handleFundingEvent to simulate the funding event logic
+	return b.handleFundingEvent(ctx)
 }

@@ -9,6 +9,7 @@ type Exchange interface {
 	MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error
 	ClosePosition(ctx context.Context, symbol string) error
 	GetPosition(ctx context.Context, symbol string) (*Position, error)
+	GetPositions(ctx context.Context) ([]*Position, error)
 	GetCandles(ctx context.Context, symbol, interval string, limit int) ([]Candle, error)
 	GetOrderBook(ctx context.Context, symbol string, category string) (*OrderBook, error)
 	GetRecentTrades(ctx context.Context, symbol string, limit int) ([]PublicTrade, error)

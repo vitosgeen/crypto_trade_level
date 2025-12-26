@@ -293,12 +293,16 @@
                 <!-- Control Buttons -->
                 <div style="display: flex; gap: 15px; justify-content: center;">
                     <button type="button" id="start-bot-btn"
-                        style="flex: 1; max-width: 250px; padding: 15px 30px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(40, 167, 69, 0.3); transition: all 0.3s;">
+                        style="flex: 1; max-width: 200px; padding: 15px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(40, 167, 69, 0.3); transition: all 0.3s;">
                         <span style="font-size: 18px;">▶</span> Start Bot
                     </button>
                     <button type="button" id="stop-bot-btn"
-                        style="flex: 1; max-width: 250px; padding: 15px 30px; background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 53, 69, 0.3); transition: all 0.3s;">
+                        style="flex: 1; max-width: 200px; padding: 15px; background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 53, 69, 0.3); transition: all 0.3s;">
                         <span style="font-size: 18px;">■</span> Stop Bot
+                    </button>
+                    <button type="button" id="test-bot-btn" disabled
+                        style="flex: 1; max-width: 200px; padding: 15px; background: linear-gradient(135deg, #ffc107 0%, #ffca2c 100%); color: #000; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: not-allowed; opacity: 0.6; box-shadow: 0 4px 6px rgba(255, 193, 7, 0.3); transition: all 0.3s;">
+                        <span style="font-size: 18px;">⚡</span> Test
                     </button>
                 </div>
             </form>
@@ -644,6 +648,51 @@
         // Speed Bot Configuration
         let statusPollingInterval = null;
 
+        function updateButtonStates(running) {
+            const startBtn = document.getElementById('start-bot-btn');
+            const stopBtn = document.getElementById('stop-bot-btn');
+            const testBtn = document.getElementById('test-bot-btn');
+            const configStatus = document.getElementById('config-status');
+
+            if (running) {
+                startBtn.disabled = true;
+                startBtn.style.opacity = '0.5';
+                startBtn.style.cursor = 'not-allowed';
+
+                stopBtn.disabled = false;
+                stopBtn.style.opacity = '1';
+                stopBtn.style.cursor = 'pointer';
+
+                testBtn.disabled = false;
+                testBtn.style.opacity = '1';
+                testBtn.style.cursor = 'pointer';
+
+                configStatus.style.display = 'block';
+                configStatus.style.background = 'rgba(40, 167, 69, 0.1)';
+                configStatus.style.border = '1px solid #28a745';
+                configStatus.style.color = '#28a745';
+                configStatus.textContent = '✅ Bot is running';
+            } else {
+                startBtn.disabled = false;
+                startBtn.style.opacity = '1';
+                startBtn.style.cursor = 'pointer';
+
+                stopBtn.disabled = true;
+                stopBtn.style.opacity = '0.5';
+                stopBtn.style.cursor = 'not-allowed';
+
+                testBtn.disabled = true;
+                testBtn.style.opacity = '0.5';
+                testBtn.style.cursor = 'not-allowed';
+
+                configStatus.style.display = 'block';
+                configStatus.style.background = 'rgba(108, 117, 125, 0.1)';
+                configStatus.style.border = '1px solid #6c757d';
+                configStatus.style.color = '#6c757d';
+                configStatus.textContent = '⏹️ Bot is stopped';
+            }
+        }
+
         async function startBot() {
             const config = {
                 symbol: symbol,
@@ -742,6 +791,9 @@
                 } else {
                     card.style.display = 'none';
                 }
+
+                // Sync button states
+                updateButtonStates(status.running);
             } catch (e) {
                 console.error('Failed to fetch bot status', e);
             }
@@ -758,27 +810,6 @@
                 statusPollingInterval = null;
             }
             document.getElementById('bot-status-card').style.display = 'none';
-        }
-
-        function updateButtonStates(running) {
-            const startBtn = document.getElementById('start-bot-btn');
-            const stopBtn = document.getElementById('stop-bot-btn');
-
-            if (running) {
-                startBtn.style.opacity = '0.5';
-                startBtn.style.cursor = 'not-allowed';
-                startBtn.disabled = true;
-                stopBtn.style.opacity = '1';
-                stopBtn.style.cursor = 'pointer';
-                stopBtn.disabled = false;
-            } else {
-                startBtn.style.opacity = '1';
-                startBtn.style.cursor = 'pointer';
-                startBtn.disabled = false;
-                stopBtn.style.opacity = '0.5';
-                stopBtn.style.cursor = 'not-allowed';
-                stopBtn.disabled = true;
-            }
         }
 
         function showStatus(message, type) {
@@ -806,12 +837,35 @@
         }
 
         // Initialize
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', async function () {
             initChart();
+
+            // Load chart data
+            await loadChartData();
 
             // Button handlers
             document.getElementById('start-bot-btn').addEventListener('click', startBot);
             document.getElementById('stop-bot-btn').addEventListener('click', stopBot);
+
+            const testBtn = document.getElementById('test-bot-btn');
+            testBtn.addEventListener('click', async () => {
+                if (testBtn.disabled) return;
+
+                if (!confirm("⚠️ This will force an order evaluation using current market price! Are you sure?")) return;
+
+                try {
+                    const response = await fetch(`/api/fundingbot/test?symbol=${symbol}`, { method: 'POST' });
+                    if (response.ok) {
+                        alert("Test event triggered! Check logs/status.");
+                        updateBotStatus();
+                    } else {
+                        const txt = await response.text();
+                        alert("Test failed: " + txt);
+                    }
+                } catch (e) {
+                    alert("Error: " + e.message);
+                }
+            });
 
             // Check if bot is running and start polling
             startStatusPolling();
