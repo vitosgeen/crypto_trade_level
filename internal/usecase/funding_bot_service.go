@@ -45,6 +45,8 @@ type FundingBot struct {
 	expectedFundingRate float64
 	fundingEventTime    time.Time
 	tpOrder             *domain.Order
+	needsNextCandleLog  bool
+	initialLogMinute    int
 	mu                  sync.Mutex
 }
 
@@ -245,87 +247,16 @@ func (b *FundingBot) evaluate(ctx context.Context) error {
 	}
 	countdown := ticker.NextFundingTime - now
 
-	b.logger.Info("Funding countdown  ",
-		zap.Int64("countdown", countdown),
-		// funding rate in percentage
-		zap.Float64("funding_rate", ticker.FundingRate*100),
-	)
-
-	// Check if we are approaching funding time
-	thresholdSeconds := int64(b.config.CountdownThreshold.Seconds())
-	if countdown <= thresholdSeconds {
-		b.logger.Info("Funding countdown active (scanning)",
-			zap.String("symbol", b.config.Symbol),
-			zap.Int64("countdown_seconds", countdown),
-			zap.Int64("threshold_seconds", thresholdSeconds),
-			zap.Float64("current_rate_pct", ticker.FundingRate*100),
-			zap.Float64("min_rate_pct", b.config.MinFundingRate*100))
-	}
-
-	// get absolute value of funding rate
-	fundingRateAbs := math.Abs(ticker.FundingRate)
-	if fundingRateAbs < b.config.MinFundingRate {
-		b.logger.Info("Skipping funding entry: Rate below threshold",
-			zap.String("symbol", b.config.Symbol),
-			zap.Float64("current_rate_pct", ticker.FundingRate*100),
-			zap.Float64("min_rate_pct", b.config.MinFundingRate*100),
-			zap.Float64("funding_rate_abs", fundingRateAbs))
-		return nil
-	}
-
-	// Check funding rate
-	if fundingRateAbs < b.config.MinFundingRate {
-		// Not profitable or negative funding
-
-		// If we are in the countdown window but rate is low, log it explicitly
-		if countdown <= thresholdSeconds {
-			b.logger.Info("Skipping funding entry: Rate below threshold",
-				zap.String("symbol", b.config.Symbol),
-				zap.Float64("current_rate_pct", ticker.FundingRate*100),
-				zap.Float64("min_rate_pct", b.config.MinFundingRate*100))
-		}
-
-		// Check for rollover if we were tracking a previous funding time
-		if b.lastNextFundingTime > 0 && ticker.NextFundingTime > b.lastNextFundingTime {
-			b.logger.Info("Funding event passed without action",
-				zap.String("symbol", b.config.Symbol),
-				zap.Int64("previous_funding_time", b.lastNextFundingTime),
-				zap.Int64("new_funding_time", ticker.NextFundingTime),
-				zap.Float64("funding_rate_pct", ticker.FundingRate*100),
-				zap.Float64("min_funding_rate", b.config.MinFundingRate),
-				zap.String("reason", "rate_below_threshold"))
-			b.lastNextFundingTime = ticker.NextFundingTime
-		}
-		// Also update if not initialized
-		if b.lastNextFundingTime == 0 {
-			b.lastNextFundingTime = ticker.NextFundingTime
-		}
-		return nil
-	}
-
-	// Check for funding rollover (event happened)
+	// 1. ROLLOVER DETECTION
 	if b.lastNextFundingTime > 0 && ticker.NextFundingTime > b.lastNextFundingTime {
-		b.mu.Lock()
-		hasOrder := b.currentOrder != nil
-		b.mu.Unlock()
-
-		if !hasOrder {
-			b.logger.Info("Funding event passed without action",
-				zap.String("symbol", b.config.Symbol),
-				zap.Int64("prefix_funding_time", b.lastNextFundingTime),
-				zap.Int64("new_funding_time", ticker.NextFundingTime),
-				zap.Float64("funding_rate_pct", ticker.FundingRate*100),
-				zap.Int64("countdown_threshold_seconds", int64(b.config.CountdownThreshold.Seconds())),
-				zap.Bool("wall_check_enabled", b.config.WallCheckEnabled),
-				zap.String("reason", "no_active_order"))
-		}
-
-		// ROLLOVR DETECTED: Set closure timer
 		b.mu.Lock()
 		b.fundingEventTime = time.Now()
 		b.mu.Unlock()
+
 		b.logger.Info("Funding rollover detected! Scheduling position closure in 10s.",
 			zap.String("symbol", b.config.Symbol),
+			zap.Int64("previous_funding_time", b.lastNextFundingTime),
+			zap.Int64("new_funding_time", ticker.NextFundingTime),
 			zap.Time("event_time", b.fundingEventTime))
 
 		b.lastNextFundingTime = ticker.NextFundingTime
@@ -336,18 +267,7 @@ func (b *FundingBot) evaluate(ctx context.Context) error {
 		b.lastNextFundingTime = ticker.NextFundingTime
 	}
 
-	if countdown > thresholdSeconds {
-		// Too early
-		b.logger.Info("Funding countdown not active (too early)")
-		return nil
-	}
-
-	// Trigger entry logic if within threshold
-	if countdown <= thresholdSeconds {
-		return b.handleFundingEvent(ctx)
-	}
-
-	// CHECK FOR DELAYED CLOSURE
+	// 2. CHECK FOR DELAYED CLOSURE
 	b.mu.Lock()
 	hasEventTime := !b.fundingEventTime.IsZero()
 	eventTime := b.fundingEventTime
@@ -356,7 +276,7 @@ func (b *FundingBot) evaluate(ctx context.Context) error {
 	if hasEventTime {
 		elapsed := time.Since(eventTime)
 		if elapsed >= 10*time.Second {
-			b.logger.Info("10 seconds passed since funding event. Closing position.",
+			b.logger.Info("10 seconds passed since funding event. Closing position if exists.",
 				zap.String("symbol", b.config.Symbol),
 				zap.Duration("elapsed", elapsed))
 
@@ -367,7 +287,7 @@ func (b *FundingBot) evaluate(ctx context.Context) error {
 			b.tpOrder = nil
 			b.mu.Unlock()
 
-			// Close position
+			// Close position (checks if size > 0 internally)
 			if err := b.closePosition(ctx); err != nil {
 				b.logger.Error("Failed to close position after funding", zap.Error(err))
 			}
@@ -379,13 +299,88 @@ func (b *FundingBot) evaluate(ctx context.Context) error {
 				}
 			}
 		} else {
-			b.logger.Info("Waiting for 10s closure...",
+			// Still waiting for 10s
+			b.logger.Debug("Waiting for 10s closure...",
 				zap.String("symbol", b.config.Symbol),
 				zap.Duration("remaining", 10*time.Second-elapsed))
 		}
 	}
 
+	// 3. LOGGING NEXT CANDLE
+	if b.needsNextCandleLog {
+		currentMinute := time.Now().Minute()
+		if currentMinute != b.initialLogMinute {
+			b.logOrderBook(ctx, "Next Candle")
+			b.needsNextCandleLog = false
+		}
+	}
+
+	// 4. ENTRY LOGIC CHECK
+	b.logger.Info("Funding countdown  ",
+		zap.Int64("countdown", countdown),
+		zap.Float64("funding_rate_pct", ticker.FundingRate*100),
+	)
+
+	// Check if we are approaching funding time (must be in the future)
+	thresholdSeconds := int64(b.config.CountdownThreshold.Seconds())
+	if countdown > 0 && countdown <= thresholdSeconds {
+		b.logger.Info("Funding countdown active (scanning)",
+			zap.String("symbol", b.config.Symbol),
+			zap.Int64("countdown_seconds", countdown),
+			zap.Float64("current_rate_pct", ticker.FundingRate*100),
+			zap.Float64("min_rate_pct", b.config.MinFundingRate*100))
+
+		// Check funding rate
+		fundingRateAbs := math.Abs(ticker.FundingRate)
+		if fundingRateAbs < b.config.MinFundingRate {
+			b.logger.Info("Skipping funding entry: Rate below threshold",
+				zap.String("symbol", b.config.Symbol),
+				zap.Float64("current_rate_pct", ticker.FundingRate*100),
+				zap.Float64("min_rate_pct", b.config.MinFundingRate*100))
+			return nil
+		}
+
+		// Trigger entry logic
+		return b.handleFundingEvent(ctx)
+	}
+
+	if countdown < 0 {
+		b.logger.Debug("Funding time passed, waiting for rollover",
+			zap.String("symbol", b.config.Symbol),
+			zap.Int64("countdown", countdown))
+	}
+
 	return nil
+}
+
+func (b *FundingBot) logOrderBook(ctx context.Context, label string) {
+	orderBook, err := b.exchange.GetOrderBook(ctx, b.config.Symbol, "linear")
+	if err != nil {
+		b.logger.Error("Failed to get order book for logging", zap.Error(err), zap.String("label", label))
+		return
+	}
+
+	if orderBook == nil {
+		b.logger.Warn("Order book is nil for logging", zap.String("label", label))
+		return
+	}
+
+	// Log top 10 bids and asks for better visibility
+	topBids := orderBook.Bids
+	if len(topBids) > 10 {
+		topBids = topBids[:10]
+	}
+	topAsks := orderBook.Asks
+	if len(topAsks) > 10 {
+		topAsks = topAsks[:10]
+	}
+
+	b.logger.Info("Order Book Snapshot",
+		zap.String("label", label),
+		zap.String("symbol", b.config.Symbol),
+		zap.Any("top_bids", topBids),
+		zap.Any("top_asks", topAsks),
+	)
 }
 
 func (b *FundingBot) calculateLimitPrice(currentPrice, fundingRate float64) float64 {
@@ -583,6 +578,11 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 		zap.String("order_id", placedLong.OrderID),
 		zap.Float64("tp_price", tpPrice),
 		zap.Float64("tp_distance_pct", tpDistance*100))
+
+	// LOG ORDER BOOK Snapshot
+	b.logOrderBook(ctx, "⏱️ Countdown Threshold")
+	b.needsNextCandleLog = true
+	b.initialLogMinute = time.Now().Minute()
 
 	return nil
 }

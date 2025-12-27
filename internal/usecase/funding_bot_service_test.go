@@ -280,3 +280,146 @@ func TestHandleFundingEvent_NegativeFunding(t *testing.T) {
 			longOrder.Price, currentPrice, fundingRate)
 	}
 }
+
+func TestEvaluate_ThresholdBoundary(t *testing.T) {
+	logger := zap.NewNop()
+	now := time.Now().Unix()
+	threshold := 60 * time.Second
+	thresholdSeconds := int64(threshold.Seconds())
+
+	config := FundingBotConfig{
+		Symbol:             "BTCUSDT",
+		PositionSize:       0.1,
+		CountdownThreshold: threshold,
+		MinFundingRate:     0.0001,
+		WallCheckEnabled:   false,
+	}
+
+	tests := []struct {
+		name          string
+		nextFunding   int64
+		shouldTrigger bool
+	}{
+		{
+			name:          "Just outside threshold (T+1s)",
+			nextFunding:   now + thresholdSeconds + 1,
+			shouldTrigger: false,
+		},
+		{
+			name:          "Exactly at threshold boundary (T)",
+			nextFunding:   now + thresholdSeconds,
+			shouldTrigger: true,
+		},
+		{
+			name:          "Just inside threshold (T-1s)",
+			nextFunding:   now + thresholdSeconds - 1,
+			shouldTrigger: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockEx := &MockFundingExchange{
+				Tickers: []domain.Ticker{
+					{Symbol: "BTCUSDT", LastPrice: 50000, FundingRate: 0.0005, NextFundingTime: tt.nextFunding},
+				},
+			}
+
+			bot := &FundingBot{
+				config:   config,
+				exchange: mockEx,
+				logger:   logger,
+				running:  true,
+			}
+
+			err := bot.evaluate(context.Background())
+			if err != nil {
+				t.Fatalf("Evaluate failed: %v", err)
+			}
+
+			triggered := len(mockEx.PlacedOrders) > 0
+			if triggered != tt.shouldTrigger {
+				t.Errorf("Expected triggered=%v, got %v", tt.shouldTrigger, triggered)
+			}
+		})
+	}
+}
+
+func TestEvaluate_DelayedClosure(t *testing.T) {
+	logger := zap.NewNop()
+	symbol := "BTCUSDT"
+
+	now := time.Now()
+	// Initial state: 1 minute before funding
+	nextFunding := now.Unix() + 60
+
+	mockEx := &MockFundingExchange{
+		Tickers: []domain.Ticker{
+			{Symbol: symbol, LastPrice: 50000, FundingRate: 0.0005, NextFundingTime: nextFunding},
+		},
+		Position: &domain.Position{Symbol: symbol, Size: 0.1},
+	}
+
+	bot := &FundingBot{
+		config: FundingBotConfig{
+			Symbol:             symbol,
+			PositionSize:       0.1,
+			CountdownThreshold: 10 * time.Second,
+			MinFundingRate:     0.0001,
+		},
+		exchange: mockEx,
+		logger:   logger,
+		running:  true,
+	}
+
+	// 1. First evaluation: just setting lastNextFundingTime
+	err := bot.evaluate(context.Background())
+	if err != nil {
+		t.Fatalf("First evaluate failed: %v", err)
+	}
+	if !bot.fundingEventTime.IsZero() {
+		t.Fatal("fundingEventTime should be zero before rollover")
+	}
+
+	// 2. Rollover occurs: NextFundingTime jumps 8 hours
+	mockEx.Tickers[0].NextFundingTime += 8 * 3600
+	err = bot.evaluate(context.Background())
+	if err != nil {
+		t.Fatalf("Second evaluate failed: %v", err)
+	}
+
+	if bot.fundingEventTime.IsZero() {
+		t.Fatal("fundingEventTime should be set after rollover")
+	}
+	if mockEx.Position.Size != 0.1 {
+		t.Fatal("Position should NOT be closed immediately after rollover")
+	}
+
+	// 3. Evaluate after 5 seconds: still shouldn't close
+	// We simulate time by overriding bot's locked time? No, we just need time.Since to be < 10s.
+	// Since we just set it, it's definitely < 10s.
+	err = bot.evaluate(context.Background())
+	if err != nil {
+		t.Fatalf("Third evaluate failed: %v", err)
+	}
+	if mockEx.Position.Size != 0.1 {
+		t.Fatal("Position should NOT be closed after only 5 seconds (simulated)")
+	}
+
+	// 4. Manually advance fundingEventTime to simulate 11 seconds passed
+	bot.mu.Lock()
+	bot.fundingEventTime = time.Now().Add(-11 * time.Second)
+	bot.mu.Unlock()
+
+	err = bot.evaluate(context.Background())
+	if err != nil {
+		t.Fatalf("Fourth evaluate failed: %v", err)
+	}
+
+	if mockEx.Position.Size != 0 {
+		t.Fatal("Position SHOULD be closed after 10 seconds passed")
+	}
+	if !bot.fundingEventTime.IsZero() {
+		t.Fatal("fundingEventTime should be reset after closure")
+	}
+}
