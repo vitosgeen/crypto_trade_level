@@ -391,19 +391,22 @@ func (b *FundingBot) calculateLimitPrice(currentPrice, fundingRate float64) floa
 	return currentPrice * (1 + premium)
 }
 
-func (b *FundingBot) hasBigAskWall(orderBook *domain.OrderBook, limitPrice float64) bool {
-	// Check if there's a large ask order (wall) at or below our limit price
-	// A "wall" is defined as an order significantly larger than average
-
-	if len(orderBook.Asks) == 0 {
+func (b *FundingBot) IsWallStable(ctx context.Context, price float64, side string) bool {
+	// Calculate current threshold
+	orderBook, err := b.exchange.GetOrderBook(ctx, b.config.Symbol, "linear")
+	if err != nil {
 		return false
 	}
 
 	avgVolume := 0.0
 	count := 0
+	entries := orderBook.Asks
+	if side == "bid" {
+		entries = orderBook.Bids
+	}
 
-	for _, ask := range orderBook.Asks {
-		avgVolume += ask.Size
+	for _, e := range entries {
+		avgVolume += e.Size
 		count++
 	}
 
@@ -414,17 +417,12 @@ func (b *FundingBot) hasBigAskWall(orderBook *domain.OrderBook, limitPrice float
 	avgVolume /= float64(count)
 	multiplier := b.config.WallThresholdMultiplier
 	if multiplier <= 0 {
-		multiplier = 2.0 // Default
+		multiplier = 2.0
 	}
-	wallThreshold := avgVolume * multiplier
+	threshold := avgVolume * multiplier
 
-	for _, ask := range orderBook.Asks {
-		if ask.Price <= limitPrice && ask.Size > wallThreshold {
-			return true
-		}
-	}
-
-	return false
+	// Use 30s as stability duration
+	return b.marketService.IsWallStable(b.config.Symbol, price, side, threshold, 30*time.Second)
 }
 
 func (b *FundingBot) placeShortOrder(ctx context.Context, ticker domain.Ticker) error {
@@ -512,51 +510,86 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 	}
 
 	// 2. Check big wall (if exist nothing to do, just write to logs)
+	// For Short entry, we check for Ask walls between current price and entry price.
+	entryPrice := b.calculateLimitPrice(ticker.LastPrice, ticker.FundingRate)
+
 	if b.config.WallCheckEnabled {
 		orderBook, err := b.exchange.GetOrderBook(ctx, b.config.Symbol, "linear")
 		if err != nil {
 			return fmt.Errorf("failed to get order book: %w", err)
 		}
 
-		// Use LastPrice for wall check limit
-		limitPrice := ticker.LastPrice
-		hasWall := b.hasBigAskWall(orderBook, limitPrice)
+		avgVolume := 0.0
+		for _, a := range orderBook.Asks {
+			avgVolume += a.Size
+		}
+		if len(orderBook.Asks) > 0 {
+			avgVolume /= float64(len(orderBook.Asks))
+		}
+
+		multiplier := b.config.WallThresholdMultiplier
+		if multiplier <= 0 {
+			multiplier = 2.0
+		}
+		threshold := avgVolume * multiplier
+
+		hasWall := false
+		wallPrice := 0.0
+
+		// Identify if any wall exists above current price but below or near our entry
+		for _, ask := range orderBook.Asks {
+			if ask.Price > ticker.LastPrice && ask.Price <= entryPrice*1.001 { // Within range or slightly above
+				if ask.Size > threshold {
+					// Check stability
+					if b.marketService.IsWallStable(b.config.Symbol, ask.Price, "ask", threshold, 30*time.Second) {
+						hasWall = true
+						wallPrice = ask.Price
+						break
+					}
+				}
+			}
+		}
 
 		if hasWall {
-			b.logger.Info("Big ask wall detected, skipping entry (logged)",
+			b.logger.Info("Stable big ask wall detected between current and entry, skipping entry",
 				zap.String("symbol", b.config.Symbol),
-				zap.Float64("wall_check_price", limitPrice))
+				zap.Float64("wall_price", wallPrice),
+				zap.Float64("entry_price", entryPrice),
+				zap.Float64("current_price", ticker.LastPrice))
 			return nil
 		}
 	}
 
-	// 3. Open short postion(current price) and long limit order(funding rate + (0.5%)) at the same time
+	// 3. Open short postion and long limit order(funding rate + (0.5%)) at the same time
 	b.logger.Info("Opening simultaneous funding arbitrage positions",
 		zap.String("symbol", b.config.Symbol),
+		zap.Float64("entry_price", entryPrice),
 		zap.Float64("current_price", ticker.LastPrice),
 		zap.Float64("funding_rate_pct", ticker.FundingRate*100))
 
-	// Short Position (Market order for immediate entry at current price)
+	// Short Position (Limit order for "sniper" entry)
 	shortOrder := &domain.Order{
-		Symbol:     b.config.Symbol,
-		Side:       domain.SideShort,
-		Type:       "Market",
-		Size:       b.config.PositionSize,
-		ReduceOnly: false,
+		Symbol:      b.config.Symbol,
+		Side:        domain.SideShort,
+		Type:        "Limit",
+		Size:        b.config.PositionSize,
+		Price:       entryPrice,
+		TimeInForce: "GoodTillCancel",
+		ReduceOnly:  false,
 	}
 
 	placedShort, err := b.exchange.PlaceOrder(ctx, shortOrder)
 	if err != nil {
 		return fmt.Errorf("failed to place short order: %w", err)
 	}
-	b.logger.Info("Placed short market order", zap.String("order_id", placedShort.OrderID))
+	b.currentOrder = placedShort
+	b.logger.Info("Placed short sniper limit order", zap.String("order_id", placedShort.OrderID))
 
 	// Long Limit Order (Take Profit)
-	// Formula: currentPrice * (1 - (math.Abs(fundingRate) + 0.5%))
-	// We use the absolute value of the funding rate + 0.5% as the distance below current price
+	// Formula: entryPrice * (1 - (math.Abs(fundingRate) + 0.5%))
 	tpDistance := math.Abs(ticker.FundingRate) + 0.005
-	tpPrice := ticker.LastPrice * (1 - tpDistance)
-	tpPrice = math.Round(tpPrice*10000) / 10000 // Simple rounding for standard pairs
+	tpPrice := entryPrice * (1 - tpDistance)
+	tpPrice = math.Round(tpPrice*10000) / 10000
 
 	longOrder := &domain.Order{
 		Symbol:      b.config.Symbol,
@@ -571,6 +604,7 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 	placedLong, err := b.exchange.PlaceOrder(ctx, longOrder)
 	if err != nil {
 		b.logger.Error("Failed to place long limit order (TP)", zap.Error(err))
+		// We still have the short order open, which might be filled.
 		return err
 	}
 	b.tpOrder = placedLong
@@ -749,19 +783,41 @@ func (b *FundingBot) TriggerTestEvent(ctx context.Context) error {
 			return fmt.Errorf("failed to get order book: %w", err)
 		}
 
-		limitPrice := b.calculateLimitPrice(ticker.LastPrice, ticker.FundingRate)
-		hasWall := b.hasBigAskWall(orderBook, limitPrice)
+		entryPrice := b.calculateLimitPrice(ticker.LastPrice, ticker.FundingRate)
+
+		avgVolume := 0.0
+		for _, a := range orderBook.Asks {
+			avgVolume += a.Size
+		}
+		if len(orderBook.Asks) > 0 {
+			avgVolume /= float64(len(orderBook.Asks))
+		}
+		multiplier := b.config.WallThresholdMultiplier
+		if multiplier <= 0 {
+			multiplier = 2.0
+		}
+		threshold := avgVolume * multiplier
+
+		hasWall := false
+		for _, ask := range orderBook.Asks {
+			if ask.Price > ticker.LastPrice && ask.Price <= entryPrice*1.001 {
+				if ask.Size > threshold {
+					if b.marketService.IsWallStable(b.config.Symbol, ask.Price, "ask", threshold, 30*time.Second) {
+						hasWall = true
+						break
+					}
+				}
+			}
+		}
 
 		b.logger.Info("Test Event: Performing actual wall check",
 			zap.String("symbol", b.config.Symbol),
 			zap.Bool("has_wall", hasWall))
 
 		if hasWall {
-			b.logger.Info("Test Event: Wall detected! Order would be skipped in real scenario.",
+			b.logger.Info("Test Event: Stable wall detected! Order would be skipped in real scenario.",
 				zap.String("symbol", b.config.Symbol))
-			// For test, maybe we still want to force it? Or strictly follow logic?
-			// User said "imitating", implies following rules.
-			return fmt.Errorf("wall detected, test skipped order placement")
+			return fmt.Errorf("stable wall detected, test skipped order placement")
 		}
 	}
 

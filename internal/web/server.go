@@ -77,6 +77,7 @@ func (s *Server) routes() {
 
 	// Liquidity
 	s.router.HandleFunc("GET /api/liquidity", s.handleLiquidity)
+	s.router.HandleFunc("GET /api/liquidity-history", s.handleLiquidityHistory)
 
 	// Status
 	s.router.HandleFunc("GET /status", s.handleStatus)

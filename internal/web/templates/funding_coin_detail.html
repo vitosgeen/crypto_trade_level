@@ -346,9 +346,59 @@
         let chart = null;
         let candleSeries = null;
         let liquiditySeries = null;
+        let heatmapSeries = null;
         let rsiSeries = null;
         let currentLiquidityLines = [];
         let lastCandle = null;
+
+        // --- Heatmap Implementation ---
+        class HeatmapRenderer {
+            draw(ctx, data, request) {
+                if (!data || !data.bars || data.bars.length === 0) return;
+
+                const { bars } = data;
+                bars.forEach(bar => {
+                    const x = bar.x;
+                    const barWidth = bar.barWidth;
+
+                    if (bar.originalData && bar.originalData.buckets) {
+                        bar.originalData.buckets.forEach(bucket => {
+                            const y = request.priceToCoordinate(bucket.price);
+                            const h = 2; // Fixed height for bucket lines
+                            ctx.fillStyle = bucket.color;
+                            ctx.fillRect(x, y - h / 2, barWidth, h);
+                        });
+                    }
+                });
+            }
+        }
+
+        class HeatmapSeries {
+            constructor() {
+                this._renderer = new HeatmapRenderer();
+            }
+            renderer() {
+                return this._renderer;
+            }
+            priceRange() {
+                return null;
+            }
+            isWhitespace() {
+                return false;
+            }
+            update(data) {
+                // Not used in this simple implementation
+            }
+            defaultOptions() {
+                return {};
+            }
+            static itemToData(item) {
+                return {
+                    time: item.time,
+                    buckets: item.buckets,
+                };
+            }
+        }
 
 
 
@@ -444,7 +494,13 @@
                 },
             });
 
-            // Liquidity series (background)
+            // Heatmap series (background)
+            heatmapSeries = chart.addCustomSeries(new HeatmapSeries(), {
+                priceLineVisible: false,
+                lastValueVisible: false,
+            });
+
+            // Liquidity series (for price lines)
             liquiditySeries = chart.addLineSeries({
                 color: 'transparent',
                 lineWidth: 0,
@@ -521,6 +577,55 @@
 
             loadChartData();
             loadLiquidity();
+            loadLiquidityHistory();
+        }
+
+        async function loadLiquidityHistory() {
+            try {
+                const response = await fetch(`/api/liquidity-history?symbol=${symbol}`);
+                const history = await response.json();
+                if (!history || history.length === 0) return;
+
+                const maxVol = Math.max(...history.flatMap(s => [...(s.bids || []), ...(s.asks || [])]).map(b => b.volume));
+
+                const heatmapData = history.map(snap => {
+                    const buckets = [];
+
+                    if (snap.bids) {
+                        snap.bids.forEach(b => {
+                            let opacity = b.volume / maxVol;
+                            if (opacity > 0.8) opacity = 0.8;
+                            if (opacity < 0.1) opacity = 0.1;
+                            buckets.push({
+                                price: b.price,
+                                color: `rgba(0, 255, 136, ${opacity.toFixed(2)})` // Greenish
+                            });
+                        });
+                    }
+
+                    if (snap.asks) {
+                        snap.asks.forEach(a => {
+                            let opacity = a.volume / maxVol;
+                            if (opacity > 0.8) opacity = 0.8;
+                            if (opacity < 0.1) opacity = 0.1;
+                            buckets.push({
+                                price: a.price,
+                                color: `rgba(255, 82, 82, ${opacity.toFixed(2)})` // Reddish
+                            });
+                        });
+                    }
+
+                    return {
+                        time: snap.time,
+                        buckets: buckets
+                    };
+                });
+
+                heatmapData.sort((a, b) => a.time - b.time);
+                heatmapSeries.setData(heatmapData);
+            } catch (e) {
+                console.error("Failed to fetch liquidity history", e);
+            }
         }
 
         async function loadChartData() {
@@ -571,6 +676,8 @@
                 if (clusters && clusters.length > 0) {
                     const maxVol = Math.max(...clusters.map(c => c.volume));
 
+                    const latestBuckets = [];
+
                     clusters.forEach(c => {
                         let opacity = 0.0;
                         if (maxVol > 0) {
@@ -580,8 +687,8 @@
                         }
 
                         const color = c.type === 'bid'
-                            ? `rgba(0, 255, 0, ${opacity.toFixed(2)})`
-                            : `rgba(255, 105, 180, ${opacity.toFixed(2)})`;
+                            ? `rgba(0, 255, 136, ${opacity.toFixed(2)})`
+                            : `rgba(255, 82, 82, ${opacity.toFixed(2)})`;
 
                         currentLiquidityLines.push(liquiditySeries.createPriceLine({
                             price: c.price,
@@ -591,7 +698,20 @@
                             axisLabelVisible: false,
                             title: '',
                         }));
+
+                        latestBuckets.push({
+                            price: c.price,
+                            color: color
+                        });
                     });
+
+                    // Update heatmap series with current data for the latest bar
+                    if (lastCandle) {
+                        heatmapSeries.update({
+                            time: lastCandle.time,
+                            buckets: latestBuckets
+                        });
+                    }
                 }
             } catch (e) {
                 console.error("Failed to fetch liquidity", e);
@@ -617,6 +737,8 @@
                         // New candle
                         candleSeries.update(latestCandle);
                         liquiditySeries.update({ time: latestCandle.time, value: latestCandle.close });
+                        // Also trigger a liquidity reload to fill the heatmap for the new candle
+                        loadLiquidity();
                     }
 
                     // Recalculate RSI for the latest data

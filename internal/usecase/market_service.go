@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"log"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -31,15 +32,27 @@ type PricePoint struct {
 }
 
 type MarketService struct {
-	exchange       domain.Exchange
-	cache          map[string]CachedLiquidity
-	trades         map[string][]Trade // Symbol -> Trades
-	depthHistory   map[string][]DepthSnapshot
-	priceHistory   map[string][]PricePoint // Symbol -> Price Points
-	cvdAccumulator map[string]float64      // Symbol -> Cumulative Volume Delta
-	subscribed     map[string]bool         // Symbol -> Subscribed
-	mu             sync.Mutex
-	timeNow        func() time.Time // For testing
+	exchange         domain.Exchange
+	cache            map[string]CachedLiquidity
+	trades           map[string][]Trade // Symbol -> Trades
+	depthHistory     map[string][]DepthSnapshot
+	priceHistory     map[string][]PricePoint // Symbol -> Price Points
+	cvdAccumulator   map[string]float64      // Symbol -> Cumulative Volume Delta
+	liquidityHistory map[string][]LiquiditySnapshot
+	subscribed       map[string]bool // Symbol -> Subscribed
+	mu               sync.Mutex
+	timeNow          func() time.Time // For testing
+}
+
+type LiquidityBucket struct {
+	Price  float64 `json:"price"`
+	Volume float64 `json:"volume"`
+}
+
+type LiquiditySnapshot struct {
+	Time int64             `json:"time"` // Unix seconds
+	Bids []LiquidityBucket `json:"bids"`
+	Asks []LiquidityBucket `json:"asks"`
 }
 
 type DepthSnapshot struct {
@@ -52,14 +65,15 @@ const MaxGLI = 10.0
 
 func NewMarketService(exchange domain.Exchange) *MarketService {
 	s := &MarketService{
-		exchange:       exchange,
-		cache:          make(map[string]CachedLiquidity),
-		trades:         make(map[string][]Trade),
-		depthHistory:   make(map[string][]DepthSnapshot),
-		priceHistory:   make(map[string][]PricePoint),
-		cvdAccumulator: make(map[string]float64),
-		subscribed:     make(map[string]bool),
-		timeNow:        time.Now,
+		exchange:         exchange,
+		cache:            make(map[string]CachedLiquidity),
+		trades:           make(map[string][]Trade),
+		depthHistory:     make(map[string][]DepthSnapshot),
+		priceHistory:     make(map[string][]PricePoint),
+		cvdAccumulator:   make(map[string]float64),
+		liquidityHistory: make(map[string][]LiquiditySnapshot),
+		subscribed:       make(map[string]bool),
+		timeNow:          time.Now,
 	}
 
 	// Subscribe to trades
@@ -525,9 +539,104 @@ func (s *MarketService) GetLiquidityClusters(ctx context.Context, symbol string)
 		TotalAsk: totalAsk,
 		Expiry:   s.timeNow().Add(10 * time.Second),
 	}
+
+	// Record for history
+	s.recordLiquiditySnapshot(symbol, clusters)
 	s.mu.Unlock()
 
 	return clusters, nil
+}
+
+func (s *MarketService) recordLiquiditySnapshot(symbol string, clusters []LiquidityCluster) {
+	now := s.timeNow().Unix()
+
+	// Avoid recording too frequently (e.g. record at most every 10s per symbol)
+	if history, ok := s.liquidityHistory[symbol]; ok && len(history) > 0 {
+		if now-history[len(history)-1].Time < 10 {
+			return
+		}
+	}
+
+	snapshot := LiquiditySnapshot{
+		Time: now,
+	}
+
+	for _, c := range clusters {
+		bucket := LiquidityBucket{Price: c.Price, Volume: c.Volume}
+		if c.Type == "bid" {
+			snapshot.Bids = append(snapshot.Bids, bucket)
+		} else {
+			snapshot.Asks = append(snapshot.Asks, bucket)
+		}
+	}
+
+	s.liquidityHistory[symbol] = append(s.liquidityHistory[symbol], snapshot)
+
+	// Keep last 1 hour of history (approx 360 snapshots if every 10s)
+	cutoff := now - 3600
+	valid := s.liquidityHistory[symbol][:0]
+	for _, snap := range s.liquidityHistory[symbol] {
+		if snap.Time > cutoff {
+			valid = append(valid, snap)
+		}
+	}
+	s.liquidityHistory[symbol] = valid
+}
+
+func (s *MarketService) GetLiquidityHistory(symbol string) []LiquiditySnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.liquidityHistory[symbol]
+}
+
+func (s *MarketService) IsWallStable(symbol string, price float64, side string, threshold float64, duration time.Duration) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	history, ok := s.liquidityHistory[symbol]
+	if !ok || len(history) == 0 {
+		return false
+	}
+
+	now := s.timeNow().Unix()
+	startTime := now - int64(duration.Seconds())
+
+	count := 0
+	matched := 0
+
+	for i := len(history) - 1; i >= 0; i-- {
+		snap := history[i]
+		if snap.Time < startTime {
+			break
+		}
+
+		count++
+		buckets := snap.Asks
+		if side == "bid" {
+			buckets = snap.Bids
+		}
+
+		found := false
+		for _, b := range buckets {
+			// Check if price is within 0.1% range of the bucket
+			if math.Abs(b.Price-price)/price < 0.001 {
+				if b.Volume >= threshold {
+					found = true
+					break
+				}
+			}
+		}
+		if found {
+			matched++
+		}
+	}
+
+	if count == 0 {
+		return false
+	}
+
+	// Stable if present in more than 70% of snapshots within the duration
+	return float64(matched)/float64(count) >= 0.7
 }
 
 func (s *MarketService) processSide(linear, spot []domain.OrderBookEntry, side string) []LiquidityCluster {

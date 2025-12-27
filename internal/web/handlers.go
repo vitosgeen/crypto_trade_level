@@ -369,6 +369,18 @@ func (s *Server) handleLiquidity(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(clusters)
 }
 
+func (s *Server) handleLiquidityHistory(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		symbol = "BTCUSDT"
+	}
+
+	history := s.marketService.GetLiquidityHistory(symbol)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
+}
+
 func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
 	symbol := r.URL.Query().Get("symbol")
 	if symbol == "" {
