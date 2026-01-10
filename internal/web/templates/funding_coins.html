@@ -210,6 +210,20 @@
     </nav>
 
     <div class="container">
+        <div class="card" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid {{if .AutoScannerRunning}}var(--success){{else}}var(--warning){{end}};">
+            <div>
+                <h2 style="margin-bottom: 5px; font-size: 1.4rem;">🤖 Auto-Scanner: {{if .AutoScannerRunning}}<span class="text-success">ACTIVE</span>{{else}}<span class="text-muted">IDLE</span>{{end}}</h2>
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0;">Automatically starts bots where funding rate > 0.8%</p>
+            </div>
+            <div>
+                {{if .AutoScannerRunning}}
+                <button onclick="toggleAutoScanner(false)" class="cta-button" style="background: var(--danger); color: white;">Stop Scanner</button>
+                {{else}}
+                <button onclick="toggleAutoScanner(true)" class="cta-button">Start Scanner</button>
+                {{end}}
+            </div>
+        </div>
+
         <div class="card">
             <h1>Funding Opportunities</h1>
             <p class="subtitle">Showing coins with non-zero funding rates.</p>
@@ -223,6 +237,7 @@
                         <th onclick="sortTable(1)">Funding Rate ▼</th>
                         <th onclick="sortTable(2)">Abs Funding Rate ▼</th>
                         <th onclick="sortTable(3)">Countdown ▼</th>
+                        <th>Bot Status</th>
                         <th>Action</th>
                     </tr>
                 </thead>
@@ -236,6 +251,13 @@
                         </td>
                         <td>{{printf "%.4f%%" .AbsFundingRate}}</td>
                         <td class="countdown" data-time="{{.NextFundingTime}}">--:--:--</td>
+                        <td>
+                            {{if .BotRunning}}
+                            <span style="background: rgba(0, 255, 136, 0.1); color: var(--success); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">RUNNING</span>
+                            {{else}}
+                            <span style="background: rgba(255, 255, 255, 0.05); color: var(--text-muted); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">OFF</span>
+                            {{end}}
+                        </td>
                         <td><a href="/funding-bot/coin/{{.Symbol}}" class="action-link">Trade →</a></td>
                     </tr>
                     {{end}}
@@ -330,6 +352,21 @@
 
             // Re-append rows in sorted order
             rows.forEach(row => tbody.appendChild(row));
+        }
+
+        async function toggleAutoScanner(start) {
+            const endpoint = start ? '/api/fundingbot/auto/start' : '/api/fundingbot/auto/stop';
+            try {
+                const response = await fetch(endpoint, { method: 'POST' });
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Failed to update auto-scanner');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Error connecting to server');
+            }
         }
     </script>
 </body>

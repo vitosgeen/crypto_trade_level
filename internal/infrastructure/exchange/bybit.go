@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -336,65 +337,79 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 }
 
 func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, error) {
-	path := "/v5/position/list?category=linear"
-	resp, err := b.sendRequest(ctx, "GET", path, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		RetCode int `json:"retCode"`
-		Result  struct {
-			List []struct {
-				Symbol        string `json:"symbol"`
-				Side          string `json:"side"`
-				Size          string `json:"size"`
-				AvgPrice      string `json:"avgPrice"`
-				MarkPrice     string `json:"markPrice"`
-				UnrealisedPnl string `json:"unrealisedPnl"`
-				Leverage      string `json:"leverage"`
-				TradeMode     int    `json:"tradeMode"` // 0: cross margin, 1: isolated margin
-			} `json:"list"`
-		} `json:"result"`
-	}
-
-	if err := json.Unmarshal(resp, &result); err != nil {
-		return nil, err
-	}
-
 	var positions []*domain.Position
-	for _, raw := range result.Result.List {
-		size, _ := strconv.ParseFloat(raw.Size, 64)
-		if size == 0 {
-			continue
+	cursor := ""
+
+	for {
+		path := "/v5/position/list?category=linear&limit=200"
+		if cursor != "" {
+			path += "&cursor=" + url.QueryEscape(cursor)
 		}
 
-		entry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
-		curr, _ := strconv.ParseFloat(raw.MarkPrice, 64)
-		pnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
-		lev, _ := strconv.Atoi(raw.Leverage)
-
-		side := domain.SideLong
-		if raw.Side == "Sell" {
-			side = domain.SideShort
+		resp, err := b.sendRequest(ctx, "GET", path, nil)
+		if err != nil {
+			return nil, err
 		}
 
-		marginType := "cross"
-		if raw.TradeMode == 1 {
-			marginType = "isolated"
+		var result struct {
+			RetCode int `json:"retCode"`
+			Result  struct {
+				List []struct {
+					Symbol        string `json:"symbol"`
+					Side          string `json:"side"`
+					Size          string `json:"size"`
+					AvgPrice      string `json:"avgPrice"`
+					MarkPrice     string `json:"markPrice"`
+					UnrealisedPnl string `json:"unrealisedPnl"`
+					Leverage      string `json:"leverage"`
+					TradeMode     int    `json:"tradeMode"` // 0: cross margin, 1: isolated margin
+				} `json:"list"`
+				NextPageCursor string `json:"nextPageCursor"`
+			} `json:"result"`
 		}
 
-		positions = append(positions, &domain.Position{
-			Exchange:      "bybit",
-			Symbol:        raw.Symbol,
-			Side:          side,
-			Size:          size,
-			EntryPrice:    entry,
-			CurrentPrice:  curr,
-			UnrealizedPnL: pnl,
-			Leverage:      lev,
-			MarginType:    marginType,
-		})
+		if err := json.Unmarshal(resp, &result); err != nil {
+			return nil, err
+		}
+
+		for _, raw := range result.Result.List {
+			size, _ := strconv.ParseFloat(raw.Size, 64)
+			if size == 0 {
+				continue
+			}
+
+			entry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
+			curr, _ := strconv.ParseFloat(raw.MarkPrice, 64)
+			pnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
+			lev, _ := strconv.Atoi(raw.Leverage)
+
+			side := domain.SideLong
+			if raw.Side == "Sell" {
+				side = domain.SideShort
+			}
+
+			marginType := "cross"
+			if raw.TradeMode == 1 {
+				marginType = "isolated"
+			}
+
+			positions = append(positions, &domain.Position{
+				Exchange:      "bybit",
+				Symbol:        raw.Symbol,
+				Side:          side,
+				Size:          size,
+				EntryPrice:    entry,
+				CurrentPrice:  curr,
+				UnrealizedPnL: pnl,
+				Leverage:      lev,
+				MarginType:    marginType,
+			})
+		}
+
+		cursor = result.Result.NextPageCursor
+		if cursor == "" {
+			break
+		}
 	}
 
 	return positions, nil

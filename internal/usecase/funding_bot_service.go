@@ -25,11 +25,14 @@ type FundingBotConfig struct {
 }
 
 type FundingBotService struct {
-	exchange      domain.Exchange
-	marketService *MarketService
-	bots          map[string]*FundingBot
-	logger        *zap.Logger
-	mu            sync.Mutex
+	exchange          domain.Exchange
+	tradeRepo         domain.TradeRepository
+	marketService     *MarketService
+	bots              map[string]*FundingBot
+	logger            *zap.Logger
+	mu                sync.Mutex
+	autoScannerCtx    context.Context
+	autoScannerCancel context.CancelFunc
 }
 
 type FundingBot struct {
@@ -47,6 +50,10 @@ type FundingBot struct {
 	tpOrder             *domain.Order
 	needsNextCandleLog  bool
 	initialLogMinute    int
+	monitoringActive    bool
+	sessionTicks        []domain.TickData
+	sessionStartTime    int64
+	tradeRepo           domain.TradeRepository
 	mu                  sync.Mutex
 }
 
@@ -60,9 +67,10 @@ type FundingBotStatus struct {
 	FundingRate     float64          `json:"funding_rate"` // Current funding rate
 }
 
-func NewFundingBotService(exchange domain.Exchange, marketService *MarketService, logger *zap.Logger) *FundingBotService {
+func NewFundingBotService(exchange domain.Exchange, tradeRepo domain.TradeRepository, marketService *MarketService, logger *zap.Logger) *FundingBotService {
 	return &FundingBotService{
 		exchange:      exchange,
+		tradeRepo:     tradeRepo,
 		marketService: marketService,
 		bots:          make(map[string]*FundingBot),
 		logger:        logger,
@@ -83,6 +91,7 @@ func (s *FundingBotService) StartBot(ctx context.Context, config FundingBotConfi
 		config:        config,
 		exchange:      s.exchange,
 		marketService: s.marketService,
+		tradeRepo:     s.tradeRepo,
 		logger:        s.logger,
 		running:       true,
 		stopChan:      make(chan struct{}),
@@ -112,6 +121,126 @@ func (s *FundingBotService) StopBot(symbol string) error {
 	delete(s.bots, symbol)
 
 	s.logger.Info("Funding bot stopped", zap.String("symbol", symbol))
+	return nil
+}
+
+func (s *FundingBotService) StartAutoScanner(ctx context.Context) {
+	s.mu.Lock()
+	if s.autoScannerCancel != nil {
+		s.mu.Unlock()
+		return
+	}
+	autoCtx, cancel := context.WithCancel(ctx)
+	s.autoScannerCtx = autoCtx
+	s.autoScannerCancel = cancel
+	s.mu.Unlock()
+
+	s.logger.Info("Starting Funding Bot Auto-Scanner")
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	// Initial check
+	if err := s.checkAutoBots(autoCtx); err != nil {
+		s.logger.Error("Initial auto-scanner check failed", zap.Error(err))
+	}
+
+	for {
+		select {
+		case <-autoCtx.Done():
+			return
+		case <-ticker.C:
+			if err := s.checkAutoBots(autoCtx); err != nil {
+				s.logger.Error("Auto-scanner check failed", zap.Error(err))
+			}
+		}
+	}
+}
+
+func (s *FundingBotService) IsBotRunning(symbol string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	bot, exists := s.bots[symbol]
+	return exists && bot.running
+}
+
+func (s *FundingBotService) IsAutoScannerRunning() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.autoScannerCancel != nil
+}
+
+func (s *FundingBotService) StopAutoScanner() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.autoScannerCancel != nil {
+		s.autoScannerCancel()
+		s.autoScannerCancel = nil
+		s.logger.Info("Funding Bot Auto-Scanner stopped")
+	}
+}
+
+func (s *FundingBotService) checkAutoBots(ctx context.Context) error {
+	tickers, err := s.exchange.GetTickers(ctx, "linear")
+	if err != nil {
+		return err
+	}
+
+	for _, t := range tickers {
+		// Only funding > 0.8% or < -0.8%
+		if math.Abs(t.FundingRate) >= 0.008 {
+			s.mu.Lock()
+			bot, exists := s.bots[t.Symbol]
+			s.mu.Unlock()
+
+			if !exists || !bot.running {
+				s.logger.Info("Auto-starting funding bot",
+					zap.String("symbol", t.Symbol),
+					zap.Float64("rate_pct", t.FundingRate*100))
+
+				// Calculate position size to be ~$11 USD (min 10$ equivalent)
+				posSize := 11.0 / t.LastPrice
+				// Round to 4 decimal places to support expensive assets like BTC
+				posSize = math.Round(posSize*10000) / 10000
+				if posSize <= 0 {
+					posSize = 0.0001 // Fallback to minimum possible
+				}
+
+				config := FundingBotConfig{
+					Symbol:                  t.Symbol,
+					PositionSize:            posSize,
+					Leverage:                10,
+					MarginType:              "isolated",
+					CountdownThreshold:      5 * time.Second,
+					MinFundingRate:          0.008,
+					WallCheckEnabled:        true,
+					WallThresholdMultiplier: 2.0,
+					StopLossPercentage:      0.5,
+					TakeProfitPercentage:    0.5,
+				}
+
+				// Start bot in background
+				go func(cfg FundingBotConfig) {
+					if err := s.StartBot(context.Background(), cfg); err != nil {
+						s.logger.Error("Auto-start failed", zap.String("symbol", cfg.Symbol), zap.Error(err))
+					}
+				}(config)
+			}
+		} else if t.FundingRate < 0.007 {
+			s.mu.Lock()
+			bot, exists := s.bots[t.Symbol]
+			s.mu.Unlock()
+
+			if exists && bot.running {
+				// We don't stop the bot automatically if it's already running,
+				// but maybe we should if there's no position.
+				// However, StartBot might have been manual.
+				// Let's only stop it if it was started by auto-scanner?
+				// We don't track who started it.
+				// For now, let's NOT automatically stop bots to avoid surprising the user.
+				// If they want to stop it, they can do it from the UI.
+			}
+		}
+	}
 	return nil
 }
 
@@ -315,7 +444,12 @@ func (b *FundingBot) evaluate(ctx context.Context) error {
 		}
 	}
 
-	// 4. ENTRY LOGIC CHECK
+	// 4. ACTIVE MONITORING LOGS
+	if b.monitoringActive {
+		b.logTradeTick(ctx, ticker)
+	}
+
+	// 5. ENTRY LOGIC CHECK
 	b.logger.Info("Funding countdown  ",
 		zap.Int64("countdown", countdown),
 		zap.Float64("funding_rate_pct", ticker.FundingRate*100),
@@ -509,8 +643,16 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 		return fmt.Errorf("symbol %s not found in tickers", b.config.Symbol)
 	}
 
+	// Determine direction
+	entrySide := domain.SideShort
+	tpSide := domain.SideLong
+	if ticker.FundingRate < 0 {
+		entrySide = domain.SideLong
+		tpSide = domain.SideShort
+	}
+
 	// 2. Check big wall (if exist nothing to do, just write to logs)
-	// For Short entry, we check for Ask walls between current price and entry price.
+	// For Short entry, we check for Ask walls. For Long entry, we check for Bid walls.
 	entryPrice := b.calculateLimitPrice(ticker.LastPrice, ticker.FundingRate)
 
 	if b.config.WallCheckEnabled {
@@ -536,23 +678,40 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 		hasWall := false
 		wallPrice := 0.0
 
-		// Identify if any wall exists above current price but below or near our entry
-		for _, ask := range orderBook.Asks {
-			if ask.Price > ticker.LastPrice && ask.Price <= entryPrice*1.001 { // Within range or slightly above
-				if ask.Size > threshold {
-					// Check stability
-					if b.marketService.IsWallStable(b.config.Symbol, ask.Price, "ask", threshold, 30*time.Second) {
-						hasWall = true
-						wallPrice = ask.Price
-						break
+		if entrySide == domain.SideShort {
+			// Identify if any wall exists above current price but below or near our entry
+			for _, ask := range orderBook.Asks {
+				if ask.Price > ticker.LastPrice && ask.Price <= entryPrice*1.001 {
+					if ask.Size > threshold {
+						// Check stability
+						if b.marketService.IsWallStable(b.config.Symbol, ask.Price, "ask", threshold, 30*time.Second) {
+							hasWall = true
+							wallPrice = ask.Price
+							break
+						}
+					}
+				}
+			}
+		} else {
+			// Identify if any wall exists below current price but above or near our entry
+			for _, bid := range orderBook.Bids {
+				if bid.Price < ticker.LastPrice && bid.Price >= entryPrice*0.999 {
+					if bid.Size > threshold {
+						// Check stability
+						if b.marketService.IsWallStable(b.config.Symbol, bid.Price, "bid", threshold, 30*time.Second) {
+							hasWall = true
+							wallPrice = bid.Price
+							break
+						}
 					}
 				}
 			}
 		}
 
 		if hasWall {
-			b.logger.Info("Stable big ask wall detected between current and entry, skipping entry",
+			b.logger.Info("Stable big wall detected, skipping entry",
 				zap.String("symbol", b.config.Symbol),
+				zap.String("side", string(entrySide)),
 				zap.Float64("wall_price", wallPrice),
 				zap.Float64("entry_price", entryPrice),
 				zap.Float64("current_price", ticker.LastPrice))
@@ -560,17 +719,18 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 		}
 	}
 
-	// 3. Open short postion and long limit order(funding rate + (0.5%)) at the same time
+	// 3. Open postion and limit order(funding rate + (0.5%)) at the same time
 	b.logger.Info("Opening simultaneous funding arbitrage positions",
 		zap.String("symbol", b.config.Symbol),
+		zap.String("side", string(entrySide)),
 		zap.Float64("entry_price", entryPrice),
 		zap.Float64("current_price", ticker.LastPrice),
 		zap.Float64("funding_rate_pct", ticker.FundingRate*100))
 
-	// Short Position (Limit order for "sniper" entry)
-	shortOrder := &domain.Order{
+	// Entry Order (Limit order for "sniper" entry)
+	entryOrder := &domain.Order{
 		Symbol:      b.config.Symbol,
-		Side:        domain.SideShort,
+		Side:        entrySide,
 		Type:        "Limit",
 		Size:        b.config.PositionSize,
 		Price:       entryPrice,
@@ -578,22 +738,27 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 		ReduceOnly:  false,
 	}
 
-	placedShort, err := b.exchange.PlaceOrder(ctx, shortOrder)
+	placedEntry, err := b.exchange.PlaceOrder(ctx, entryOrder)
 	if err != nil {
-		return fmt.Errorf("failed to place short order: %w", err)
+		return fmt.Errorf("failed to place entry order: %w", err)
 	}
-	b.currentOrder = placedShort
-	b.logger.Info("Placed short sniper limit order", zap.String("order_id", placedShort.OrderID))
+	b.currentOrder = placedEntry
+	b.logger.Info("Placed entry sniper limit order", zap.String("order_id", placedEntry.OrderID), zap.String("side", string(entrySide)))
 
-	// Long Limit Order (Take Profit)
-	// Formula: entryPrice * (1 - (math.Abs(fundingRate) + 0.5%))
+	// Take Profit Order
+	// Formula: entryPrice * (1 +/- (math.Abs(fundingRate) + 0.5%))
 	tpDistance := math.Abs(ticker.FundingRate) + 0.005
-	tpPrice := entryPrice * (1 - tpDistance)
+	var tpPrice float64
+	if entrySide == domain.SideShort {
+		tpPrice = entryPrice * (1 - tpDistance)
+	} else {
+		tpPrice = entryPrice * (1 + tpDistance)
+	}
 	tpPrice = math.Round(tpPrice*10000) / 10000
 
-	longOrder := &domain.Order{
+	tpOrder := &domain.Order{
 		Symbol:      b.config.Symbol,
-		Side:        domain.SideLong,
+		Side:        tpSide,
 		Type:        "Limit",
 		Size:        b.config.PositionSize,
 		Price:       tpPrice,
@@ -601,15 +766,15 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 		ReduceOnly:  true,
 	}
 
-	placedLong, err := b.exchange.PlaceOrder(ctx, longOrder)
+	placedTP, err := b.exchange.PlaceOrder(ctx, tpOrder)
 	if err != nil {
-		b.logger.Error("Failed to place long limit order (TP)", zap.Error(err))
-		// We still have the short order open, which might be filled.
+		b.logger.Error("Failed to place limit order (TP)", zap.Error(err))
 		return err
 	}
-	b.tpOrder = placedLong
-	b.logger.Info("Placed long limit order (TP)",
-		zap.String("order_id", placedLong.OrderID),
+	b.tpOrder = placedTP
+	b.logger.Info("Placed limit order (TP)",
+		zap.String("order_id", placedTP.OrderID),
+		zap.String("side", string(tpSide)),
 		zap.Float64("tp_price", tpPrice),
 		zap.Float64("tp_distance_pct", tpDistance*100))
 
@@ -617,6 +782,9 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 	b.logOrderBook(ctx, "⏱️ Countdown Threshold")
 	b.needsNextCandleLog = true
 	b.initialLogMinute = time.Now().Minute()
+	b.monitoringActive = true
+	b.sessionStartTime = time.Now().Unix()
+	b.sessionTicks = nil
 
 	return nil
 }
@@ -640,6 +808,33 @@ func (b *FundingBot) closePosition(ctx context.Context) error {
 	b.logger.Info("Position closed successfully",
 		zap.String("symbol", b.config.Symbol))
 
+	// Save session log
+	if b.monitoringActive && len(b.sessionTicks) > 0 {
+		endTime := time.Now().Unix()
+		logID := fmt.Sprintf("%s_%d-%d", b.config.Symbol, b.sessionStartTime, endTime)
+		sessionLog := &domain.TradeSessionLog{
+			ID:        logID,
+			Symbol:    b.config.Symbol,
+			StartTime: b.sessionStartTime,
+			EndTime:   endTime,
+			Ticks:     b.sessionTicks,
+		}
+
+		go func(sl *domain.TradeSessionLog) {
+			if b.tradeRepo != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := b.tradeRepo.SaveTradeSessionLog(ctx, sl); err != nil {
+					b.logger.Error("Failed to save trade session log", zap.Error(err))
+				} else {
+					b.logger.Info("Trade session log saved", zap.String("id", sl.ID))
+				}
+			}
+		}(sessionLog)
+	}
+
+	b.monitoringActive = false
+	b.sessionTicks = nil
 	return nil
 }
 
@@ -797,14 +992,32 @@ func (b *FundingBot) TriggerTestEvent(ctx context.Context) error {
 			multiplier = 2.0
 		}
 		threshold := avgVolume * multiplier
-
 		hasWall := false
-		for _, ask := range orderBook.Asks {
-			if ask.Price > ticker.LastPrice && ask.Price <= entryPrice*1.001 {
-				if ask.Size > threshold {
-					if b.marketService.IsWallStable(b.config.Symbol, ask.Price, "ask", threshold, 30*time.Second) {
-						hasWall = true
-						break
+		wallPrice := 0.0
+
+		if ticker.FundingRate >= 0 {
+			// Check Ask walls for Short entry
+			for _, ask := range orderBook.Asks {
+				if ask.Price > ticker.LastPrice && ask.Price <= entryPrice*1.001 {
+					if ask.Size > threshold {
+						if b.marketService.IsWallStable(b.config.Symbol, ask.Price, "ask", threshold, 30*time.Second) {
+							hasWall = true
+							wallPrice = ask.Price
+							break
+						}
+					}
+				}
+			}
+		} else {
+			// Check Bid walls for Long entry
+			for _, bid := range orderBook.Bids {
+				if bid.Price < ticker.LastPrice && bid.Price >= entryPrice*0.999 {
+					if bid.Size > threshold {
+						if b.marketService.IsWallStable(b.config.Symbol, bid.Price, "bid", threshold, 30*time.Second) {
+							hasWall = true
+							wallPrice = bid.Price
+							break
+						}
 					}
 				}
 			}
@@ -812,7 +1025,8 @@ func (b *FundingBot) TriggerTestEvent(ctx context.Context) error {
 
 		b.logger.Info("Test Event: Performing actual wall check",
 			zap.String("symbol", b.config.Symbol),
-			zap.Bool("has_wall", hasWall))
+			zap.Bool("has_wall", hasWall),
+			zap.Float64("wall_price", wallPrice))
 
 		if hasWall {
 			b.logger.Info("Test Event: Stable wall detected! Order would be skipped in real scenario.",
@@ -827,4 +1041,109 @@ func (b *FundingBot) TriggerTestEvent(ctx context.Context) error {
 
 	// Directly call handleFundingEvent to simulate the funding event logic
 	return b.handleFundingEvent(ctx)
+}
+
+func (b *FundingBot) logTradeTick(ctx context.Context, ticker domain.Ticker) {
+	// 1. Get RSI
+	rsi, err := b.getRSI(ctx)
+	if err != nil {
+		// Log warning but don't spam if API fails occasionally
+		// b.logger.Warn("Failed to calc RSI", zap.Error(err))
+	}
+
+	// 2. Get OrderBook (Top levels)
+	orderBook, err := b.exchange.GetOrderBook(ctx, b.config.Symbol, "linear")
+	if err != nil {
+		return
+	}
+
+	// Get Market Stats for Velocity
+	var tradeVel float64
+	if b.marketService != nil {
+		stats, err := b.marketService.GetMarketStats(ctx, b.config.Symbol)
+		if err == nil {
+			tradeVel = stats.TradeVelocity
+		}
+	}
+
+	// Format Order Book (Top 5 Bids/Asks)
+	type info struct {
+		P float64 `json:"p"`
+		S float64 `json:"s"`
+	}
+	var bids, asks []info
+	for i, e := range orderBook.Bids {
+		if i >= 5 {
+			break
+		}
+		bids = append(bids, info{P: e.Price, S: e.Size})
+	}
+	for i, e := range orderBook.Asks {
+		if i >= 5 {
+			break
+		}
+		asks = append(asks, info{P: e.Price, S: e.Size})
+	}
+
+	// 3. Log
+	b.logger.Info("📊 Trade Tick Log",
+		zap.String("symbol", b.config.Symbol),
+		zap.Float64("price", ticker.LastPrice),
+		zap.Float64("rsi_14", rsi),
+		zap.Float64("volume_24h", ticker.Volume24h),
+		zap.Float64("trade_velocity", tradeVel),
+		zap.Any("top_bids", bids),
+		zap.Any("top_asks", asks),
+	)
+
+	// 4. Collect Tick Data
+	b.mu.Lock()
+	b.sessionTicks = append(b.sessionTicks, domain.TickData{
+		Timestamp: time.Now().Unix(),
+		Price:     ticker.LastPrice,
+		RSI:       rsi,
+		Volume:    ticker.Volume24h,
+		Bids:      orderBook.Bids,
+		Asks:      orderBook.Asks,
+	})
+	b.mu.Unlock()
+}
+
+func (b *FundingBot) getRSI(ctx context.Context) (float64, error) {
+	// Fetch last 15 candles (1m)
+	candles, err := b.exchange.GetCandles(ctx, b.config.Symbol, "1", 20)
+	if err != nil {
+		return 0, err
+	}
+	if len(candles) < 15 {
+		return 0, fmt.Errorf("not enough candles for RSI")
+	}
+
+	// Use last 14 changes
+	startIdx := len(candles) - 15
+	subset := candles[startIdx:]
+
+	var gains, losses float64
+	for i := 1; i < len(subset); i++ {
+		change := subset[i].Close - subset[i-1].Close
+		if change > 0 {
+			gains += change
+		} else {
+			losses += -change
+		}
+	}
+
+	avgGain := gains / 14.0
+	avgLoss := losses / 14.0
+
+	if avgLoss == 0 {
+		if avgGain == 0 {
+			return 50, nil // Flat
+		}
+		return 100, nil
+	}
+
+	rs := avgGain / avgLoss
+	rsi := 100.0 - (100.0 / (1.0 + rs))
+	return rsi, nil
 }

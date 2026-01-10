@@ -65,6 +65,23 @@ func (m *MockFundingExchange) ClosePosition(ctx context.Context, symbol string) 
 	return nil
 }
 
+type MockTradeRepo struct {
+}
+
+func (m *MockTradeRepo) SaveTrade(ctx context.Context, order *domain.Order) error { return nil }
+func (m *MockTradeRepo) ListTrades(ctx context.Context, limit int) ([]*domain.Order, error) {
+	return nil, nil
+}
+func (m *MockTradeRepo) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+	return nil
+}
+func (m *MockTradeRepo) ListPositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
+	return nil, nil
+}
+func (m *MockTradeRepo) SaveTradeSessionLog(ctx context.Context, log *domain.TradeSessionLog) error {
+	return nil
+}
+
 // Stubs for other interface methods
 func (m *MockFundingExchange) ConnectWS() error                                          { return nil }
 func (m *MockFundingExchange) Subscribe(channels []string) error                         { return nil }
@@ -98,7 +115,7 @@ func TestEvaluate_ProfitableFunding(t *testing.T) {
 	logger := zap.NewNop()
 
 	now := time.Now().Unix()
-	nextFunding := now // 0 seconds from now
+	nextFunding := now + 30 // 30 seconds from now (within 60s threshold, strictly > 0)
 
 	mockEx := &MockFundingExchange{
 		Tickers: []domain.Ticker{
@@ -115,10 +132,11 @@ func TestEvaluate_ProfitableFunding(t *testing.T) {
 	}
 
 	bot := &FundingBot{
-		config:   config,
-		exchange: mockEx,
-		logger:   logger,
-		running:  true,
+		config:    config,
+		exchange:  mockEx,
+		tradeRepo: &MockTradeRepo{},
+		logger:    logger,
+		running:   true,
 	}
 
 	err := bot.evaluate(context.Background())
@@ -132,8 +150,8 @@ func TestEvaluate_ProfitableFunding(t *testing.T) {
 	}
 
 	shortOrder := mockEx.PlacedOrders[0]
-	if shortOrder.Side != domain.SideShort || shortOrder.Type != "Market" {
-		t.Errorf("Expected Short Market order, got %s %s", shortOrder.Side, shortOrder.Type)
+	if shortOrder.Side != domain.SideShort || shortOrder.Type != "Limit" {
+		t.Errorf("Expected Short Limit order, got %s %s", shortOrder.Side, shortOrder.Type)
 	}
 
 	longOrder := mockEx.PlacedOrders[1]
@@ -170,10 +188,11 @@ func TestEvaluate_WallDetected(t *testing.T) {
 	}
 
 	bot := &FundingBot{
-		config:   config,
-		exchange: mockEx,
-		logger:   logger,
-		running:  true,
+		config:    config,
+		exchange:  mockEx,
+		tradeRepo: &MockTradeRepo{},
+		logger:    logger,
+		running:   true,
 	}
 
 	err := bot.evaluate(context.Background())
@@ -205,10 +224,11 @@ func TestEvaluate_TooEarly(t *testing.T) {
 	}
 
 	bot := &FundingBot{
-		config:   config,
-		exchange: mockEx,
-		logger:   logger,
-		running:  true,
+		config:    config,
+		exchange:  mockEx,
+		tradeRepo: &MockTradeRepo{},
+		logger:    logger,
+		running:   true,
 	}
 
 	err := bot.evaluate(context.Background())
@@ -243,10 +263,11 @@ func TestHandleFundingEvent_NegativeFunding(t *testing.T) {
 	}
 
 	bot := &FundingBot{
-		config:   config,
-		exchange: mockEx,
-		logger:   logger,
-		running:  true,
+		config:    config,
+		exchange:  mockEx,
+		tradeRepo: &MockTradeRepo{},
+		logger:    logger,
+		running:   true,
 	}
 
 	err := bot.handleFundingEvent(context.Background())
@@ -326,10 +347,11 @@ func TestEvaluate_ThresholdBoundary(t *testing.T) {
 			}
 
 			bot := &FundingBot{
-				config:   config,
-				exchange: mockEx,
-				logger:   logger,
-				running:  true,
+				config:    config,
+				exchange:  mockEx,
+				tradeRepo: &MockTradeRepo{},
+				logger:    logger,
+				running:   true,
 			}
 
 			err := bot.evaluate(context.Background())
@@ -367,9 +389,10 @@ func TestEvaluate_DelayedClosure(t *testing.T) {
 			CountdownThreshold: 10 * time.Second,
 			MinFundingRate:     0.0001,
 		},
-		exchange: mockEx,
-		logger:   logger,
-		running:  true,
+		exchange:  mockEx,
+		tradeRepo: &MockTradeRepo{},
+		logger:    logger,
+		running:   true,
 	}
 
 	// 1. First evaluation: just setting lastNextFundingTime

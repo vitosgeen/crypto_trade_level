@@ -60,7 +60,7 @@ func TestSentimentTP_Execution(t *testing.T) {
 	}
 
 	// 3. Setup Service
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, store)
 	svc := usecase.NewLevelService(store, store, mockEx, marketService)
 
 	// 4. Create Level with Sentiment TP

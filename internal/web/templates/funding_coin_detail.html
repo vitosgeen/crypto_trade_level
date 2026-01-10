@@ -192,7 +192,7 @@
                         <div>
                             <label for="leverage"
                                 style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 14px;">Leverage</label>
-                            <input type="number" id="leverage" name="leverage" min="1" max="100" value="1"
+                            <input type="number" id="leverage" name="leverage" min="1" max="100" value="10"
                                 style="width: 100%; padding: 10px; border: 2px solid #dee2e6; border-radius: 6px; font-size: 14px;">
                         </div>
                         <div>
@@ -355,18 +355,22 @@
         class HeatmapRenderer {
             draw(ctx, data, request) {
                 if (!data || !data.bars || data.bars.length === 0) return;
-
+                // console.log('Drawing Heatmap Bars:', data.bars.length);
                 const { bars } = data;
-                bars.forEach(bar => {
+                bars.forEach((bar, index) => {
                     const x = bar.x;
                     const barWidth = bar.barWidth;
 
                     if (bar.originalData && bar.originalData.buckets) {
+                        // Estimate height per bucket to fill gaps
+                        // We assume buckets are somewhat evenly spaced or we use a fixed block size
+                        const h = 4; // Height of each block
+
                         bar.originalData.buckets.forEach(bucket => {
                             const y = request.priceToCoordinate(bucket.price);
-                            const h = 2; // Fixed height for bucket lines
                             ctx.fillStyle = bucket.color;
-                            ctx.fillRect(x, y - h / 2, barWidth, h);
+                            // Draw block centered on price coordinate
+                            ctx.fillRect(x - barWidth / 2, y - h / 2, barWidth, h);
                         });
                     }
                 });
@@ -386,9 +390,19 @@
             isWhitespace() {
                 return false;
             }
-            update(data) {
-                // Not used in this simple implementation
+            priceValueBuilder(item) {
+                if (!item.buckets || item.buckets.length === 0) return [];
+                let min = Infinity;
+                let max = -Infinity;
+                for (let i = 0; i < item.buckets.length; i++) {
+                    const low = item.buckets[i].price;
+                    const high = item.buckets[i].price; // Single price point
+                    if (low < min) min = low;
+                    if (high > max) max = high;
+                }
+                return [min, max];
             }
+            update(data, options) { }
             defaultOptions() {
                 return {};
             }
@@ -495,10 +509,15 @@
             });
 
             // Heatmap series (background)
-            heatmapSeries = chart.addCustomSeries(new HeatmapSeries(), {
-                priceLineVisible: false,
-                lastValueVisible: false,
-            });
+            // heatmapSeries = chart.addCustomSeries(new HeatmapSeries(), {
+            //     priceLineVisible: false,
+            //     lastValueVisible: false,
+            //     priceFormat: {
+            //         type: 'price',
+            //         precision: 6,
+            //         minMove: 0.000001,
+            //     },
+            // });
 
             // Liquidity series (for price lines)
             liquiditySeries = chart.addLineSeries({
@@ -622,6 +641,9 @@
                 });
 
                 heatmapData.sort((a, b) => a.time - b.time);
+                if (heatmapData.length > 0) {
+                    window.lastHeatmapTime = heatmapData[heatmapData.length - 1].time;
+                }
                 heatmapSeries.setData(heatmapData);
             } catch (e) {
                 console.error("Failed to fetch liquidity history", e);
@@ -683,13 +705,18 @@
                         if (maxVol > 0) {
                             opacity = c.volume / maxVol;
                             if (opacity > 1.0) opacity = 1.0;
-                            if (opacity < 0.1) opacity = 0.1;
+                            else if (opacity > 0.8) opacity = 0.8;
+                            else if (opacity > 0.6) opacity = 0.6;
+                            else if (opacity > 0.4) opacity = 0.4;
+                            else if (opacity > 0.2) opacity = 0.2;
+                            else opacity = 0.1;
                         }
 
                         const color = c.type === 'bid'
                             ? `rgba(0, 255, 136, ${opacity.toFixed(2)})`
                             : `rgba(255, 82, 82, ${opacity.toFixed(2)})`;
 
+                        // RESTORED: Show current levels as lines for visibility
                         currentLiquidityLines.push(liquiditySeries.createPriceLine({
                             price: c.price,
                             color: color,
@@ -705,13 +732,22 @@
                         });
                     });
 
-                    // Update heatmap series with current data for the latest bar
-                    if (lastCandle) {
-                        heatmapSeries.update({
-                            time: lastCandle.time,
-                            buckets: latestBuckets
-                        });
+                    // Update heatmap series with current data
+                    const now = Math.floor(Date.now() / 1000);
+                    let heatTime = Math.floor(now / 10) * 10;
+
+                    // Ensure we don't try to update with a time older than the last loaded history
+                    if (window.lastHeatmapTime && heatTime < window.lastHeatmapTime) {
+                        heatTime = window.lastHeatmapTime;
                     }
+                    window.lastHeatmapTime = heatTime;
+
+                    console.log('Heatmap Update:', heatTime, latestBuckets.length, 'buckets');
+
+                    heatmapSeries.update({
+                        time: heatTime,
+                        buckets: latestBuckets
+                    });
                 }
             } catch (e) {
                 console.error("Failed to fetch liquidity", e);
@@ -991,6 +1027,18 @@
 
             // Check if bot is running and start polling
             startStatusPolling();
+
+            // Suggset Position Size based on current price (~$11)
+            setTimeout(() => {
+                const posInput = document.getElementById('position-size');
+                if (posInput && !posInput.value && lastCandle && lastCandle.close) {
+                    let suggested = 11.0 / lastCandle.close;
+                    suggested = Math.round(suggested * 1000) / 1000;
+                    if (suggested <= 0) suggested = 0.001;
+                    posInput.value = suggested;
+                    console.log('Suggested position size:', suggested, 'for price:', lastCandle.close);
+                }
+            }, 1000);
 
             // Update chart every 2 seconds
             setInterval(updateChart, 2000);

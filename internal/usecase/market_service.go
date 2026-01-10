@@ -33,26 +33,16 @@ type PricePoint struct {
 
 type MarketService struct {
 	exchange         domain.Exchange
+	repo             domain.LevelRepository
 	cache            map[string]CachedLiquidity
 	trades           map[string][]Trade // Symbol -> Trades
 	depthHistory     map[string][]DepthSnapshot
 	priceHistory     map[string][]PricePoint // Symbol -> Price Points
 	cvdAccumulator   map[string]float64      // Symbol -> Cumulative Volume Delta
-	liquidityHistory map[string][]LiquiditySnapshot
+	liquidityHistory map[string][]domain.LiquiditySnapshot
 	subscribed       map[string]bool // Symbol -> Subscribed
 	mu               sync.Mutex
 	timeNow          func() time.Time // For testing
-}
-
-type LiquidityBucket struct {
-	Price  float64 `json:"price"`
-	Volume float64 `json:"volume"`
-}
-
-type LiquiditySnapshot struct {
-	Time int64             `json:"time"` // Unix seconds
-	Bids []LiquidityBucket `json:"bids"`
-	Asks []LiquidityBucket `json:"asks"`
 }
 
 type DepthSnapshot struct {
@@ -63,15 +53,16 @@ type DepthSnapshot struct {
 
 const MaxGLI = 10.0
 
-func NewMarketService(exchange domain.Exchange) *MarketService {
+func NewMarketService(exchange domain.Exchange, repo domain.LevelRepository) *MarketService {
 	s := &MarketService{
 		exchange:         exchange,
+		repo:             repo,
 		cache:            make(map[string]CachedLiquidity),
 		trades:           make(map[string][]Trade),
 		depthHistory:     make(map[string][]DepthSnapshot),
 		priceHistory:     make(map[string][]PricePoint),
 		cvdAccumulator:   make(map[string]float64),
-		liquidityHistory: make(map[string][]LiquiditySnapshot),
+		liquidityHistory: make(map[string][]domain.LiquiditySnapshot),
 		subscribed:       make(map[string]bool),
 		timeNow:          time.Now,
 	}
@@ -557,12 +548,13 @@ func (s *MarketService) recordLiquiditySnapshot(symbol string, clusters []Liquid
 		}
 	}
 
-	snapshot := LiquiditySnapshot{
-		Time: now,
+	snapshot := domain.LiquiditySnapshot{
+		Symbol: symbol,
+		Time:   now,
 	}
 
 	for _, c := range clusters {
-		bucket := LiquidityBucket{Price: c.Price, Volume: c.Volume}
+		bucket := domain.LiquidityBucket{Price: c.Price, Volume: c.Volume}
 		if c.Type == "bid" {
 			snapshot.Bids = append(snapshot.Bids, bucket)
 		} else {
@@ -572,7 +564,16 @@ func (s *MarketService) recordLiquiditySnapshot(symbol string, clusters []Liquid
 
 	s.liquidityHistory[symbol] = append(s.liquidityHistory[symbol], snapshot)
 
-	// Keep last 1 hour of history (approx 360 snapshots if every 10s)
+	// Persist to DB
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if s.repo != nil {
+			s.repo.SaveLiquiditySnapshot(ctx, &snapshot)
+		}
+	}()
+
+	// Keep last 1 hour of history in memory (approx 360 snapshots if every 10s)
 	cutoff := now - 3600
 	valid := s.liquidityHistory[symbol][:0]
 	for _, snap := range s.liquidityHistory[symbol] {
@@ -583,9 +584,23 @@ func (s *MarketService) recordLiquiditySnapshot(symbol string, clusters []Liquid
 	s.liquidityHistory[symbol] = valid
 }
 
-func (s *MarketService) GetLiquidityHistory(symbol string) []LiquiditySnapshot {
+func (s *MarketService) GetLiquidityHistory(symbol string) []domain.LiquiditySnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// If memory is empty, try to load from repo
+	if len(s.liquidityHistory[symbol]) == 0 && s.repo != nil {
+		history, err := s.repo.ListLiquiditySnapshots(context.Background(), symbol, 360) // Last 360 ≈ 1 hour
+		if err == nil && len(history) > 0 {
+			// ListLiquiditySnapshots returns DESC (most recent first), reverse for internal history
+			memHistory := make([]domain.LiquiditySnapshot, len(history))
+			for i, h := range history {
+				memHistory[len(history)-1-i] = *h
+			}
+			s.liquidityHistory[symbol] = memHistory
+		}
+	}
+
 	return s.liquidityHistory[symbol]
 }
 

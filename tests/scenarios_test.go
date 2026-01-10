@@ -37,7 +37,8 @@ func NewTestScenarioHelper(t *testing.T) *TestScenarioHelper {
 	}
 
 	mockEx := &MockExchange{Price: 0}
-	marketService := usecase.NewMarketService(mockEx)
+	// 3. Setup Service
+	marketService := usecase.NewMarketService(mockEx, store)
 	svc := usecase.NewLevelService(store, store, mockEx, marketService)
 
 	return &TestScenarioHelper{

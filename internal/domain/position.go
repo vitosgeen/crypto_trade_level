@@ -58,3 +58,20 @@ type PositionHistory struct {
 	MarginType  string
 	ClosedAt    time.Time
 }
+
+type TickData struct {
+	Timestamp int64            `json:"ts"`
+	Price     float64          `json:"p"`
+	RSI       float64          `json:"rsi"`
+	Volume    float64          `json:"v"`
+	Bids      []OrderBookEntry `json:"bids"`
+	Asks      []OrderBookEntry `json:"asks"`
+}
+
+type TradeSessionLog struct {
+	ID        string     `json:"id"` // symbol_ts_start-ts_finish
+	Symbol    string     `json:"symbol"`
+	StartTime int64      `json:"start_time"`
+	EndTime   int64      `json:"end_time"`
+	Ticks     []TickData `json:"ticks"`
+}

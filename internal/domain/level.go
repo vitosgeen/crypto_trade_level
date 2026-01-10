@@ -34,3 +34,15 @@ type SymbolTiers struct {
 	Tier3Pct  float64
 	UpdatedAt time.Time
 }
+
+type LiquidityBucket struct {
+	Price  float64 `json:"price"`
+	Volume float64 `json:"volume"`
+}
+
+type LiquiditySnapshot struct {
+	Symbol string            `json:"symbol"`
+	Time   int64             `json:"time"`
+	Bids   []LiquidityBucket `json:"bids"`
+	Asks   []LiquidityBucket `json:"asks"`
+}

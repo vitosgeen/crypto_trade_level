@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -83,6 +84,20 @@ func (s *SQLiteStore) initSchema() error {
 			leverage INTEGER NOT NULL,
 			margin_type TEXT NOT NULL,
 			closed_at DATETIME NOT NULL
+		);`,
+		`CREATE TABLE IF NOT EXISTS liquidity_snapshots (
+			symbol TEXT NOT NULL,
+			time INTEGER NOT NULL,
+			bids_json TEXT NOT NULL,
+			asks_json TEXT NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_liquidity_symbol_time ON liquidity_snapshots(symbol, time DESC);`,
+		`CREATE TABLE IF NOT EXISTS trade_session_logs (
+			id TEXT PRIMARY KEY,
+			symbol TEXT NOT NULL,
+			start_time INTEGER NOT NULL,
+			end_time INTEGER NOT NULL,
+			ticks_json TEXT NOT NULL
 		);`,
 	}
 
@@ -266,4 +281,46 @@ func (s *SQLiteStore) CountActiveLevels(ctx context.Context, symbol string) (int
 		return 0, err
 	}
 	return count, nil
+}
+
+func (s *SQLiteStore) SaveLiquiditySnapshot(ctx context.Context, snap *domain.LiquiditySnapshot) error {
+	bidsJSON, _ := json.Marshal(snap.Bids)
+	asksJSON, _ := json.Marshal(snap.Asks)
+
+	query := `INSERT INTO liquidity_snapshots (symbol, time, bids_json, asks_json) VALUES (?, ?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, query, snap.Symbol, snap.Time, string(bidsJSON), string(asksJSON))
+	return err
+}
+
+func (s *SQLiteStore) ListLiquiditySnapshots(ctx context.Context, symbol string, limit int) ([]*domain.LiquiditySnapshot, error) {
+	query := `SELECT symbol, time, bids_json, asks_json FROM liquidity_snapshots WHERE symbol = ? ORDER BY time DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, symbol, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var snapshots []*domain.LiquiditySnapshot
+	for rows.Next() {
+		var snap domain.LiquiditySnapshot
+		var bidsJSON, asksJSON string
+		if err := rows.Scan(&snap.Symbol, &snap.Time, &bidsJSON, &asksJSON); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(bidsJSON), &snap.Bids)
+		json.Unmarshal([]byte(asksJSON), &snap.Asks)
+		snapshots = append(snapshots, &snap)
+	}
+	return snapshots, nil
+}
+
+func (s *SQLiteStore) SaveTradeSessionLog(ctx context.Context, log *domain.TradeSessionLog) error {
+	ticksJSON, err := json.Marshal(log.Ticks)
+	if err != nil {
+		return fmt.Errorf("failed to marshal ticks: %w", err)
+	}
+
+	query := `INSERT INTO trade_session_logs (id, symbol, start_time, end_time, ticks_json) VALUES (?, ?, ?, ?, ?)`
+	_, err = s.db.ExecContext(ctx, query, log.ID, log.Symbol, log.StartTime, log.EndTime, string(ticksJSON))
+	return err
 }

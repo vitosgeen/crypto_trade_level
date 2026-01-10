@@ -1153,7 +1153,7 @@
             const levelPrice = parseFloat(cells[3].textContent);
 
             try {
-                const response = await fetch(`/api/candles?symbol=${symbol}&interval=60&limit=200`);
+                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`);
                 const candles = await response.json();
                 if (candles && candles.length > 0) {
                     lastCandleTime = candles[candles.length - 1].time;

@@ -20,7 +20,7 @@ func TestLevelLimit(t *testing.T) {
 
 	// 2. Setup Service
 	mockEx := &MockExchange{}
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, store)
 	svc := usecase.NewLevelService(store, store, mockEx, marketService)
 
 	ctx := context.Background()

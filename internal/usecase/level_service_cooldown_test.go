@@ -17,7 +17,7 @@ func TestLevelService_CooldownLogic(t *testing.T) {
 	}
 	mockTradeRepo := &MockTradeRepo{}
 	mockExchange := &MockExchangeForService{} // Use Enhanced Mock
-	mockMarket := usecase.NewMarketService(mockExchange)
+	mockMarket := usecase.NewMarketService(mockExchange, mockRepo)
 
 	service := usecase.NewLevelService(mockRepo, mockTradeRepo, mockExchange, mockMarket)
 

@@ -106,6 +106,9 @@ func (s *Server) routes() {
 	s.router.HandleFunc("POST /api/fundingbot/stop", s.handleStopFundingBot)
 	s.router.HandleFunc("POST /api/fundingbot/test", s.handleTestFundingBot)
 	s.router.HandleFunc("GET /api/fundingbot/status", s.handleFundingBotStatus)
+	s.router.HandleFunc("POST /api/fundingbot/auto/start", s.handleStartAutoScanner)
+	s.router.HandleFunc("POST /api/fundingbot/auto/stop", s.handleStopAutoScanner)
+	s.router.HandleFunc("GET /api/fundingbot/auto/status", s.handleGetAutoScannerStatus)
 }
 
 func (s *Server) Start() error {

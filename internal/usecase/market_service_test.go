@@ -70,7 +70,7 @@ func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) 
 
 func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {
 	mockEx := &MockExchange{}
-	service := NewMarketService(mockEx)
+	service := NewMarketService(mockEx, nil)
 
 	// Mock Time
 	currentTime := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)

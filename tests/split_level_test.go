@@ -26,7 +26,7 @@ func TestSplitLevel(t *testing.T) {
 	mockEx := &MockExchange{Price: 50000.0}
 
 	// 3. Setup Service
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, store)
 	svc := usecase.NewLevelService(store, store, mockEx, marketService)
 
 	// 4. Create Auto-Level

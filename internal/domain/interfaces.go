@@ -63,6 +63,9 @@ type LevelRepository interface {
 
 	SaveSymbolTiers(ctx context.Context, tiers *SymbolTiers) error
 	GetSymbolTiers(ctx context.Context, exchange, symbol string) (*SymbolTiers, error)
+
+	SaveLiquiditySnapshot(ctx context.Context, snap *LiquiditySnapshot) error
+	ListLiquiditySnapshots(ctx context.Context, symbol string, limit int) ([]*LiquiditySnapshot, error)
 }
 
 // TradeRepository defines storage operations for trades.
@@ -72,4 +75,5 @@ type TradeRepository interface {
 
 	SavePositionHistory(ctx context.Context, history *PositionHistory) error
 	ListPositionHistory(ctx context.Context, limit int) ([]*PositionHistory, error)
+	SaveTradeSessionLog(ctx context.Context, log *TradeSessionLog) error
 }

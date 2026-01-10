@@ -50,6 +50,13 @@ func (m *MockLevelRepo) GetLevelsBySymbol(ctx context.Context, symbol string) ([
 	return levels, nil
 }
 
+func (m *MockLevelRepo) SaveLiquiditySnapshot(ctx context.Context, snap *domain.LiquiditySnapshot) error {
+	return nil
+}
+func (m *MockLevelRepo) ListLiquiditySnapshots(ctx context.Context, symbol string, limit int) ([]*domain.LiquiditySnapshot, error) {
+	return nil, nil
+}
+
 // MockTradeRepo
 type MockTradeRepo struct {
 	LastTrade   *domain.Order
@@ -71,6 +78,10 @@ func (m *MockTradeRepo) SavePositionHistory(ctx context.Context, history *domain
 
 func (m *MockTradeRepo) ListPositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
 	return nil, nil
+}
+
+func (m *MockTradeRepo) SaveTradeSessionLog(ctx context.Context, log *domain.TradeSessionLog) error {
+	return nil
 }
 
 type MockExchange struct {
@@ -174,7 +185,7 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 	// We need to define MockExchange here since we are in a new file/package (or same package test)
 	// Let's redefine minimal mock
 
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
 
@@ -312,7 +323,7 @@ func TestLevelService_StopLossMode(t *testing.T) {
 	mockTradeRepo := &MockTradeRepo{}
 	mockEx := &MockExchange{}
 
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
 	service.UpdateCache(ctx)
@@ -368,7 +379,7 @@ func TestLevelService_SentimentLogic(t *testing.T) {
 	mockTradeRepo := &MockTradeRepo{}
 	mockEx := &MockExchangeForService{} // Use Enhanced Mock
 
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
 	service.UpdateCache(ctx)
@@ -516,7 +527,7 @@ func TestLevelService_DisableSpeedClose(t *testing.T) {
 	mockTradeRepo := &MockTradeRepo{}
 	mockEx := &MockExchangeForService{}
 
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
 	service.UpdateCache(ctx)
@@ -567,7 +578,7 @@ func TestLevelService_CheckSafety(t *testing.T) {
 	mockTradeRepo := &MockTradeRepo{}
 	mockEx := &MockExchangeForService{} // Returns Long @ 100 by default
 
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
 	service.UpdateCache(ctx)
@@ -617,7 +628,7 @@ func TestLevelService_TakeProfit(t *testing.T) {
 	mockTradeRepo := &MockTradeRepo{}
 	mockEx := &MockExchangeForService{}
 
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
 	service.UpdateCache(ctx)
@@ -688,7 +699,7 @@ func TestLevelService_StopLossAtBase_Restart(t *testing.T) {
 	mockTradeRepo := &MockTradeRepo{}
 	mockEx := &MockExchangeForService{}
 
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	// New Service -> Fresh Engine State (ActiveSide is empty)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
@@ -734,7 +745,7 @@ func TestLevelService_ManualClose(t *testing.T) {
 	mockTradeRepo := &MockTradeRepo{}
 	mockEx := &MockExchangeForService{}
 
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
 	service.UpdateCache(ctx)
@@ -778,7 +789,7 @@ func TestLevelService_PnLCalculation(t *testing.T) {
 	mockTradeRepo := &MockTradeRepo{}
 	mockEx := &MockExchangeForService{}
 
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
 	service.UpdateCache(ctx)
@@ -833,7 +844,7 @@ func TestLevelService_PositionHistory(t *testing.T) {
 	mockTradeRepo := &MockTradeRepo{}
 	mockEx := &MockExchangeForService{}
 
-	marketService := usecase.NewMarketService(mockEx)
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
 	ctx := context.Background()
 	service.UpdateCache(ctx)

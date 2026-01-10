@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -132,4 +133,25 @@ func (s *Server) handleTestFundingBot(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "test_triggered"})
+}
+
+func (s *Server) handleStartAutoScanner(w http.ResponseWriter, r *http.Request) {
+	go s.fundingBotService.StartAutoScanner(context.Background())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "auto_scanner_started"})
+}
+
+func (s *Server) handleStopAutoScanner(w http.ResponseWriter, r *http.Request) {
+	s.fundingBotService.StopAutoScanner()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "auto_scanner_stopped"})
+}
+
+func (s *Server) handleGetAutoScannerStatus(w http.ResponseWriter, r *http.Request) {
+	status := "stopped"
+	if s.fundingBotService.IsAutoScannerRunning() {
+		status = "running"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": status})
 }

@@ -466,6 +466,7 @@ type FundingCoinData struct {
 	FundingRate     float64
 	AbsFundingRate  float64
 	NextFundingTime int64
+	BotRunning      bool
 }
 
 func (s *Server) handleFundingBot(w http.ResponseWriter, r *http.Request) {
@@ -498,12 +499,14 @@ func (s *Server) handleFundingBot(w http.ResponseWriter, r *http.Request) {
 				// So I should multiply by 100 here.
 				AbsFundingRate:  absRate * 100,
 				NextFundingTime: t.NextFundingTime,
+				BotRunning:      s.fundingBotService.IsBotRunning(t.Symbol),
 			})
 		}
 	}
 
 	data := map[string]interface{}{
-		"Instruments": coins,
+		"Instruments":        coins,
+		"AutoScannerRunning": s.fundingBotService.IsAutoScannerRunning(),
 	}
 
 	if err := templates.ExecuteTemplate(w, "funding_coins.html", data); err != nil {
