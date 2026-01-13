@@ -88,6 +88,9 @@ func (s *Server) routes() {
 	// Market Stats
 	s.router.HandleFunc("GET /api/market-stats", s.handleMarketStats)
 
+	// Level Bot
+	s.router.HandleFunc("GET /level-bot", s.handleLevelBot)
+
 	// Speed Bot
 	s.router.HandleFunc("GET /speed-bot", s.handleSpeedBot)
 	s.router.HandleFunc("GET /speed-bot/coin/{symbol}", s.handleCoinDetail)

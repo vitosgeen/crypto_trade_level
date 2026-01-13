@@ -153,6 +153,10 @@ func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) 
 	return nil
 }
 
+func (m *MockExchange) GetWSStatus() domain.WSStatus {
+	return domain.WSStatus{Connected: true}
+}
+
 func (m *MockExchangeForService) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
 	return order, nil
 }
@@ -296,6 +300,10 @@ func (m *MockExchangeForService) GetInstruments(ctx context.Context, category st
 
 func (m *MockExchangeForService) Subscribe(symbols []string) error {
 	return nil
+}
+
+func (m *MockExchangeForService) GetWSStatus() domain.WSStatus {
+	return domain.WSStatus{Connected: true}
 }
 
 func TestLevelService_StopLossMode(t *testing.T) {

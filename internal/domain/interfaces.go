@@ -22,6 +22,14 @@ type Exchange interface {
 	PlaceOrder(ctx context.Context, order *Order) (*Order, error)
 	GetOrder(ctx context.Context, symbol, orderID string) (*Order, error)
 	CancelOrder(ctx context.Context, symbol, orderID string) error
+	GetWSStatus() WSStatus
+}
+
+type WSStatus struct {
+	Connected    bool   `json:"connected"`
+	LatencyMS    int64  `json:"latency_ms"`
+	LastMessage  int64  `json:"last_message_ts"`
+	MessageCount uint64 `json:"message_count"`
 }
 
 type Candle struct {

@@ -68,6 +68,10 @@ func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) 
 	return nil
 }
 
+func (m *MockExchange) GetWSStatus() domain.WSStatus {
+	return domain.WSStatus{Connected: true}
+}
+
 func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {
 	mockEx := &MockExchange{}
 	service := NewMarketService(mockEx, nil)

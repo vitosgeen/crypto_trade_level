@@ -6,8 +6,10 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vitos/crypto_trade_level/internal/domain"
@@ -23,6 +25,12 @@ func InitTemplates(dir string) error {
 	funcMap := template.FuncMap{
 		"mul": func(a, b float64) float64 {
 			return a * b
+		},
+		"div": func(a, b float64) float64 {
+			if b == 0 {
+				return 0
+			}
+			return a / b
 		},
 	}
 	templates, err = template.New("").Funcs(funcMap).ParseGlob(filepath.Join(dir, "*.html"))
@@ -412,6 +420,140 @@ type CoinData struct {
 	Volume24h         float64
 	OpenInterest      float64
 	OpenInterestValue float64
+	Range10m          float64
+	Range1h           float64
+	Range4h           float64
+}
+
+func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	instruments, err := s.service.GetExchange().GetInstruments(ctx, "linear")
+	if err != nil {
+		s.logger.Error("Failed to get instruments", zap.Error(err))
+		http.Error(w, "Failed to fetch instruments", http.StatusInternalServerError)
+		return
+	}
+
+	tickers, err := s.service.GetExchange().GetTickers(ctx, "linear")
+	if err != nil {
+		s.logger.Error("Failed to get tickers", zap.Error(err))
+		http.Error(w, "Failed to fetch tickers", http.StatusInternalServerError)
+		return
+	}
+
+	// Map tickers by symbol for easy lookup
+	tickerMap := make(map[string]domain.Ticker)
+	for _, t := range tickers {
+		tickerMap[t.Symbol] = t
+	}
+
+	var allCoins []CoinData
+	for _, inst := range instruments {
+		if inst.Status != "Trading" {
+			continue
+		}
+		t, ok := tickerMap[inst.Symbol]
+		coin := CoinData{
+			Symbol:    inst.Symbol,
+			BaseCoin:  inst.BaseCoin,
+			QuoteCoin: inst.QuoteCoin,
+			Status:    inst.Status,
+		}
+		if ok {
+			coin.LastPrice = t.LastPrice
+			coin.Price24hPcnt = t.Price24hPcnt
+			coin.Volume24h = t.Volume24h
+			coin.OpenInterest = t.OpenInterest
+			coin.OpenInterestValue = t.OpenInterest * t.LastPrice
+		}
+		allCoins = append(allCoins, coin)
+	}
+
+	// Sort by Open Interest Value to find "big" coins
+	sort.Slice(allCoins, func(i, j int) bool {
+		return allCoins[i].OpenInterestValue > allCoins[j].OpenInterestValue
+	})
+
+	// Take top coins to calculate range (limit to 60 for performance)
+	limit := 60
+	if len(allCoins) < limit {
+		limit = len(allCoins)
+	}
+
+	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, 10) // Concurrency limit
+
+	for i := 0; i < limit; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			symbol := allCoins[idx].Symbol
+			// Range 10m: 10 x 1m candles
+			candles10m, _ := s.service.GetExchange().GetCandles(ctx, symbol, "1", 10)
+			if len(candles10m) > 0 {
+				minL, maxH := candles10m[0].Low, candles10m[0].High
+				for _, c := range candles10m {
+					if c.Low < minL {
+						minL = c.Low
+					}
+					if c.High > maxH {
+						maxH = c.High
+					}
+				}
+				if minL > 0 {
+					allCoins[idx].Range10m = ((maxH - minL) / minL) * 100
+				}
+			}
+
+			// Range 1h: 60 x 1m candles (safer than 1h candle if it just started)
+			candles1h, _ := s.service.GetExchange().GetCandles(ctx, symbol, "1", 60)
+			if len(candles1h) > 0 {
+				minL, maxH := candles1h[0].Low, candles1h[0].High
+				for _, c := range candles1h {
+					if c.Low < minL {
+						minL = c.Low
+					}
+					if c.High > maxH {
+						maxH = c.High
+					}
+				}
+				if minL > 0 {
+					allCoins[idx].Range1h = ((maxH - minL) / minL) * 100
+				}
+			}
+
+			// Range 4h: 4 x 60m candles (last 4 hours)
+			candles4h, _ := s.service.GetExchange().GetCandles(ctx, symbol, "60", 4)
+			if len(candles4h) > 0 {
+				minL, maxH := candles4h[0].Low, candles4h[0].High
+				for _, c := range candles4h {
+					if c.Low < minL {
+						minL = c.Low
+					}
+					if c.High > maxH {
+						maxH = c.High
+					}
+				}
+				if minL > 0 {
+					allCoins[idx].Range4h = ((maxH - minL) / minL) * 100
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	data := map[string]interface{}{
+		"Instruments": allCoins,
+	}
+
+	if err := templates.ExecuteTemplate(w, "level_coins.html", data); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) handleSpeedBot(w http.ResponseWriter, r *http.Request) {

@@ -370,9 +370,17 @@
     <nav>
         <a href="/" class="logo">CRYPTOBOT</a>
         <div class="nav-links">
-            <a href="/#features">Features</a>
+            <a href="/level-bot">Level Bot</a>
             <a href="/speed-bot">Speed Bot</a>
+            <a href="/funding-bot">Funding Bot</a>
             <a href="/dashboard" style="color: var(--accent-color);">Dashboard</a>
+        </div>
+        <div id="ws-status"
+            style="display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--text-muted); margin-left: auto; margin-right: 20px; background: rgba(0,0,0,0.2); padding: 4px 10px; border-radius: 20px; border: 1px solid var(--border-color);">
+            <div id="ws-indicator" style="width: 8px; height: 8px; border-radius: 50%; background: var(--danger);">
+            </div>
+            <span id="ws-text">Bybit WS</span>
+            <span id="ws-latency" style="opacity: 0.8; font-family: monospace;">--ms</span>
         </div>
         <a href="/dashboard" class="cta-button">Launch App</a>
     </nav>
@@ -512,6 +520,11 @@
                             <span class="text-success">B</span>
                         </div>
                         <div class="gauge-value" id="speed-value" style="font-size: 0.8rem;">0/0</div>
+                        <div
+                            style="font-size: 0.65rem; color: var(--text-muted); display: flex; gap: 8px; margin-top: 2px;">
+                            <span id="speed-30s-value">30s: 0/0</span>
+                            <span id="speed-10s-value">10s: 0/0</span>
+                        </div>
                     </div>
 
                     <!-- Gauge 2: Order Book Depth -->
@@ -542,6 +555,11 @@
                             <span class="text-success">Up</span>
                         </div>
                         <div class="gauge-value" id="price-change-value" style="font-size: 0.8rem;">0.00%</div>
+                        <div
+                            style="font-size: 0.65rem; color: var(--text-muted); display: flex; gap: 8px; margin-top: 2px;">
+                            <span id="price-change-30s-value">30s: 0.00%</span>
+                            <span id="price-change-10s-value">10s: 0.00%</span>
+                        </div>
                     </div>
 
                     <!-- Gauge 4: Divergence -->
@@ -655,6 +673,14 @@
                 </div>
                 <div id="levelChart" style="width: 100%; height: 500px;"></div>
                 <div id="conclusionChart" style="width: 100%; height: 200px; margin-top: 20px;"></div>
+                <div
+                    style="margin-top: 5px; font-size: 0.75rem; color: var(--text-muted); text-align: center; display: flex; justify-content: center; gap: 15px;">
+                    <span><span style="color: #00ff88; font-weight: bold;">━</span> Conclusion (60s)</span>
+                    <span><span style="color: rgba(255, 193, 7, 0.7); font-weight: bold;">━</span> Conclusion
+                        (30s)</span>
+                    <span><span style="color: rgba(255, 68, 68, 0.5); font-weight: bold;">━</span> Conclusion
+                        (10s)</span>
+                </div>
                 <div style="margin-top: 10px; font-size: 0.85rem; color: var(--text-muted); text-align: center;">
                     <span style="color: #000; background: #fff; padding: 0 4px; border-radius: 2px;">━</span> Base Level
                     |
@@ -707,12 +733,27 @@
     </div>
 
     <script>
+        // Pre-fill symbol from query parameter
+        window.addEventListener('load', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const symbol = urlParams.get('symbol');
+            if (symbol) {
+                const symbolInput = document.querySelector('input[name="symbol"]');
+                if (symbolInput) {
+                    symbolInput.value = symbol.toUpperCase();
+                }
+            }
+        });
+
         let chart = null;
         let candleSeries = null;
         let liquiditySeries = null;
         let rsiSeries = null;
         let conclusionChart = null;
         let conclusionSeries = null;
+        let conclusionSeries30s = null;
+        let conclusionSeries10s = null;
+        let priceChangeSeries = null;
         let selectedLevelId = null;
         let currentPriceLines = [];
         let previewPriceLines = [];
@@ -876,7 +917,19 @@
                     });
 
                     conclusionSeries = conclusionChart.addLineSeries({
-                        color: '#2962FF',
+                        color: '#00ff88',
+                        lineWidth: 2,
+                    });
+                    conclusionSeries30s = conclusionChart.addLineSeries({
+                        color: 'rgba(255, 193, 7, 0.7)',
+                        lineWidth: 1,
+                    });
+                    conclusionSeries10s = conclusionChart.addLineSeries({
+                        color: 'rgba(255, 68, 68, 0.5)',
+                        lineWidth: 1,
+                    });
+                    priceChangeSeries = conclusionChart.addLineSeries({
+                        color: '#007bff',
                         lineWidth: 2,
                     });
                     conclusionSeries.createPriceLine({
@@ -1425,6 +1478,23 @@
                     changeValue.style.color = stats.price_change_60s >= 0 ? 'var(--success)' : 'var(--danger)';
                 }
 
+                // 3b. 30s and 10s Sensors
+                const speed30Val = document.getElementById('speed-30s-value');
+                const speed10Val = document.getElementById('speed-10s-value');
+                if (speed30Val) speed30Val.textContent = `30s: ${stats.speed_sell_30s.toFixed(0)}/${stats.speed_buy_30s.toFixed(0)}`;
+                if (speed10Val) speed10Val.textContent = `10s: ${stats.speed_sell_10s.toFixed(0)}/${stats.speed_buy_10s.toFixed(0)}`;
+
+                const change30Val = document.getElementById('price-change-30s-value');
+                const change10Val = document.getElementById('price-change-10s-value');
+                if (change30Val) {
+                    change30Val.textContent = `30s: ${stats.price_change_30s > 0 ? '+' : ''}${stats.price_change_30s.toFixed(2)}%`;
+                    change30Val.style.color = stats.price_change_30s >= 0 ? 'var(--success)' : 'var(--danger)';
+                }
+                if (change10Val) {
+                    change10Val.textContent = `10s: ${stats.price_change_10s > 0 ? '+' : ''}${stats.price_change_10s.toFixed(2)}%`;
+                    change10Val.style.color = stats.price_change_10s >= 0 ? 'var(--success)' : 'var(--danger)';
+                }
+
                 // 4. Divergence
                 const divergence = speedRatio - depthRatio;
                 const divDeg = divergence * 90;
@@ -1465,52 +1535,10 @@
                 // 8. Conclusion Calculation
                 // Normalize all signals to -1 (Bear) to 1 (Bull)
 
-                // Speed: -1 to 1
-                let speedScore = 0;
-                if (totalSpeed > 0) speedScore = (stats.speed_buy - stats.speed_sell) / totalSpeed;
-
-                // Depth: -1 to 1 (Bid - Ask) / Total
-                let depthScore = 0;
-                if (totalDepth > 0) depthScore = (stats.depth_bid - stats.depth_ask) / totalDepth;
-
-                // Price Change: Cap at +/- 1% -> -1 to 1
-                let changeScore = stats.price_change_60s;
-                if (changeScore > 1) changeScore = 1;
-                if (changeScore < -1) changeScore = -1;
-
-                // OBI: Already -1 to 1
-                let obiScore = stats.obi;
-
-                // Divergence: SpeedRatio (0-1) - DepthRatio (0-1). Range -1 to 1.
-                // But wait, divergence calculation above was: speedRatio - depthRatio.
-                // speedRatio is Buy/(Buy+Sell). depthRatio is Bid/(Bid+Ask).
-                // If Buy% > Bid%, it means aggressive buying against passive support? 
-                // Actually, divergence usually means Price up but CVD down etc.
-                // Here: Divergence = SpeedRatio - DepthRatio.
-                // If SpeedRatio (Buy%) is 0.8 and DepthRatio (Bid%) is 0.2. Div = 0.6.
-                // High Buy Speed but Low Bid Depth.
-                // Is this Bullish? Yes, aggressive buying.
-                // So Divergence is roughly directional.
-                let divScore = divergence;
-                if (divScore > 1) divScore = 1;
-                if (divScore < -1) divScore = -1;
-
-                // GLI: < 1 Bullish, > 1 Bearish.
-                // Map to score.
-                // If GLI = 0.5 (Bullish) -> Score +0.5?
-                // If GLI = 2.0 (Bearish) -> Score -0.5?
-                // Formula: (1 - GLI). 
-                // If GLI=0.5 -> 0.5. If GLI=1.5 -> -0.5.
-                // Cap at +/- 1.
-                let gliScore = 1 - stats.gli;
-                if (gliScore > 1) gliScore = 1;
-                if (gliScore < -1) gliScore = -1;
-
-                // Weighted Average
-                // Weights: Speed(2), OBI(2), Change(1), Depth(1), Div(1), GLI(1)
-                const totalWeight = 2 + 2 + 1 + 1 + 1 + 1;
-                const weightedSum = (speedScore * 2) + (obiScore * 2) + changeScore + depthScore + divScore + gliScore;
-                const finalScore = weightedSum / totalWeight; // -1 to 1
+                // Weighted Average - Using backend calculated scores
+                const finalScore = stats.conclusion_score;
+                const finalScore30s = stats.conclusion_score_30s;
+                const finalScore10s = stats.conclusion_score_10s;
 
                 // Update UI
                 const bearCircle = document.getElementById('conclusion-bear');
@@ -1540,6 +1568,55 @@
                         time: now,
                         value: finalScore
                     });
+                    if (conclusionSeries30s) {
+                        conclusionSeries30s.update({
+                            time: now,
+                            value: finalScore30s
+                        });
+                    }
+                    if (conclusionSeries10s) {
+                        conclusionSeries10s.update({
+                            time: now,
+                            value: finalScore10s
+                        });
+                    }
+                    if (priceChangeSeries) {
+                        priceChangeSeries.update({
+                            time: now,
+                            value: stats.price_change_10s
+                        });
+                    }
+                }
+
+                // Update WS Status
+                const wsIndicator = document.getElementById('ws-indicator');
+                const wsText = document.getElementById('ws-text');
+                const wsLatency = document.getElementById('ws-latency');
+
+                if (stats.ws_status && wsIndicator && wsText && wsLatency) {
+                    const ws = stats.ws_status;
+                    if (ws.connected) {
+                        const nowTs = Math.floor(Date.now() / 1000);
+                        const lastMsgAge = nowTs - ws.last_message_ts;
+
+                        if (lastMsgAge > 10) {
+                            // Stale
+                            wsIndicator.style.background = 'var(--warning)';
+                            wsText.textContent = 'Bybit WS (Stale)';
+                            wsText.style.color = 'var(--warning)';
+                        } else {
+                            // Healthy
+                            wsIndicator.style.background = 'var(--accent-color)';
+                            wsText.textContent = 'Bybit WS (Live)';
+                            wsText.style.color = 'var(--text-muted)';
+                        }
+                        wsLatency.textContent = `${ws.latency_ms}ms`;
+                    } else {
+                        wsIndicator.style.background = 'var(--danger)';
+                        wsText.textContent = 'Bybit WS (Offline)';
+                        wsText.style.color = 'var(--danger)';
+                        wsLatency.textContent = '--ms';
+                    }
                 }
 
                 // Note: The main candle chart updates via selecting a level, which calls updateChart(). 
@@ -1692,7 +1769,7 @@
                     title="Increment Base Closes (Test)">+</button>
             </td>
             <td>{{ .Leverage }}x</td>
-            <td style="color: {{ if eq .MarginType "isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
+            <td style="color: {{ if eq .MarginType " isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
                 font-weight: bold;">
                 {{ .MarginType }}</td>
             <td>{{ .CoolDownMs }}ms</td>
@@ -1729,7 +1806,7 @@
         <tr>
             <td class="text-muted">{{ .CreatedAt.Format "15:04:05" }}</td>
             <td>{{ .Symbol }}</td>
-            <td style="color: {{ if eq .Side "LONG" }}var(--success){{ else }}var(--danger){{ end }};">{{ .Side }}</td>
+            <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }};">{{ .Side }}</td>
             <td>{{ if eq .Size 0.0 }}-{{ else }}{{ .Size }}{{ end }}</td>
             <td>{{ printf "%.2f" .Price }}</td>
             <td
@@ -1762,7 +1839,7 @@
         {{ range . }}
         <tr>
             <td><strong style="color: var(--accent-color);">{{ .Symbol }}</strong></td>
-            <td style="color: {{ if eq .Side "LONG" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
+            <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
                 bold;">{{ .Side }}</td>
             <td>{{ .Size }}</td>
             <td>{{ printf "%.6f" .EntryPrice }}</td>
@@ -1771,7 +1848,7 @@
                 style="color: {{ if gt .UnrealizedPnL 0.0 }}var(--success){{ else }}var(--danger){{ end }}; font-weight: bold;">
                 {{ printf "%.6f" .UnrealizedPnL }}</td>
             <td>{{ .Leverage }}</td>
-            <td style="color: {{ if eq .MarginType "isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
+            <td style="color: {{ if eq .MarginType " isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
                 font-weight: bold;">
                 {{ .MarginType }}</td>
             <td>
@@ -1811,7 +1888,7 @@
         <tr>
             <td class="text-muted">{{ .ClosedAt.Format "15:04:05" }}</td>
             <td><strong>{{ .Symbol }}</strong></td>
-            <td style="color: {{ if eq .Side "LONG" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
+            <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
                 bold;">{{ .Side }}</td>
             <td>{{ .Size }}</td>
             <td>{{ printf "%.6f" .EntryPrice }}</td>

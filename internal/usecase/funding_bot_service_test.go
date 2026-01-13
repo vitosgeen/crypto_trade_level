@@ -117,6 +117,10 @@ func (m *MockFundingExchange) MarketSell(ctx context.Context, symbol string, siz
 func (m *MockFundingExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 }
 
+func (m *MockFundingExchange) GetWSStatus() domain.WSStatus {
+	return domain.WSStatus{Connected: true}
+}
+
 func TestEvaluate_ProfitableFunding(t *testing.T) {
 	logger := zap.NewNop()
 

@@ -119,3 +119,7 @@ func (m *MockExchange) GetOrder(ctx context.Context, symbol, orderID string) (*d
 func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) error {
 	return nil
 }
+
+func (m *MockExchange) GetWSStatus() domain.WSStatus {
+	return domain.WSStatus{Connected: true}
+}

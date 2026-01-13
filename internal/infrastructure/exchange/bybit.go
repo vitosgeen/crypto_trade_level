@@ -39,6 +39,15 @@ type BybitAdapter struct {
 	callbacks      []func(symbol string, price float64)
 	tradeCallbacks []func(symbol string, side string, size float64, price float64)
 	mu             sync.Mutex
+
+	// WS Stats
+	lastPongTime     time.Time
+	lastPingSentTime time.Time
+	latency          time.Duration
+	lastMessageTime  time.Time
+	messageCount     uint64
+
+	subscribedSymbols []string
 }
 
 func NewBybitAdapter(apiKey, apiSecret, baseURL, wsURL string) *BybitAdapter {
@@ -635,21 +644,66 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 	}
 	b.wsConn = c
 	b.pingDone = make(chan struct{})
+	b.lastMessageTime = time.Now() // Reset on connect
+
+	// Save symbols for resubscribe
+	for _, s := range symbols {
+		exists := false
+		for _, ex := range b.subscribedSymbols {
+			if ex == s {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			b.subscribedSymbols = append(b.subscribedSymbols, s)
+		}
+	}
 
 	go b.readLoop()
 	go b.startPingLoop()
 
-	return b.subscribe(symbols)
+	return b.subscribe(b.subscribedSymbols)
+}
+
+func (b *BybitAdapter) GetWSStatus() domain.WSStatus {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return domain.WSStatus{
+		Connected:    b.wsConn != nil,
+		LatencyMS:    b.latency.Milliseconds(),
+		LastMessage:  b.lastMessageTime.Unix(),
+		MessageCount: b.messageCount,
+	}
 }
 
 func (b *BybitAdapter) Subscribe(symbols []string) error {
 	b.mu.Lock()
-	if b.wsConn == nil {
-		b.mu.Unlock()
-		// Not connected yet, ConnectWS will handle it
-		return b.ConnectWS(symbols)
-	}
 	defer b.mu.Unlock()
+
+	// Update list of symbols we want to stay subscribed to
+	for _, s := range symbols {
+		exists := false
+		for _, ex := range b.subscribedSymbols {
+			if ex == s {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			b.subscribedSymbols = append(b.subscribedSymbols, s)
+		}
+	}
+
+	if b.wsConn == nil {
+		// Not connected yet, ConnectWS will handle it
+		// But we need to call it without locking again
+		b.mu.Unlock()
+		err := b.ConnectWS(symbols)
+		b.mu.Lock()
+		return err
+	}
 	return b.subscribe(symbols)
 }
 
@@ -687,6 +741,7 @@ func (b *BybitAdapter) startPingLoop() {
 			b.mu.Lock()
 			if b.wsConn != nil {
 				pingMsg := map[string]string{"op": "ping"}
+				b.lastPingSentTime = time.Now()
 				if err := b.wsConn.WriteJSON(pingMsg); err != nil {
 					log.Println("WS Ping error:", err)
 					b.mu.Unlock()
@@ -728,6 +783,11 @@ func (b *BybitAdapter) readLoop() {
 
 		// log.Printf("WS Received: %s", string(message)) // Very verbose, maybe just topic?
 
+		b.mu.Lock()
+		b.messageCount++
+		b.lastMessageTime = time.Now()
+		b.mu.Unlock()
+
 		var event map[string]interface{}
 		if err := json.Unmarshal(message, &event); err != nil {
 			log.Println("WS Unmarshal error:", err)
@@ -736,7 +796,13 @@ func (b *BybitAdapter) readLoop() {
 
 		// Handle pong response
 		if op, ok := event["op"].(string); ok && op == "pong" {
-			log.Println("WS: Received pong")
+			b.mu.Lock()
+			b.lastPongTime = time.Now()
+			if !b.lastPingSentTime.IsZero() {
+				b.latency = b.lastPongTime.Sub(b.lastPingSentTime)
+			}
+			b.mu.Unlock()
+			log.Println("WS: Received pong, latency:", b.latency)
 			continue
 		}
 

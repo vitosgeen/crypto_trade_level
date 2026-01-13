@@ -202,6 +202,7 @@
         <a href="/" class="logo">CRYPTOBOT</a>
         <div class="nav-links">
             <a href="/#features">Features</a>
+            <a href="/level-bot">Level Bot</a>
             <a href="/speed-bot">Speed Bot</a>
             <a href="/funding-bot" style="color: var(--accent-color);">Funding Bot</a>
             <a href="/dashboard">Dashboard</a>
@@ -210,14 +211,18 @@
     </nav>
 
     <div class="container">
-        <div class="card" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid {{if .AutoScannerRunning}}var(--success){{else}}var(--warning){{end}};">
+        <div class="card"
+            style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid {{if .AutoScannerRunning}}var(--success){{else}}var(--warning){{end}};">
             <div>
-                <h2 style="margin-bottom: 5px; font-size: 1.4rem;">🤖 Auto-Scanner: {{if .AutoScannerRunning}}<span class="text-success">ACTIVE</span>{{else}}<span class="text-muted">IDLE</span>{{end}}</h2>
-                <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0;">Automatically starts bots where funding rate > 0.8%</p>
+                <h2 style="margin-bottom: 5px; font-size: 1.4rem;">🤖 Auto-Scanner: {{if .AutoScannerRunning}}<span
+                        class="text-success">ACTIVE</span>{{else}}<span class="text-muted">IDLE</span>{{end}}</h2>
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0;">Automatically starts bots where
+                    funding rate > 0.8%</p>
             </div>
             <div>
                 {{if .AutoScannerRunning}}
-                <button onclick="toggleAutoScanner(false)" class="cta-button" style="background: var(--danger); color: white;">Stop Scanner</button>
+                <button onclick="toggleAutoScanner(false)" class="cta-button"
+                    style="background: var(--danger); color: white;">Stop Scanner</button>
                 {{else}}
                 <button onclick="toggleAutoScanner(true)" class="cta-button">Start Scanner</button>
                 {{end}}
@@ -253,9 +258,11 @@
                         <td class="countdown" data-time="{{.NextFundingTime}}">--:--:--</td>
                         <td>
                             {{if .BotRunning}}
-                            <span style="background: rgba(0, 255, 136, 0.1); color: var(--success); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">RUNNING</span>
+                            <span
+                                style="background: rgba(0, 255, 136, 0.1); color: var(--success); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">RUNNING</span>
                             {{else}}
-                            <span style="background: rgba(255, 255, 255, 0.05); color: var(--text-muted); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">OFF</span>
+                            <span
+                                style="background: rgba(255, 255, 255, 0.05); color: var(--text-muted); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">OFF</span>
                             {{end}}
                         </td>
                         <td><a href="/funding-bot/coin/{{.Symbol}}" class="action-link">Trade →</a></td>

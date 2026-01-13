@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Speed Bot - All Coins</title>
+    <title>Level Bot - All Coins</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -179,8 +179,38 @@
             font-weight: 500;
         }
 
-        a.action-link:hover {
-            text-decoration: underline;
+        .filter-btn {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px 16px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .filter-btn:hover {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        .filter-btn.active {
+            background: var(--accent-color);
+            color: #000;
+            border-color: var(--accent-color);
+        }
+
+        .badge-good {
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--accent-color);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            margin-left: 5px;
         }
     </style>
 </head>
@@ -191,8 +221,8 @@
         <a href="/" class="logo">CRYPTOBOT</a>
         <div class="nav-links">
             <a href="/#features">Features</a>
-            <a href="/level-bot">Level Bot</a>
-            <a href="/speed-bot" style="color: var(--accent-color);">Speed Bot</a>
+            <a href="/level-bot" style="color: var(--accent-color);">Level Bot</a>
+            <a href="/speed-bot">Speed Bot</a>
             <a href="/funding-bot">Funding Bot</a>
             <a href="/dashboard">Dashboard</a>
         </div>
@@ -201,7 +231,25 @@
 
     <div class="container">
         <div class="card">
-            <h1>Bybit Futures - All Coins</h1>
+            <div
+                style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap; gap: 20px;">
+                <h1 style="margin-bottom: 0;">Trading Level Bot - Find Matching Coin</h1>
+                <div style="font-size: 0.85rem; color: var(--text-muted);">
+                    <span style="color: var(--accent-color);">●</span> 10m/1h/4h Ranges calculated for top 60 coins by
+                    OI
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                <button class="filter-btn active" id="filter-all" onclick="applyPresetFilter('all')">All Coins</button>
+                <button class="filter-btn" id="filter-good" onclick="applyPresetFilter('good')">💎 Good for Levels (10m
+                    Range < 2% & OI> $10M)</button>
+                <button class="filter-btn" id="filter-high-oi" onclick="applyPresetFilter('high-oi')">🔥 High OI (>
+                    $50M)</button>
+                <button class="filter-btn" id="filter-low-vol" onclick="applyPresetFilter('low-vol')">📉 Super Stable
+                    (10m Range < 1%)</button>
+            </div>
+
             <input type="text" id="searchBox" class="search-box" placeholder="Search by symbol or base coin..."
                 onkeyup="filterTable()">
 
@@ -213,16 +261,25 @@
                         <th onclick="sortTable(2)">Quote Coin ▼</th>
                         <th onclick="sortTable(3)">Last Price ▼</th>
                         <th onclick="sortTable(4)">24h Change % ▼</th>
-                        <th onclick="sortTable(5)">24h Volume (USD) ▼</th>
+                        <th onclick="sortTable(5)">24h Volume ▼</th>
                         <th onclick="sortTable(6)">Open Interest (USD) ▼</th>
-                        <th onclick="sortTable(7)">Status ▼</th>
+                        <th onclick="sortTable(7)">10m Range ▼</th>
+                        <th onclick="sortTable(8)">1h Range ▼</th>
+                        <th onclick="sortTable(9)">4h Range ▼</th>
+                        <th onclick="sortTable(10)">Status ▼</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     {{range .Instruments}}
-                    <tr>
-                        <td style="font-weight: 600;">{{.Symbol}}</td>
+                    <tr data-oi="{{.OpenInterestValue}}" data-range10m="{{.Range10m}}" data-range1h="{{.Range1h}}"
+                        data-range4h="{{.Range4h}}">
+                        <td style="font-weight: 600;">
+                            {{.Symbol}}
+                            {{if and (gt .OpenInterestValue 10000000.0) (lt .Range10m 2.0) (gt .Range10m 0.0)}}
+                            <span class="badge-good">GOOD</span>
+                            {{end}}
+                        </td>
                         <td class="text-muted">{{.BaseCoin}}</td>
                         <td class="text-muted">{{.QuoteCoin}}</td>
                         <td>{{printf "%.4f" .LastPrice}}</td>
@@ -230,8 +287,26 @@
                             class="{{if gt .Price24hPcnt 0.0}}text-success{{else if lt .Price24hPcnt 0.0}}text-danger{{else}}text-muted{{end}}">
                             {{printf "%.2f%%" .Price24hPcnt}}
                         </td>
-                        <td>{{printf "%.0f" .Volume24h}}</td>
-                        <td>{{printf "%.0f" .OpenInterestValue}}</td>
+                        <td class="text-muted">${{if gt .Volume24h 1000000.0}}{{printf "%.1fM" (div .Volume24h
+                            1000000.0)}}{{else}}{{printf "%.0fK" (div .Volume24h 1000.0)}}{{end}}</td>
+                        <td style="font-weight: 500;">${{if gt .OpenInterestValue 1000000.0}}{{printf "%.1fM" (div
+                            .OpenInterestValue 1000000.0)}}{{else}}{{printf "%.0fK" (div .OpenInterestValue
+                            1000.0)}}{{end}}</td>
+                        <td class="{{if lt .Range10m 1.0}}text-success{{else if gt .Range10m 3.0}}text-danger{{end}}"
+                            style="font-weight: 600;">
+                            {{if gt .Range10m 0.0}}{{printf "%.2f%%" .Range10m}}{{else}}<span
+                                class="text-muted">-</span>{{end}}
+                        </td>
+                        <td class="{{if lt .Range1h 3.0}}text-success{{else if gt .Range1h 6.0}}text-danger{{end}}"
+                            style="font-weight: 600;">
+                            {{if gt .Range1h 0.0}}{{printf "%.2f%%" .Range1h}}{{else}}<span
+                                class="text-muted">-</span>{{end}}
+                        </td>
+                        <td class="{{if lt .Range4h 5.0}}text-success{{else if gt .Range4h 10.0}}text-danger{{end}}"
+                            style="font-weight: 600;">
+                            {{if gt .Range4h 0.0}}{{printf "%.2f%%" .Range4h}}{{else}}<span
+                                class="text-muted">-</span>{{end}}
+                        </td>
                         <td>
                             {{if eq .Status "Trading"}}
                             <span
@@ -245,7 +320,7 @@
                             </span>
                             {{end}}
                         </td>
-                        <td><a href="/speed-bot/coin/{{.Symbol}}" class="action-link">View Details →</a></td>
+                        <td><a href="/dashboard?symbol={{.Symbol}}" class="action-link">Set Level →</a></td>
                     </tr>
                     {{end}}
                 </tbody>
@@ -254,14 +329,44 @@
     </div>
 
     <script>
+        // Preset Filters
+        function applyPresetFilter(type) {
+            // Update UI
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('filter-' + type).classList.add('active');
+
+            const table = document.getElementById('coinsTable');
+            const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+            for (let i = 0; i < rows.length; i++) {
+                const oi = parseFloat(rows[i].getAttribute('data-oi'));
+                const range10m = parseFloat(rows[i].getAttribute('data-range10m')) || 0;
+                let show = true;
+
+                if (type === 'good') {
+                    show = (oi > 10000000 && range10m > 0 && range10m < 2);
+                } else if (type === 'high-oi') {
+                    show = (oi > 50000000);
+                } else if (type === 'low-vol') {
+                    show = (range10m > 0 && range10m < 1);
+                }
+
+                rows[i].style.display = show ? '' : 'none';
+            }
+        }
+
         // Search/Filter functionality
         function filterTable() {
             const input = document.getElementById('searchBox');
             const filter = input.value.toUpperCase();
             const table = document.getElementById('coinsTable');
-            const rows = table.getElementsByTagName('tr');
+            const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
 
-            for (let i = 1; i < rows.length; i++) {
+            // Reset preset filters UI when searching
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('filter-all').classList.add('active');
+
+            for (let i = 0; i < rows.length; i++) {
                 const cells = rows[i].getElementsByTagName('td');
                 let found = false;
 
@@ -281,7 +386,7 @@
         }
 
         // Sort functionality
-        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1]; // 1 = ascending, -1 = descending
+        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]; // 1 = ascending, -1 = descending
 
         function sortTable(columnIndex) {
             const table = document.getElementById('coinsTable');
@@ -294,11 +399,18 @@
                 const aText = a.getElementsByTagName('td')[columnIndex].textContent.trim();
                 const bText = b.getElementsByTagName('td')[columnIndex].textContent.trim();
 
-                // Numeric sorting for columns 3, 4, 5, 6
-                if ([3, 4, 5, 6].includes(columnIndex)) {
-                    // Remove non-numeric chars like % or ,
-                    const aNum = parseFloat(aText.replace(/[^0-9.-]/g, ''));
-                    const bNum = parseFloat(bText.replace(/[^0-9.-]/g, ''));
+                // Numeric sorting for columns 3, 4, 5, 6, 7, 8, 9
+                if ([3, 4, 5, 6, 7, 8, 9].includes(columnIndex)) {
+                    // Remove non-numeric chars like %, $, M, K
+                    const parseVal = (text) => {
+                        if (text === '-' || text === '') return -1;
+                        let val = parseFloat(text.replace(/[^0-9.-]/g, ''));
+                        if (text.includes('M')) val *= 1000000;
+                        else if (text.includes('K')) val *= 1000;
+                        return val;
+                    };
+                    const aNum = parseVal(aText);
+                    const bNum = parseVal(bText);
                     return (aNum - bNum) * direction;
                 }
 

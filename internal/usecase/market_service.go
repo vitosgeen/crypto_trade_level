@@ -70,7 +70,35 @@ func NewMarketService(exchange domain.Exchange, repo domain.LevelRepository) *Ma
 	// Subscribe to trades
 	exchange.OnTradeUpdate(s.handleTrade)
 
+	s.startHealthCheck()
+
 	return s
+}
+
+func (s *MarketService) startHealthCheck() {
+	ticker := time.NewTicker(30 * time.Second)
+	go func() {
+		for range ticker.C {
+			status := s.exchange.GetWSStatus()
+			if !status.Connected {
+				log.Println("MarketService: WS disconnected, attempting reconnect...")
+				s.mu.Lock()
+				symbols := make([]string, 0, len(s.subscribed))
+				for sym := range s.subscribed {
+					symbols = append(symbols, sym)
+				}
+				s.mu.Unlock()
+
+				if len(symbols) > 0 {
+					if err := s.exchange.Subscribe(symbols); err != nil {
+						log.Printf("MarketService: Reconnect failed: %v", err)
+					} else {
+						log.Println("MarketService: Reconnect successful")
+					}
+				}
+			}
+		}
+	}()
 }
 
 func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
@@ -118,18 +146,27 @@ func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
 }
 
 type MarketStats struct {
-	SpeedBuy        float64 `json:"speed_buy"`
-	SpeedSell       float64 `json:"speed_sell"`
-	DepthBid        float64 `json:"depth_bid"`
-	DepthAsk        float64 `json:"depth_ask"`
-	PriceChange60s  float64 `json:"price_change_60s"`
-	OBI             float64 `json:"obi"`
-	CVD             float64 `json:"cvd"`
-	TSI             float64 `json:"tsi"`
-	GLI             float64 `json:"gli"`
-	TradeVelocity   float64 `json:"trade_velocity"`
-	ConclusionScore float64 `json:"conclusion_score"`
-	LastPrice       float64 `json:"last_price"`
+	SpeedBuy           float64         `json:"speed_buy"`
+	SpeedSell          float64         `json:"speed_sell"`
+	SpeedBuy30s        float64         `json:"speed_buy_30s"`
+	SpeedSell30s       float64         `json:"speed_sell_30s"`
+	SpeedBuy10s        float64         `json:"speed_buy_10s"`
+	SpeedSell10s       float64         `json:"speed_sell_10s"`
+	DepthBid           float64         `json:"depth_bid"`
+	DepthAsk           float64         `json:"depth_ask"`
+	PriceChange60s     float64         `json:"price_change_60s"`
+	PriceChange30s     float64         `json:"price_change_30s"`
+	PriceChange10s     float64         `json:"price_change_10s"`
+	OBI                float64         `json:"obi"`
+	CVD                float64         `json:"cvd"`
+	TSI                float64         `json:"tsi"`
+	GLI                float64         `json:"gli"`
+	TradeVelocity      float64         `json:"trade_velocity"`
+	ConclusionScore    float64         `json:"conclusion_score"`
+	ConclusionScore30s float64         `json:"conclusion_score_30s"`
+	ConclusionScore10s float64         `json:"conclusion_score_10s"`
+	LastPrice          float64         `json:"last_price"`
+	WSStatus           domain.WSStatus `json:"ws_status"`
 }
 
 func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*MarketStats, error) {
@@ -216,14 +253,19 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 
 	// 1. Calculate Speed (from trades)
 	var speedBuy, speedSell float64
+	var speedBuy30s, speedSell30s float64
+	var speedBuy10s, speedSell10s float64
 	var tradeCount int
 	if trades, ok := s.trades[symbol]; ok {
 		now := s.timeNow()
-		cutoff := now.Add(-60 * time.Second)
+		cutoff60 := now.Add(-60 * time.Second)
+		cutoff30 := now.Add(-30 * time.Second)
+		cutoff10 := now.Add(-10 * time.Second)
+
 		// Prune again just in case (lazy pruning)
 		validTrades := trades[:0]
 		for _, t := range trades {
-			if t.Time.After(cutoff) {
+			if t.Time.After(cutoff60) {
 				validTrades = append(validTrades, t)
 				tradeCount++
 				if t.Side == "Buy" {
@@ -231,43 +273,122 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 				} else {
 					speedSell += t.Size * t.Price
 				}
+
+				if t.Time.After(cutoff30) {
+					if t.Side == "Buy" {
+						speedBuy30s += t.Size * t.Price
+					} else {
+						speedSell30s += t.Size * t.Price
+					}
+				}
+
+				if t.Time.After(cutoff10) {
+					if t.Side == "Buy" {
+						speedBuy10s += t.Size * t.Price
+					} else {
+						speedSell10s += t.Size * t.Price
+					}
+				}
 			}
 		}
 		s.trades[symbol] = validTrades
 	}
 
-	// 2. Get Depth (60s Moving Average)
+	// 2. Get Depth (Moving Average)
 	// Check if we need to update depth history (lazy fetch if stale)
 	s.updateOrderBook(ctx, symbol)
 
-	var avgBid, avgAsk float64
+	var avgBid60, avgAsk60 float64
+	var avgBid30, avgAsk30 float64
+	var avgBid10, avgAsk10 float64
+
 	if history, ok := s.depthHistory[symbol]; ok && len(history) > 0 {
-		var sumBid, sumAsk float64
+		var sumBid60, sumAsk60 float64
+		var sumBid30, sumAsk30 float64
+		var count30 int
+		var sumBid10, sumAsk10 float64
+		var count10 int
+
+		now := s.timeNow()
+		cutoff30 := now.Add(-30 * time.Second)
+		cutoff10 := now.Add(-10 * time.Second)
+
 		for _, snapshot := range history {
-			sumBid += snapshot.TotalBid
-			sumAsk += snapshot.TotalAsk
+			sumBid60 += snapshot.TotalBid
+			sumAsk60 += snapshot.TotalAsk
+
+			if snapshot.Time.After(cutoff30) {
+				sumBid30 += snapshot.TotalBid
+				sumAsk30 += snapshot.TotalAsk
+				count30++
+			}
+			if snapshot.Time.After(cutoff10) {
+				sumBid10 += snapshot.TotalBid
+				sumAsk10 += snapshot.TotalAsk
+				count10++
+			}
 		}
-		avgBid = sumBid / float64(len(history))
-		avgAsk = sumAsk / float64(len(history))
+		avgBid60 = sumBid60 / float64(len(history))
+		avgAsk60 = sumAsk60 / float64(len(history))
+
+		if count30 > 0 {
+			avgBid30 = sumBid30 / float64(count30)
+			avgAsk30 = sumAsk30 / float64(count30)
+		} else {
+			avgBid30 = avgBid60
+			avgAsk30 = avgAsk60
+		}
+
+		if count10 > 0 {
+			avgBid10 = sumBid10 / float64(count10)
+			avgAsk10 = sumAsk10 / float64(count10)
+		} else {
+			avgBid10 = avgBid60
+			avgAsk10 = avgAsk60
+		}
 	}
 
-	// 3. Calculate 60s price change percentage
-	var priceChange60s float64
+	// 3. Calculate price change percentage
+	var priceChange60s, priceChange30s, priceChange10s float64
 	if prices, ok := s.priceHistory[symbol]; ok && len(prices) >= 2 {
+		now := s.timeNow()
+		cutoff30 := now.Add(-30 * time.Second)
+		cutoff10 := now.Add(-10 * time.Second)
+
 		// Get oldest and newest price in the 60s window
-		oldestPrice := prices[0].Price
+		oldestPrice60 := prices[0].Price
 		newestPrice := prices[len(prices)-1].Price
 
-		if oldestPrice > 0 {
-			priceChange60s = ((newestPrice - oldestPrice) / oldestPrice) * 100
+		if oldestPrice60 > 0 {
+			priceChange60s = ((newestPrice - oldestPrice60) / oldestPrice60) * 100
+		}
+
+		// Find oldest price in 30s window
+		for _, p := range prices {
+			if p.Time.After(cutoff30) {
+				if p.Price > 0 {
+					priceChange30s = ((newestPrice - p.Price) / p.Price) * 100
+				}
+				break
+			}
+		}
+
+		// Find oldest price in 10s window
+		for _, p := range prices {
+			if p.Time.After(cutoff10) {
+				if p.Price > 0 {
+					priceChange10s = ((newestPrice - p.Price) / p.Price) * 100
+				}
+				break
+			}
 		}
 	}
 
 	// 4. Calculate Indicators
 	// OBI = (BidDepth - AskDepth) / (BidDepth + AskDepth)
 	var obi float64
-	if avgBid+avgAsk > 0 {
-		obi = (avgBid - avgAsk) / (avgBid + avgAsk)
+	if avgBid60+avgAsk60 > 0 {
+		obi = (avgBid60 - avgAsk60) / (avgBid60 + avgAsk60)
 	}
 
 	// CVD = Cumulative Volume Delta (Net Volume in 60s window)
@@ -295,90 +416,43 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 	tradeVelocity := (speedBuy + speedSell) / 60.0
 
 	// 5. Calculate Conclusion Score (Market Sentiment)
-	// Formula: (OBI + (TSI_Ratio * 2) + (GLI_Ratio * 2) + (CVD_Ratio * 2)) / 7
-	// We need to normalize TSI, GLI, CVD to -1..1 range for this composite score.
-
-	// Normalize TSI (0..MaxTSI -> 0..1) - It's magnitude, not direction?
-	// Wait, the frontend logic was:
-	// const tsiRatio = stats.tsi / maxTsi; (0..1)
-	// But Conclusion Score usually needs directional components (-1..1).
-	// Let's look at how frontend did it.
-	// Frontend:
-	// const conclusion = (stats.obi + (tsiRatio * 2) + (gliRatio * 2) + (cvdRatio * 2)) / 7;
-	// Wait, TSI is 0..1 (activity). GLI is ratio (0..Inf). CVD is volume.
-	// This formula seems to mix ranges.
-	// Let's refine it to be robust on backend.
-
-	// OBI: -1 to 1 (already good)
-
-	// TSI: Activity level. 0 to 1 (normalized by MaxTSI).
-	// We need a dynamic MaxTSI here too? Or just use a reasonable baseline.
-	// Let's use the same dynamic tracking or a fixed baseline for backend consistency.
-	// Let's use 100 as baseline for now, or track it in service.
-	// s.maxObservedTsi would be better.
-	// Let's assume 100 for now to match initial frontend.
-	maxTsi := 100.0
-	tsiRatio := tsi / maxTsi
-	if tsiRatio > 1 {
-		tsiRatio = 1
-	}
-	// TSI is unsigned (activity), so it adds "energy" but not direction?
-	// If the user wants "Sentiment", TSI might not be directional.
-	// But if the formula adds it, maybe it assumes high activity = bullish?
-	// Actually, let's look at GLI.
-	// GLI = Sell/Buy.
-	// If GLI > 1 (More Sell), it's Bearish?
-	// If GLI < 1 (More Buy), it's Bullish?
-	// Frontend GLI Ratio:
-	// const gliRatio = stats.gli > 1 ? -(stats.gli - 1) : (1 - stats.gli);
-	// Let's replicate this.
-	var gliScore float64
-	if gli > 1 {
-		gliScore = -(gli - 1) // Bearish
-		if gliScore < -1 {
-			gliScore = -1
+	calcConclusion := func(buy, sell, bid, ask float64) float64 {
+		var o, gScore, cScore float64
+		if bid+ask > 0 {
+			o = (bid - ask) / (bid + ask)
 		}
-	} else {
-		gliScore = 1 - gli // Bullish? Wait.
-		// If GLI = 0.5 (Sell=1, Buy=2). 1 - 0.5 = 0.5 (Bullish). Correct.
-		// If GLI = 0 (No Sell). 1 - 0 = 1 (Max Bullish). Correct.
+
+		var g float64 = 1.0
+		if buy > 0 {
+			g = sell / buy
+		} else if sell > 0 {
+			g = MaxGLI
+		}
+
+		if g > 1 {
+			gScore = -(g - 1)
+			if gScore < -1 {
+				gScore = -1
+			}
+		} else {
+			gScore = 1 - g
+		}
+
+		c := buy - sell
+		maxC := 10000.0
+		cScore = c / maxC
+		if cScore > 1 {
+			cScore = 1
+		} else if cScore < -1 {
+			cScore = -1
+		}
+
+		return (o + gScore + cScore) / 3.0
 	}
 
-	// CVD: Cumulative Volume Delta.
-	// Normalize CVD?
-	// Frontend: const cvdRatio = stats.cvd / maxCvd;
-	// We need a MaxCVD.
-	maxCvd := 10000.0 // Arbitrary baseline
-	var cvdScore float64
-	if maxCvd > 0 {
-		cvdScore = cvd / maxCvd
-	}
-	if cvdScore > 1 {
-		cvdScore = 1
-	} else if cvdScore < -1 {
-		cvdScore = -1
-	}
-
-	// TSI Direction?
-	// If we want TSI to be directional, we need to know if it's buy-heavy or sell-heavy.
-	// But TSI is just count.
-	// Maybe the formula intends TSI to just boost the signal?
-	// Or maybe I should check the frontend implementation I'm replacing.
-	// The user said "Move Conclusion Score calculation from Frontend".
-	// I'll assume the frontend logic was:
-	// (OBI + (TSI_Score * 2) + (GLI_Score * 2) + (CVD_Score * 2)) / 7
-	// Wait, TSI in frontend was likely just 0..1.
-	// If I add 0..1 to a -1..1 score, it shifts it to bullish.
-	// That seems wrong if TSI is just activity.
-	// Let's assume TSI should be weighted by the dominant side?
-	// Or maybe the user meant "Trade Velocity" or something else.
-	// Let's stick to a safe implementation:
-	// Score = (OBI + GLI_Score + CVD_Score) / 3
-	// And maybe weigh them.
-	// Let's use: (OBI + GLI_Score + CVD_Score) / 3 for now.
-	// It returns -1 to 1.
-
-	conclusionScore := (obi + gliScore + cvdScore) / 3.0
+	conclusionScore := calcConclusion(speedBuy, speedSell, avgBid60, avgAsk60)
+	conclusionScore30s := calcConclusion(speedBuy30s, speedSell30s, avgBid30, avgAsk30)
+	conclusionScore10s := calcConclusion(speedBuy10s, speedSell10s, avgBid10, avgAsk10)
 
 	// 6. Get Latest Price for UI display
 	var lastPrice float64
@@ -387,18 +461,27 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 	}
 
 	return &MarketStats{
-		SpeedBuy:        speedBuy,
-		SpeedSell:       speedSell,
-		DepthBid:        avgBid,
-		DepthAsk:        avgAsk,
-		PriceChange60s:  priceChange60s,
-		OBI:             obi,
-		CVD:             cvd,
-		TSI:             tsi,
-		GLI:             gli,
-		TradeVelocity:   tradeVelocity,
-		ConclusionScore: conclusionScore,
-		LastPrice:       lastPrice,
+		SpeedBuy:           speedBuy,
+		SpeedSell:          speedSell,
+		SpeedBuy30s:        speedBuy30s,
+		SpeedSell30s:       speedSell30s,
+		SpeedBuy10s:        speedBuy10s,
+		SpeedSell10s:       speedSell10s,
+		DepthBid:           avgBid60,
+		DepthAsk:           avgAsk60,
+		PriceChange60s:     priceChange60s,
+		PriceChange30s:     priceChange30s,
+		PriceChange10s:     priceChange10s,
+		OBI:                obi,
+		CVD:                cvd,
+		TSI:                tsi,
+		GLI:                gli,
+		TradeVelocity:      tradeVelocity,
+		ConclusionScore:    conclusionScore,
+		ConclusionScore30s: conclusionScore30s,
+		ConclusionScore10s: conclusionScore10s,
+		LastPrice:          lastPrice,
+		WSStatus:           s.exchange.GetWSStatus(),
 	}, nil
 }
 
