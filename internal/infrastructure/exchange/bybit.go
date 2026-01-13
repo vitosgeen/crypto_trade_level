@@ -299,6 +299,10 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 		return nil, err
 	}
 
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("Bybit API error (GetPosition): %d - %s", result.RetCode, string(resp))
+	}
+
 	// Debug: Print raw response if empty
 	if len(result.Result.List) == 0 {
 		fmt.Printf("DEBUG: Position List Empty. Raw: %s\n", string(resp))
@@ -341,7 +345,7 @@ func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, er
 	cursor := ""
 
 	for {
-		path := "/v5/position/list?category=linear&limit=200"
+		path := "/v5/position/list?category=linear&settleCoin=USDT&limit=200"
 		if cursor != "" {
 			path += "&cursor=" + url.QueryEscape(cursor)
 		}
@@ -372,6 +376,11 @@ func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, er
 			return nil, err
 		}
 
+		if result.RetCode != 0 {
+			return nil, fmt.Errorf("Bybit API error (GetPositions): %d - %s", result.RetCode, string(resp))
+		}
+
+		log.Printf("DEBUG: Bybit returned %d raw positions", len(result.Result.List))
 		for _, raw := range result.Result.List {
 			size, _ := strconv.ParseFloat(raw.Size, 64)
 			if size == 0 {

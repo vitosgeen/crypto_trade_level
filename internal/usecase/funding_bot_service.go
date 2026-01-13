@@ -515,6 +515,11 @@ func (b *FundingBot) logOrderBook(ctx context.Context, label string) {
 		zap.Any("top_bids", topBids),
 		zap.Any("top_asks", topAsks),
 	)
+
+	// Persist to liquidity_snapshots table for heatmap visibility
+	if b.marketService != nil {
+		go b.marketService.ForceRecordLiquiditySnapshot(context.Background(), b.config.Symbol)
+	}
 }
 
 func (b *FundingBot) calculateLimitPrice(currentPrice, fundingRate float64) float64 {
@@ -607,6 +612,10 @@ func (b *FundingBot) monitorFundingEvent(ctx context.Context, fundingTime int64)
 	}
 
 	// Funding event has occurred, check order status
+	// 2. Persist to liquidity_snapshots table for heatmap visibility
+	if b.marketService != nil {
+		go b.marketService.ForceRecordLiquiditySnapshot(context.Background(), b.config.Symbol)
+	}
 	return b.handleFundingEvent(ctx)
 }
 
@@ -614,13 +623,22 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	// 1. Check opened position (if exist nothing to do)
+	// Get latest position
 	position, err := b.exchange.GetPosition(ctx, b.config.Symbol)
-	if err == nil && position != nil && position.Size > 0 {
+	if err != nil {
+		return err
+	}
+
+	if position.Size > 0 {
 		b.logger.Info("Position already exists, skipping funding entry",
 			zap.String("symbol", b.config.Symbol),
 			zap.Float64("size", position.Size))
 		return nil
+	}
+
+	// Force a liquidity snapshot on entry attempt
+	if b.marketService != nil {
+		go b.marketService.ForceRecordLiquiditySnapshot(context.Background(), b.config.Symbol)
 	}
 
 	// Get latest ticker and funding rate
@@ -746,14 +764,11 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 	b.logger.Info("Placed entry sniper limit order", zap.String("order_id", placedEntry.OrderID), zap.String("side", string(entrySide)))
 
 	// Take Profit Order
-	// Formula: entryPrice * (1 +/- (math.Abs(fundingRate) + 0.5%))
+	// Formula: entryPrice * (1 - (math.Abs(fundingRate) + 0.5%))
+	// We always place the TP limit order BELOW the entry price
+	// For SHORT, this is a profit on price. For LONG, this is a partial give-back of funding.
 	tpDistance := math.Abs(ticker.FundingRate) + 0.005
-	var tpPrice float64
-	if entrySide == domain.SideShort {
-		tpPrice = entryPrice * (1 - tpDistance)
-	} else {
-		tpPrice = entryPrice * (1 + tpDistance)
-	}
+	tpPrice := entryPrice * (1 - tpDistance)
 	tpPrice = math.Round(tpPrice*10000) / 10000
 
 	tpOrder := &domain.Order{
@@ -1099,12 +1114,13 @@ func (b *FundingBot) logTradeTick(ctx context.Context, ticker domain.Ticker) {
 	// 4. Collect Tick Data
 	b.mu.Lock()
 	b.sessionTicks = append(b.sessionTicks, domain.TickData{
-		Timestamp: time.Now().Unix(),
-		Price:     ticker.LastPrice,
-		RSI:       rsi,
-		Volume:    ticker.Volume24h,
-		Bids:      orderBook.Bids,
-		Asks:      orderBook.Asks,
+		Timestamp:     time.Now().Unix(),
+		Price:         ticker.LastPrice,
+		RSI:           rsi,
+		Volume:        ticker.Volume24h,
+		TradeVelocity: tradeVel,
+		Bids:          orderBook.Bids,
+		Asks:          orderBook.Asks,
 	})
 	b.mu.Unlock()
 }

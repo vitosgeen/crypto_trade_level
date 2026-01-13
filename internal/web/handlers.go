@@ -50,6 +50,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	levels, _ := s.levelRepo.ListLevels(r.Context())
 	history, _ := s.tradeRepo.ListPositionHistory(r.Context(), 50)
 
+	// Fetch all symbols for autocomplete
+	allSymbols, _ := s.service.GetAllSymbols(r.Context())
+
 	var views []LevelView
 	evaluator := usecase.NewLevelEvaluator()
 
@@ -85,8 +88,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]interface{}{
-		"Levels":  views,
-		"History": history,
+		"Levels":     views,
+		"History":    history,
+		"AllSymbols": allSymbols,
 	}
 
 	if err := templates.ExecuteTemplate(w, "index.html", data); err != nil {

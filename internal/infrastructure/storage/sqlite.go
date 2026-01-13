@@ -324,3 +324,54 @@ func (s *SQLiteStore) SaveTradeSessionLog(ctx context.Context, log *domain.Trade
 	_, err = s.db.ExecContext(ctx, query, log.ID, log.Symbol, log.StartTime, log.EndTime, string(ticksJSON))
 	return err
 }
+
+func (s *SQLiteStore) ListTradeSessionLogs(ctx context.Context, symbol string, limit int) ([]*domain.TradeSessionLog, error) {
+	query := `SELECT id, symbol, start_time, end_time, json_array_length(ticks_json) FROM trade_session_logs`
+	var args []interface{}
+	if symbol != "" {
+		query += ` WHERE symbol = ?`
+		args = append(args, symbol)
+	}
+	query += ` ORDER BY start_time DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []*domain.TradeSessionLog
+	for rows.Next() {
+		var l domain.TradeSessionLog
+		var tickCount int
+		if err := rows.Scan(&l.ID, &l.Symbol, &l.StartTime, &l.EndTime, &tickCount); err != nil {
+			return nil, err
+		}
+		// We can't strictly set l.Ticks to a slice of that length without data,
+		// but we can use an internal field or just let the UI handle it if we return it.
+		// Since TradeSessionLog.Ticks is []TickData, we'll just mock it or add a Count field.
+		// Let's just add a comment or return it in a way the UI can use.
+		// Actually, I'll add a 'TickCount' field to the struct for convenience.
+		l.Ticks = make([]domain.TickData, tickCount)
+		logs = append(logs, &l)
+	}
+	return logs, nil
+}
+
+func (s *SQLiteStore) GetTradeSessionLog(ctx context.Context, id string) (*domain.TradeSessionLog, error) {
+	query := `SELECT id, symbol, start_time, end_time, ticks_json FROM trade_session_logs WHERE id = ?`
+	row := s.db.QueryRowContext(ctx, query, id)
+
+	var l domain.TradeSessionLog
+	var ticksJSON string
+	if err := row.Scan(&l.ID, &l.Symbol, &l.StartTime, &l.EndTime, &ticksJSON); err != nil {
+		return nil, err
+	}
+
+	if err := json.Unmarshal([]byte(ticksJSON), &l.Ticks); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal ticks: %w", err)
+	}
+
+	return &l, nil
+}

@@ -129,6 +129,7 @@ type MarketStats struct {
 	GLI             float64 `json:"gli"`
 	TradeVelocity   float64 `json:"trade_velocity"`
 	ConclusionScore float64 `json:"conclusion_score"`
+	LastPrice       float64 `json:"last_price"`
 }
 
 func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*MarketStats, error) {
@@ -379,6 +380,12 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 
 	conclusionScore := (obi + gliScore + cvdScore) / 3.0
 
+	// 6. Get Latest Price for UI display
+	var lastPrice float64
+	if prices, ok := s.priceHistory[symbol]; ok && len(prices) > 0 {
+		lastPrice = prices[len(prices)-1].Price
+	}
+
 	return &MarketStats{
 		SpeedBuy:        speedBuy,
 		SpeedSell:       speedSell,
@@ -391,6 +398,7 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		GLI:             gli,
 		TradeVelocity:   tradeVelocity,
 		ConclusionScore: conclusionScore,
+		LastPrice:       lastPrice,
 	}, nil
 }
 
@@ -582,6 +590,44 @@ func (s *MarketService) recordLiquiditySnapshot(symbol string, clusters []Liquid
 		}
 	}
 	s.liquidityHistory[symbol] = valid
+}
+
+func (s *MarketService) ForceRecordLiquiditySnapshot(ctx context.Context, symbol string) {
+	linearOB, err := s.exchange.GetOrderBook(ctx, symbol, "linear")
+	if err != nil {
+		return
+	}
+	spotOB, _ := s.exchange.GetOrderBook(ctx, symbol, "spot")
+	if spotOB == nil {
+		spotOB = &domain.OrderBook{}
+	}
+
+	clusters := make([]LiquidityCluster, 0)
+	clusters = append(clusters, s.processSide(linearOB.Bids, spotOB.Bids, "bid")...)
+	clusters = append(clusters, s.processSide(linearOB.Asks, spotOB.Asks, "ask")...)
+
+	snapshot := domain.LiquiditySnapshot{
+		Symbol: symbol,
+		Time:   s.timeNow().Unix(),
+	}
+
+	for _, c := range clusters {
+		bucket := domain.LiquidityBucket{Price: c.Price, Volume: c.Volume}
+		if c.Type == "bid" {
+			snapshot.Bids = append(snapshot.Bids, bucket)
+		} else {
+			snapshot.Asks = append(snapshot.Asks, bucket)
+		}
+	}
+
+	// Persist to DB immediately
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if s.repo != nil {
+			s.repo.SaveLiquiditySnapshot(ctx, &snapshot)
+		}
+	}()
 }
 
 func (s *MarketService) GetLiquidityHistory(symbol string) []domain.LiquiditySnapshot {

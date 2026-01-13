@@ -706,16 +706,17 @@
                     }
 
                     // Recalculate RSI for the latest data
-                    // Update RSI series
-                    const lastRSI = rsiData[rsiData.length - 1];
-                    rsiSeries.update(lastRSI);
+                    const rsiData = calculateRSI(candles);
+                    if (rsiData && rsiData.length > 0) {
+                        const lastRSI = rsiData[rsiData.length - 1];
+                        rsiSeries.update(lastRSI);
+                    }
                 }
 
                 lastCandle = latestCandle;
-            }
             } catch (e) {
-            console.error("Failed to update chart", e);
-        }
+                console.error("Failed to update chart", e);
+            }
         }
 
         async function updateMarketStats() {
@@ -949,7 +950,8 @@
 
                 updateButtonStates(false);
                 showStatus('Speed Bot stopped', 'info');
-                stopStatusPolling();
+                // Ensure UI eventually reflects the stopped state accurately.
+                updateBotStatus();
             } catch (e) {
                 showStatus(`Error: ${e.message}`, 'error');
             }
@@ -957,7 +959,7 @@
 
         async function updateBotStatus() {
             try {
-                const response = await fetch(`/api/speedbot/status?symbol=${symbol}`);
+                const response = await fetch(`/api/speedbot/status?symbol=${symbol}&t=${Date.now()}`);
                 const status = await response.json();
 
                 const card = document.getElementById('bot-status-card');
@@ -985,12 +987,18 @@
                 } else {
                     card.style.display = 'none';
                 }
+
+                // Sync button states
+                updateButtonStates(status.running);
             } catch (e) {
                 console.error('Failed to fetch bot status', e);
             }
         }
 
         function startStatusPolling() {
+            if (statusPollingInterval) {
+                clearInterval(statusPollingInterval);
+            }
             updateBotStatus(); // Initial update
             statusPollingInterval = setInterval(updateBotStatus, 2000); // Poll every 2 seconds
         }
@@ -1058,7 +1066,7 @@
             document.getElementById('stop-bot-btn').addEventListener('click', stopBot);
 
             // Check if bot is running and start polling
-            updateBotStatus();
+            startStatusPolling();
 
             // Update chart every 2 seconds
             setInterval(updateChart, 2000);

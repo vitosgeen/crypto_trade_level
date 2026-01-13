@@ -60,12 +60,13 @@ type PositionHistory struct {
 }
 
 type TickData struct {
-	Timestamp int64            `json:"ts"`
-	Price     float64          `json:"p"`
-	RSI       float64          `json:"rsi"`
-	Volume    float64          `json:"v"`
-	Bids      []OrderBookEntry `json:"bids"`
-	Asks      []OrderBookEntry `json:"asks"`
+	Timestamp     int64            `json:"ts"`
+	Price         float64          `json:"p"`
+	RSI           float64          `json:"rsi"`
+	Volume        float64          `json:"v"`
+	TradeVelocity float64          `json:"vel"`
+	Bids          []OrderBookEntry `json:"bids"`
+	Asks          []OrderBookEntry `json:"asks"`
 }
 
 type TradeSessionLog struct {

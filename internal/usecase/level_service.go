@@ -31,6 +31,10 @@ type LevelService struct {
 	// Position Cache
 	positionCache map[string]*domain.Position
 	positionTime  map[string]time.Time
+
+	// Symbol Cache
+	allSymbolsCache  []string
+	symbolsCacheTime time.Time
 }
 
 func NewLevelService(
@@ -134,6 +138,35 @@ func (s *LevelService) CreateLevel(ctx context.Context, level *domain.Level) err
 
 	// 3. Update Cache
 	return s.UpdateCache(ctx)
+}
+
+// GetAllSymbols returns all available symbols from the exchange
+func (s *LevelService) GetAllSymbols(ctx context.Context) ([]string, error) {
+	s.mu.RLock()
+	if len(s.allSymbolsCache) > 0 && time.Since(s.symbolsCacheTime) < 1*time.Hour {
+		symbols := make([]string, len(s.allSymbolsCache))
+		copy(symbols, s.allSymbolsCache)
+		s.mu.RUnlock()
+		return symbols, nil
+	}
+	s.mu.RUnlock()
+
+	tickers, err := s.exchange.GetTickers(ctx, "linear")
+	if err != nil {
+		return nil, err
+	}
+
+	var symbols []string
+	for _, t := range tickers {
+		symbols = append(symbols, t.Symbol)
+	}
+
+	s.mu.Lock()
+	s.allSymbolsCache = symbols
+	s.symbolsCacheTime = time.Now()
+	s.mu.Unlock()
+
+	return symbols, nil
 }
 
 func (s *LevelService) getPosition(ctx context.Context, symbol string) (*domain.Position, error) {

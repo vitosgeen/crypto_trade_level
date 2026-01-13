@@ -109,6 +109,8 @@ func (s *Server) routes() {
 	s.router.HandleFunc("POST /api/fundingbot/auto/start", s.handleStartAutoScanner)
 	s.router.HandleFunc("POST /api/fundingbot/auto/stop", s.handleStopAutoScanner)
 	s.router.HandleFunc("GET /api/fundingbot/auto/status", s.handleGetAutoScannerStatus)
+	s.router.HandleFunc("GET /api/fundingbot/session-logs", s.handleListSessionLogs)
+	s.router.HandleFunc("GET /api/fundingbot/session-logs/{id}", s.handleGetSessionLog)
 }
 
 func (s *Server) Start() error {

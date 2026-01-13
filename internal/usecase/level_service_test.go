@@ -83,6 +83,12 @@ func (m *MockTradeRepo) ListPositionHistory(ctx context.Context, limit int) ([]*
 func (m *MockTradeRepo) SaveTradeSessionLog(ctx context.Context, log *domain.TradeSessionLog) error {
 	return nil
 }
+func (m *MockTradeRepo) ListTradeSessionLogs(ctx context.Context, symbol string, limit int) ([]*domain.TradeSessionLog, error) {
+	return nil, nil
+}
+func (m *MockTradeRepo) GetTradeSessionLog(ctx context.Context, id string) (*domain.TradeSessionLog, error) {
+	return nil, nil
+}
 
 type MockExchange struct {
 	BuyCalled    bool

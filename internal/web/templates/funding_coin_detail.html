@@ -328,6 +328,7 @@
             </div>
         </div>
 
+
         <div class="card">
             <h2>Quick Actions</h2>
             <p>
@@ -335,6 +336,7 @@
             </p>
         </div>
     </div>
+
 
     <div id="next-funding-time-data" style="display: none;">{{ if .NextFundingTime }}{{ .NextFundingTime }}{{ end }}
     </div>
@@ -644,7 +646,7 @@
                 if (heatmapData.length > 0) {
                     window.lastHeatmapTime = heatmapData[heatmapData.length - 1].time;
                 }
-                heatmapSeries.setData(heatmapData);
+                // heatmapSeries.setData(heatmapData);
             } catch (e) {
                 console.error("Failed to fetch liquidity history", e);
             }
@@ -744,10 +746,10 @@
 
                     console.log('Heatmap Update:', heatTime, latestBuckets.length, 'buckets');
 
-                    heatmapSeries.update({
-                        time: heatTime,
-                        buckets: latestBuckets
-                    });
+                    // heatmapSeries.update({
+                    //     time: heatTime,
+                    //     buckets: latestBuckets
+                    // });
                 }
             } catch (e) {
                 console.error("Failed to fetch liquidity", e);
@@ -902,7 +904,9 @@
 
                 updateButtonStates(false);
                 showStatus('Funding Bot stopped', 'info');
-                stopStatusPolling();
+                // Don't stop polling here because we want to keep updating the funding rate 
+                // and ensure the UI eventually reflects the stopped state accurately.
+                updateBotStatus();
             } catch (e) {
                 showStatus(`Error: ${e.message}`, 'error');
             }
@@ -910,7 +914,8 @@
 
         async function updateBotStatus() {
             try {
-                const response = await fetch(`/api/fundingbot/status?symbol=${symbol}`);
+                // Add timestamp to prevent caching
+                const response = await fetch(`/api/fundingbot/status?symbol=${symbol}&t=${Date.now()}`);
                 const status = await response.json();
 
                 // Update funding rate display
@@ -958,6 +963,9 @@
         }
 
         function startStatusPolling() {
+            if (statusPollingInterval) {
+                clearInterval(statusPollingInterval);
+            }
             updateBotStatus(); // Initial update
             statusPollingInterval = setInterval(updateBotStatus, 2000); // Poll every 2 seconds
         }
@@ -1028,7 +1036,7 @@
             // Check if bot is running and start polling
             startStatusPolling();
 
-            // Suggset Position Size based on current price (~$11)
+            // Suggest Position Size based on current price (~$11)
             setTimeout(() => {
                 const posInput = document.getElementById('position-size');
                 if (posInput && !posInput.value && lastCandle && lastCandle.close) {
@@ -1049,7 +1057,10 @@
             // Update funding countdown every second
             updateCountdown(); // Initial update
             setInterval(updateCountdown, 1000);
+
+
         });
+
     </script>
 </body>
 

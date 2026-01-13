@@ -155,3 +155,40 @@ func (s *Server) handleGetAutoScannerStatus(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": status})
 }
+
+func (s *Server) handleListSessionLogs(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	limitStr := r.URL.Query().Get("limit")
+	limit := 10
+	if limitStr != "" {
+		fmt.Sscanf(limitStr, "%d", &limit)
+	}
+
+	logs, err := s.tradeRepo.ListTradeSessionLogs(r.Context(), symbol, limit)
+	if err != nil {
+		s.logger.Error("Failed to list session logs", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(logs)
+}
+
+func (s *Server) handleGetSessionLog(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+
+	log, err := s.tradeRepo.GetTradeSessionLog(r.Context(), id)
+	if err != nil {
+		s.logger.Error("Failed to get session log", zap.Error(err), zap.String("id", id))
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(log)
+}
