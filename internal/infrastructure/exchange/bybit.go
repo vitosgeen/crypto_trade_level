@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +39,15 @@ type BybitAdapter struct {
 	callbacks      []func(symbol string, price float64)
 	tradeCallbacks []func(symbol string, side string, size float64, price float64)
 	mu             sync.Mutex
+
+	// WS Stats
+	lastPongTime     time.Time
+	lastPingSentTime time.Time
+	latency          time.Duration
+	lastMessageTime  time.Time
+	messageCount     uint64
+
+	subscribedSymbols []string
 }
 
 func NewBybitAdapter(apiKey, apiSecret, baseURL, wsURL string) *BybitAdapter {
@@ -298,6 +308,10 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 		return nil, err
 	}
 
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("Bybit API error (GetPosition): %d - %s", result.RetCode, string(resp))
+	}
+
 	// Debug: Print raw response if empty
 	if len(result.Result.List) == 0 {
 		fmt.Printf("DEBUG: Position List Empty. Raw: %s\n", string(resp))
@@ -335,6 +349,272 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 	}, nil
 }
 
+func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, error) {
+	var positions []*domain.Position
+	cursor := ""
+
+	for {
+		path := "/v5/position/list?category=linear&settleCoin=USDT&limit=200"
+		if cursor != "" {
+			path += "&cursor=" + url.QueryEscape(cursor)
+		}
+
+		resp, err := b.sendRequest(ctx, "GET", path, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		var result struct {
+			RetCode int `json:"retCode"`
+			Result  struct {
+				List []struct {
+					Symbol        string `json:"symbol"`
+					Side          string `json:"side"`
+					Size          string `json:"size"`
+					AvgPrice      string `json:"avgPrice"`
+					MarkPrice     string `json:"markPrice"`
+					UnrealisedPnl string `json:"unrealisedPnl"`
+					Leverage      string `json:"leverage"`
+					TradeMode     int    `json:"tradeMode"` // 0: cross margin, 1: isolated margin
+				} `json:"list"`
+				NextPageCursor string `json:"nextPageCursor"`
+			} `json:"result"`
+		}
+
+		if err := json.Unmarshal(resp, &result); err != nil {
+			return nil, err
+		}
+
+		if result.RetCode != 0 {
+			return nil, fmt.Errorf("Bybit API error (GetPositions): %d - %s", result.RetCode, string(resp))
+		}
+
+		log.Printf("DEBUG: Bybit returned %d raw positions", len(result.Result.List))
+		for _, raw := range result.Result.List {
+			size, _ := strconv.ParseFloat(raw.Size, 64)
+			if size == 0 {
+				continue
+			}
+
+			entry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
+			curr, _ := strconv.ParseFloat(raw.MarkPrice, 64)
+			pnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
+			lev, _ := strconv.Atoi(raw.Leverage)
+
+			side := domain.SideLong
+			if raw.Side == "Sell" {
+				side = domain.SideShort
+			}
+
+			marginType := "cross"
+			if raw.TradeMode == 1 {
+				marginType = "isolated"
+			}
+
+			positions = append(positions, &domain.Position{
+				Exchange:      "bybit",
+				Symbol:        raw.Symbol,
+				Side:          side,
+				Size:          size,
+				EntryPrice:    entry,
+				CurrentPrice:  curr,
+				UnrealizedPnL: pnl,
+				Leverage:      lev,
+				MarginType:    marginType,
+			})
+		}
+
+		cursor = result.Result.NextPageCursor
+		if cursor == "" {
+			break
+		}
+	}
+
+	return positions, nil
+}
+
+// PlaceOrder places a limit or market order on Bybit
+func (b *BybitAdapter) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
+	// Set margin mode and leverage
+	if order.Type == "Limit" {
+		// For limit orders, we still need to set margin mode
+		// Leverage will be set when position is opened
+		b.setMarginMode(ctx, order.Symbol, "isolated") // Default to isolated for funding bot
+	}
+
+	side := "Buy"
+	if order.Side == domain.SideShort {
+		side = "Sell"
+	}
+
+	// Map timeInForce
+	tif := order.TimeInForce
+	if tif == "GoodTillCancel" {
+		tif = "GTC"
+	} else if tif == "ImmediateOrCancel" {
+		tif = "IOC"
+	} else if tif == "FillOrKill" {
+		tif = "FOK"
+	}
+
+	payload := map[string]interface{}{
+		"category":    "linear",
+		"symbol":      order.Symbol,
+		"side":        side,
+		"orderType":   order.Type,
+		"qty":         fmt.Sprintf("%f", order.Size),
+		"timeInForce": tif,
+	}
+
+	// Add price for limit orders
+	if order.Type == "Limit" {
+		payload["price"] = fmt.Sprintf("%f", order.Price)
+	}
+
+	// Add reduce only flag if set
+	if order.ReduceOnly {
+		payload["reduceOnly"] = true
+	}
+
+	// Add Stop Loss if set
+	if order.StopLoss > 0 {
+		payload["stopLoss"] = fmt.Sprintf("%f", order.StopLoss)
+	}
+
+	// Add Take Profit if set
+	if order.TakeProfit > 0 {
+		payload["takeProfit"] = fmt.Sprintf("%f", order.TakeProfit)
+	}
+
+	// Add Trigger Price if set
+	if order.TriggerPrice > 0 {
+		payload["triggerPrice"] = fmt.Sprintf("%f", order.TriggerPrice)
+	}
+
+	resp, err := b.sendRequest(ctx, "POST", "/v5/order/create", payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			OrderID string `json:"orderId"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit order error: %s", result.RetMsg)
+	}
+
+	// Update order with exchange order ID
+	order.OrderID = result.Result.OrderID
+	order.Status = "New"
+	order.CreatedAt = time.Now()
+
+	return order, nil
+}
+
+// GetOrder retrieves order status from Bybit
+func (b *BybitAdapter) GetOrder(ctx context.Context, symbol, orderID string) (*domain.Order, error) {
+	path := fmt.Sprintf("/v5/order/realtime?category=linear&symbol=%s&orderId=%s", symbol, orderID)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				OrderID     string `json:"orderId"`
+				Symbol      string `json:"symbol"`
+				Side        string `json:"side"`
+				OrderType   string `json:"orderType"`
+				Price       string `json:"price"`
+				Qty         string `json:"qty"`
+				OrderStatus string `json:"orderStatus"`
+				TimeInForce string `json:"timeInForce"`
+				ReduceOnly  bool   `json:"reduceOnly"`
+				CreatedTime string `json:"createdTime"`
+				UpdatedTime string `json:"updatedTime"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit api error: %s", result.RetMsg)
+	}
+
+	if len(result.Result.List) == 0 {
+		return nil, fmt.Errorf("order not found: %s", orderID)
+	}
+
+	raw := result.Result.List[0]
+	price, _ := strconv.ParseFloat(raw.Price, 64)
+	qty, _ := strconv.ParseFloat(raw.Qty, 64)
+	createdTime, _ := strconv.ParseInt(raw.CreatedTime, 10, 64)
+	updatedTime, _ := strconv.ParseInt(raw.UpdatedTime, 10, 64)
+
+	side := domain.SideLong
+	if raw.Side == "Sell" {
+		side = domain.SideShort
+	}
+
+	return &domain.Order{
+		OrderID:     raw.OrderID,
+		Symbol:      raw.Symbol,
+		Side:        side,
+		Type:        raw.OrderType,
+		Price:       price,
+		Size:        qty,
+		Status:      raw.OrderStatus,
+		TimeInForce: raw.TimeInForce,
+		ReduceOnly:  raw.ReduceOnly,
+		CreatedAt:   time.Unix(createdTime/1000, 0),
+		UpdatedAt:   time.Unix(updatedTime/1000, 0),
+	}, nil
+}
+
+// CancelOrder cancels an order on Bybit
+func (b *BybitAdapter) CancelOrder(ctx context.Context, symbol, orderID string) error {
+	payload := map[string]interface{}{
+		"category": "linear",
+		"symbol":   symbol,
+		"orderId":  orderID,
+	}
+
+	resp, err := b.sendRequest(ctx, "POST", "/v5/order/cancel", payload)
+	if err != nil {
+		return err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return err
+	}
+
+	if result.RetCode != 0 {
+		return fmt.Errorf("bybit cancel error: %s", result.RetMsg)
+	}
+
+	return nil
+}
+
 // --- WebSocket ---
 
 func (b *BybitAdapter) OnPriceUpdate(callback func(symbol string, price float64)) {
@@ -364,21 +644,66 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 	}
 	b.wsConn = c
 	b.pingDone = make(chan struct{})
+	b.lastMessageTime = time.Now() // Reset on connect
+
+	// Save symbols for resubscribe
+	for _, s := range symbols {
+		exists := false
+		for _, ex := range b.subscribedSymbols {
+			if ex == s {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			b.subscribedSymbols = append(b.subscribedSymbols, s)
+		}
+	}
 
 	go b.readLoop()
 	go b.startPingLoop()
 
-	return b.subscribe(symbols)
+	return b.subscribe(b.subscribedSymbols)
+}
+
+func (b *BybitAdapter) GetWSStatus() domain.WSStatus {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return domain.WSStatus{
+		Connected:    b.wsConn != nil,
+		LatencyMS:    b.latency.Milliseconds(),
+		LastMessage:  b.lastMessageTime.Unix(),
+		MessageCount: b.messageCount,
+	}
 }
 
 func (b *BybitAdapter) Subscribe(symbols []string) error {
 	b.mu.Lock()
-	if b.wsConn == nil {
-		b.mu.Unlock()
-		// Not connected yet, ConnectWS will handle it
-		return b.ConnectWS(symbols)
-	}
 	defer b.mu.Unlock()
+
+	// Update list of symbols we want to stay subscribed to
+	for _, s := range symbols {
+		exists := false
+		for _, ex := range b.subscribedSymbols {
+			if ex == s {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			b.subscribedSymbols = append(b.subscribedSymbols, s)
+		}
+	}
+
+	if b.wsConn == nil {
+		// Not connected yet, ConnectWS will handle it
+		// But we need to call it without locking again
+		b.mu.Unlock()
+		err := b.ConnectWS(symbols)
+		b.mu.Lock()
+		return err
+	}
 	return b.subscribe(symbols)
 }
 
@@ -416,6 +741,7 @@ func (b *BybitAdapter) startPingLoop() {
 			b.mu.Lock()
 			if b.wsConn != nil {
 				pingMsg := map[string]string{"op": "ping"}
+				b.lastPingSentTime = time.Now()
 				if err := b.wsConn.WriteJSON(pingMsg); err != nil {
 					log.Println("WS Ping error:", err)
 					b.mu.Unlock()
@@ -457,6 +783,11 @@ func (b *BybitAdapter) readLoop() {
 
 		// log.Printf("WS Received: %s", string(message)) // Very verbose, maybe just topic?
 
+		b.mu.Lock()
+		b.messageCount++
+		b.lastMessageTime = time.Now()
+		b.mu.Unlock()
+
 		var event map[string]interface{}
 		if err := json.Unmarshal(message, &event); err != nil {
 			log.Println("WS Unmarshal error:", err)
@@ -465,7 +796,13 @@ func (b *BybitAdapter) readLoop() {
 
 		// Handle pong response
 		if op, ok := event["op"].(string); ok && op == "pong" {
-			log.Println("WS: Received pong")
+			b.mu.Lock()
+			b.lastPongTime = time.Now()
+			if !b.lastPingSentTime.IsZero() {
+				b.latency = b.lastPongTime.Sub(b.lastPingSentTime)
+			}
+			b.mu.Unlock()
+			log.Println("WS: Received pong, latency:", b.latency)
 			continue
 		}
 
@@ -677,7 +1014,7 @@ func (b *BybitAdapter) GetOrderBook(ctx context.Context, symbol string, category
 		category = "linear"
 	}
 
-	limit := 50
+	limit := 200
 	if category == "linear" {
 		limit = 500
 	}
@@ -778,4 +1115,62 @@ func (b *BybitAdapter) GetInstruments(ctx context.Context, category string) ([]d
 	}
 
 	return instruments, nil
+}
+
+func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domain.Ticker, error) {
+	if category == "" {
+		category = "linear"
+	}
+
+	path := fmt.Sprintf("/v5/market/tickers?category=%s", category)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				Symbol          string `json:"symbol"`
+				LastPrice       string `json:"lastPrice"`
+				Price24hPcnt    string `json:"price24hPcnt"`
+				Turnover24h     string `json:"turnover24h"`
+				OpenInterest    string `json:"openInterest"`
+				FundingRate     string `json:"fundingRate"`
+				NextFundingTime string `json:"nextFundingTime"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit api error: %s", result.RetMsg)
+	}
+
+	var tickers []domain.Ticker
+	for _, item := range result.Result.List {
+		lastPrice, _ := strconv.ParseFloat(item.LastPrice, 64)
+		price24hPcnt, _ := strconv.ParseFloat(item.Price24hPcnt, 64)
+		volume24h, _ := strconv.ParseFloat(item.Turnover24h, 64)
+		openInterest, _ := strconv.ParseFloat(item.OpenInterest, 64)
+		fundingRate, _ := strconv.ParseFloat(item.FundingRate, 64)
+		nextFundingTime, _ := strconv.ParseInt(item.NextFundingTime, 10, 64)
+
+		tickers = append(tickers, domain.Ticker{
+			Symbol:          item.Symbol,
+			LastPrice:       lastPrice,
+			Price24hPcnt:    price24hPcnt,
+			Volume24h:       volume24h,
+			OpenInterest:    openInterest,
+			FundingRate:     fundingRate,
+			NextFundingTime: nextFundingTime,
+		})
+	}
+
+	return tickers, nil
 }

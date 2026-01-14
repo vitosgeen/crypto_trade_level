@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"log"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -31,15 +32,17 @@ type PricePoint struct {
 }
 
 type MarketService struct {
-	exchange       domain.Exchange
-	cache          map[string]CachedLiquidity
-	trades         map[string][]Trade // Symbol -> Trades
-	depthHistory   map[string][]DepthSnapshot
-	priceHistory   map[string][]PricePoint // Symbol -> Price Points
-	cvdAccumulator map[string]float64      // Symbol -> Cumulative Volume Delta
-	subscribed     map[string]bool         // Symbol -> Subscribed
-	mu             sync.Mutex
-	timeNow        func() time.Time // For testing
+	exchange         domain.Exchange
+	repo             domain.LevelRepository
+	cache            map[string]CachedLiquidity
+	trades           map[string][]Trade // Symbol -> Trades
+	depthHistory     map[string][]DepthSnapshot
+	priceHistory     map[string][]PricePoint // Symbol -> Price Points
+	cvdAccumulator   map[string]float64      // Symbol -> Cumulative Volume Delta
+	liquidityHistory map[string][]domain.LiquiditySnapshot
+	subscribed       map[string]bool // Symbol -> Subscribed
+	mu               sync.Mutex
+	timeNow          func() time.Time // For testing
 }
 
 type DepthSnapshot struct {
@@ -50,22 +53,52 @@ type DepthSnapshot struct {
 
 const MaxGLI = 10.0
 
-func NewMarketService(exchange domain.Exchange) *MarketService {
+func NewMarketService(exchange domain.Exchange, repo domain.LevelRepository) *MarketService {
 	s := &MarketService{
-		exchange:       exchange,
-		cache:          make(map[string]CachedLiquidity),
-		trades:         make(map[string][]Trade),
-		depthHistory:   make(map[string][]DepthSnapshot),
-		priceHistory:   make(map[string][]PricePoint),
-		cvdAccumulator: make(map[string]float64),
-		subscribed:     make(map[string]bool),
-		timeNow:        time.Now,
+		exchange:         exchange,
+		repo:             repo,
+		cache:            make(map[string]CachedLiquidity),
+		trades:           make(map[string][]Trade),
+		depthHistory:     make(map[string][]DepthSnapshot),
+		priceHistory:     make(map[string][]PricePoint),
+		cvdAccumulator:   make(map[string]float64),
+		liquidityHistory: make(map[string][]domain.LiquiditySnapshot),
+		subscribed:       make(map[string]bool),
+		timeNow:          time.Now,
 	}
 
 	// Subscribe to trades
 	exchange.OnTradeUpdate(s.handleTrade)
 
+	s.startHealthCheck()
+
 	return s
+}
+
+func (s *MarketService) startHealthCheck() {
+	ticker := time.NewTicker(30 * time.Second)
+	go func() {
+		for range ticker.C {
+			status := s.exchange.GetWSStatus()
+			if !status.Connected {
+				log.Println("MarketService: WS disconnected, attempting reconnect...")
+				s.mu.Lock()
+				symbols := make([]string, 0, len(s.subscribed))
+				for sym := range s.subscribed {
+					symbols = append(symbols, sym)
+				}
+				s.mu.Unlock()
+
+				if len(symbols) > 0 {
+					if err := s.exchange.Subscribe(symbols); err != nil {
+						log.Printf("MarketService: Reconnect failed: %v", err)
+					} else {
+						log.Println("MarketService: Reconnect successful")
+					}
+				}
+			}
+		}
+	}()
 }
 
 func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
@@ -113,16 +146,27 @@ func (s *MarketService) handleTrade(symbol, side string, size, price float64) {
 }
 
 type MarketStats struct {
-	SpeedBuy       float64 `json:"speed_buy"`
-	SpeedSell      float64 `json:"speed_sell"`
-	DepthBid       float64 `json:"depth_bid"`
-	DepthAsk       float64 `json:"depth_ask"`
-	PriceChange60s float64 `json:"price_change_60s"`
-	OBI            float64 `json:"obi"`
-	CVD            float64 `json:"cvd"`
-	TSI            float64 `json:"tsi"`
-	GLI            float64 `json:"gli"`
-	TradeVelocity  float64 `json:"trade_velocity"`
+	SpeedBuy           float64         `json:"speed_buy"`
+	SpeedSell          float64         `json:"speed_sell"`
+	SpeedBuy30s        float64         `json:"speed_buy_30s"`
+	SpeedSell30s       float64         `json:"speed_sell_30s"`
+	SpeedBuy10s        float64         `json:"speed_buy_10s"`
+	SpeedSell10s       float64         `json:"speed_sell_10s"`
+	DepthBid           float64         `json:"depth_bid"`
+	DepthAsk           float64         `json:"depth_ask"`
+	PriceChange60s     float64         `json:"price_change_60s"`
+	PriceChange30s     float64         `json:"price_change_30s"`
+	PriceChange10s     float64         `json:"price_change_10s"`
+	OBI                float64         `json:"obi"`
+	CVD                float64         `json:"cvd"`
+	TSI                float64         `json:"tsi"`
+	GLI                float64         `json:"gli"`
+	TradeVelocity      float64         `json:"trade_velocity"`
+	ConclusionScore    float64         `json:"conclusion_score"`
+	ConclusionScore30s float64         `json:"conclusion_score_30s"`
+	ConclusionScore10s float64         `json:"conclusion_score_10s"`
+	LastPrice          float64         `json:"last_price"`
+	WSStatus           domain.WSStatus `json:"ws_status"`
 }
 
 func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*MarketStats, error) {
@@ -209,14 +253,19 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 
 	// 1. Calculate Speed (from trades)
 	var speedBuy, speedSell float64
+	var speedBuy30s, speedSell30s float64
+	var speedBuy10s, speedSell10s float64
 	var tradeCount int
 	if trades, ok := s.trades[symbol]; ok {
 		now := s.timeNow()
-		cutoff := now.Add(-60 * time.Second)
+		cutoff60 := now.Add(-60 * time.Second)
+		cutoff30 := now.Add(-30 * time.Second)
+		cutoff10 := now.Add(-10 * time.Second)
+
 		// Prune again just in case (lazy pruning)
 		validTrades := trades[:0]
 		for _, t := range trades {
-			if t.Time.After(cutoff) {
+			if t.Time.After(cutoff60) {
 				validTrades = append(validTrades, t)
 				tradeCount++
 				if t.Side == "Buy" {
@@ -224,43 +273,122 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 				} else {
 					speedSell += t.Size * t.Price
 				}
+
+				if t.Time.After(cutoff30) {
+					if t.Side == "Buy" {
+						speedBuy30s += t.Size * t.Price
+					} else {
+						speedSell30s += t.Size * t.Price
+					}
+				}
+
+				if t.Time.After(cutoff10) {
+					if t.Side == "Buy" {
+						speedBuy10s += t.Size * t.Price
+					} else {
+						speedSell10s += t.Size * t.Price
+					}
+				}
 			}
 		}
 		s.trades[symbol] = validTrades
 	}
 
-	// 2. Get Depth (60s Moving Average)
+	// 2. Get Depth (Moving Average)
 	// Check if we need to update depth history (lazy fetch if stale)
 	s.updateOrderBook(ctx, symbol)
 
-	var avgBid, avgAsk float64
+	var avgBid60, avgAsk60 float64
+	var avgBid30, avgAsk30 float64
+	var avgBid10, avgAsk10 float64
+
 	if history, ok := s.depthHistory[symbol]; ok && len(history) > 0 {
-		var sumBid, sumAsk float64
+		var sumBid60, sumAsk60 float64
+		var sumBid30, sumAsk30 float64
+		var count30 int
+		var sumBid10, sumAsk10 float64
+		var count10 int
+
+		now := s.timeNow()
+		cutoff30 := now.Add(-30 * time.Second)
+		cutoff10 := now.Add(-10 * time.Second)
+
 		for _, snapshot := range history {
-			sumBid += snapshot.TotalBid
-			sumAsk += snapshot.TotalAsk
+			sumBid60 += snapshot.TotalBid
+			sumAsk60 += snapshot.TotalAsk
+
+			if snapshot.Time.After(cutoff30) {
+				sumBid30 += snapshot.TotalBid
+				sumAsk30 += snapshot.TotalAsk
+				count30++
+			}
+			if snapshot.Time.After(cutoff10) {
+				sumBid10 += snapshot.TotalBid
+				sumAsk10 += snapshot.TotalAsk
+				count10++
+			}
 		}
-		avgBid = sumBid / float64(len(history))
-		avgAsk = sumAsk / float64(len(history))
+		avgBid60 = sumBid60 / float64(len(history))
+		avgAsk60 = sumAsk60 / float64(len(history))
+
+		if count30 > 0 {
+			avgBid30 = sumBid30 / float64(count30)
+			avgAsk30 = sumAsk30 / float64(count30)
+		} else {
+			avgBid30 = avgBid60
+			avgAsk30 = avgAsk60
+		}
+
+		if count10 > 0 {
+			avgBid10 = sumBid10 / float64(count10)
+			avgAsk10 = sumAsk10 / float64(count10)
+		} else {
+			avgBid10 = avgBid60
+			avgAsk10 = avgAsk60
+		}
 	}
 
-	// 3. Calculate 60s price change percentage
-	var priceChange60s float64
+	// 3. Calculate price change percentage
+	var priceChange60s, priceChange30s, priceChange10s float64
 	if prices, ok := s.priceHistory[symbol]; ok && len(prices) >= 2 {
+		now := s.timeNow()
+		cutoff30 := now.Add(-30 * time.Second)
+		cutoff10 := now.Add(-10 * time.Second)
+
 		// Get oldest and newest price in the 60s window
-		oldestPrice := prices[0].Price
+		oldestPrice60 := prices[0].Price
 		newestPrice := prices[len(prices)-1].Price
 
-		if oldestPrice > 0 {
-			priceChange60s = ((newestPrice - oldestPrice) / oldestPrice) * 100
+		if oldestPrice60 > 0 {
+			priceChange60s = ((newestPrice - oldestPrice60) / oldestPrice60) * 100
+		}
+
+		// Find oldest price in 30s window
+		for _, p := range prices {
+			if p.Time.After(cutoff30) {
+				if p.Price > 0 {
+					priceChange30s = ((newestPrice - p.Price) / p.Price) * 100
+				}
+				break
+			}
+		}
+
+		// Find oldest price in 10s window
+		for _, p := range prices {
+			if p.Time.After(cutoff10) {
+				if p.Price > 0 {
+					priceChange10s = ((newestPrice - p.Price) / p.Price) * 100
+				}
+				break
+			}
 		}
 	}
 
 	// 4. Calculate Indicators
 	// OBI = (BidDepth - AskDepth) / (BidDepth + AskDepth)
 	var obi float64
-	if avgBid+avgAsk > 0 {
-		obi = (avgBid - avgAsk) / (avgBid + avgAsk)
+	if avgBid60+avgAsk60 > 0 {
+		obi = (avgBid60 - avgAsk60) / (avgBid60 + avgAsk60)
 	}
 
 	// CVD = Cumulative Volume Delta (Net Volume in 60s window)
@@ -287,17 +415,73 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 	// TradeVelocity = TotalVolume / TimeWindow (60s)
 	tradeVelocity := (speedBuy + speedSell) / 60.0
 
+	// 5. Calculate Conclusion Score (Market Sentiment)
+	calcConclusion := func(buy, sell, bid, ask float64) float64 {
+		var o, gScore, cScore float64
+		if bid+ask > 0 {
+			o = (bid - ask) / (bid + ask)
+		}
+
+		var g float64 = 1.0
+		if buy > 0 {
+			g = sell / buy
+		} else if sell > 0 {
+			g = MaxGLI
+		}
+
+		if g > 1 {
+			gScore = -(g - 1)
+			if gScore < -1 {
+				gScore = -1
+			}
+		} else {
+			gScore = 1 - g
+		}
+
+		c := buy - sell
+		maxC := 10000.0
+		cScore = c / maxC
+		if cScore > 1 {
+			cScore = 1
+		} else if cScore < -1 {
+			cScore = -1
+		}
+
+		return (o + gScore + cScore) / 3.0
+	}
+
+	conclusionScore := calcConclusion(speedBuy, speedSell, avgBid60, avgAsk60)
+	conclusionScore30s := calcConclusion(speedBuy30s, speedSell30s, avgBid30, avgAsk30)
+	conclusionScore10s := calcConclusion(speedBuy10s, speedSell10s, avgBid10, avgAsk10)
+
+	// 6. Get Latest Price for UI display
+	var lastPrice float64
+	if prices, ok := s.priceHistory[symbol]; ok && len(prices) > 0 {
+		lastPrice = prices[len(prices)-1].Price
+	}
+
 	return &MarketStats{
-		SpeedBuy:       speedBuy,
-		SpeedSell:      speedSell,
-		DepthBid:       avgBid,
-		DepthAsk:       avgAsk,
-		PriceChange60s: priceChange60s,
-		OBI:            obi,
-		CVD:            cvd,
-		TSI:            tsi,
-		GLI:            gli,
-		TradeVelocity:  tradeVelocity,
+		SpeedBuy:           speedBuy,
+		SpeedSell:          speedSell,
+		SpeedBuy30s:        speedBuy30s,
+		SpeedSell30s:       speedSell30s,
+		SpeedBuy10s:        speedBuy10s,
+		SpeedSell10s:       speedSell10s,
+		DepthBid:           avgBid60,
+		DepthAsk:           avgAsk60,
+		PriceChange60s:     priceChange60s,
+		PriceChange30s:     priceChange30s,
+		PriceChange10s:     priceChange10s,
+		OBI:                obi,
+		CVD:                cvd,
+		TSI:                tsi,
+		GLI:                gli,
+		TradeVelocity:      tradeVelocity,
+		ConclusionScore:    conclusionScore,
+		ConclusionScore30s: conclusionScore30s,
+		ConclusionScore10s: conclusionScore10s,
+		LastPrice:          lastPrice,
+		WSStatus:           s.exchange.GetWSStatus(),
 	}, nil
 }
 
@@ -437,9 +621,166 @@ func (s *MarketService) GetLiquidityClusters(ctx context.Context, symbol string)
 		TotalAsk: totalAsk,
 		Expiry:   s.timeNow().Add(10 * time.Second),
 	}
+
+	// Record for history
+	s.recordLiquiditySnapshot(symbol, clusters)
 	s.mu.Unlock()
 
 	return clusters, nil
+}
+
+func (s *MarketService) recordLiquiditySnapshot(symbol string, clusters []LiquidityCluster) {
+	now := s.timeNow().Unix()
+
+	// Avoid recording too frequently (e.g. record at most every 10s per symbol)
+	if history, ok := s.liquidityHistory[symbol]; ok && len(history) > 0 {
+		if now-history[len(history)-1].Time < 10 {
+			return
+		}
+	}
+
+	snapshot := domain.LiquiditySnapshot{
+		Symbol: symbol,
+		Time:   now,
+	}
+
+	for _, c := range clusters {
+		bucket := domain.LiquidityBucket{Price: c.Price, Volume: c.Volume}
+		if c.Type == "bid" {
+			snapshot.Bids = append(snapshot.Bids, bucket)
+		} else {
+			snapshot.Asks = append(snapshot.Asks, bucket)
+		}
+	}
+
+	s.liquidityHistory[symbol] = append(s.liquidityHistory[symbol], snapshot)
+
+	// Persist to DB
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if s.repo != nil {
+			s.repo.SaveLiquiditySnapshot(ctx, &snapshot)
+		}
+	}()
+
+	// Keep last 1 hour of history in memory (approx 360 snapshots if every 10s)
+	cutoff := now - 3600
+	valid := s.liquidityHistory[symbol][:0]
+	for _, snap := range s.liquidityHistory[symbol] {
+		if snap.Time > cutoff {
+			valid = append(valid, snap)
+		}
+	}
+	s.liquidityHistory[symbol] = valid
+}
+
+func (s *MarketService) ForceRecordLiquiditySnapshot(ctx context.Context, symbol string) {
+	linearOB, err := s.exchange.GetOrderBook(ctx, symbol, "linear")
+	if err != nil {
+		return
+	}
+	spotOB, _ := s.exchange.GetOrderBook(ctx, symbol, "spot")
+	if spotOB == nil {
+		spotOB = &domain.OrderBook{}
+	}
+
+	clusters := make([]LiquidityCluster, 0)
+	clusters = append(clusters, s.processSide(linearOB.Bids, spotOB.Bids, "bid")...)
+	clusters = append(clusters, s.processSide(linearOB.Asks, spotOB.Asks, "ask")...)
+
+	snapshot := domain.LiquiditySnapshot{
+		Symbol: symbol,
+		Time:   s.timeNow().Unix(),
+	}
+
+	for _, c := range clusters {
+		bucket := domain.LiquidityBucket{Price: c.Price, Volume: c.Volume}
+		if c.Type == "bid" {
+			snapshot.Bids = append(snapshot.Bids, bucket)
+		} else {
+			snapshot.Asks = append(snapshot.Asks, bucket)
+		}
+	}
+
+	// Persist to DB immediately
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if s.repo != nil {
+			s.repo.SaveLiquiditySnapshot(ctx, &snapshot)
+		}
+	}()
+}
+
+func (s *MarketService) GetLiquidityHistory(symbol string) []domain.LiquiditySnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// If memory is empty, try to load from repo
+	if len(s.liquidityHistory[symbol]) == 0 && s.repo != nil {
+		history, err := s.repo.ListLiquiditySnapshots(context.Background(), symbol, 360) // Last 360 ≈ 1 hour
+		if err == nil && len(history) > 0 {
+			// ListLiquiditySnapshots returns DESC (most recent first), reverse for internal history
+			memHistory := make([]domain.LiquiditySnapshot, len(history))
+			for i, h := range history {
+				memHistory[len(history)-1-i] = *h
+			}
+			s.liquidityHistory[symbol] = memHistory
+		}
+	}
+
+	return s.liquidityHistory[symbol]
+}
+
+func (s *MarketService) IsWallStable(symbol string, price float64, side string, threshold float64, duration time.Duration) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	history, ok := s.liquidityHistory[symbol]
+	if !ok || len(history) == 0 {
+		return false
+	}
+
+	now := s.timeNow().Unix()
+	startTime := now - int64(duration.Seconds())
+
+	count := 0
+	matched := 0
+
+	for i := len(history) - 1; i >= 0; i-- {
+		snap := history[i]
+		if snap.Time < startTime {
+			break
+		}
+
+		count++
+		buckets := snap.Asks
+		if side == "bid" {
+			buckets = snap.Bids
+		}
+
+		found := false
+		for _, b := range buckets {
+			// Check if price is within 0.1% range of the bucket
+			if math.Abs(b.Price-price)/price < 0.001 {
+				if b.Volume >= threshold {
+					found = true
+					break
+				}
+			}
+		}
+		if found {
+			matched++
+		}
+	}
+
+	if count == 0 {
+		return false
+	}
+
+	// Stable if present in more than 70% of snapshots within the duration
+	return float64(matched)/float64(count) >= 0.7
 }
 
 func (s *MarketService) processSide(linear, spot []domain.OrderBookEntry, side string) []LiquidityCluster {
@@ -545,9 +886,9 @@ func (s *MarketService) processSide(linear, spot []domain.OrderBookEntry, side s
 		return peaks[i].Volume > peaks[j].Volume
 	})
 
-	// Limit to top 50 peaks
-	if len(peaks) > 50 {
-		peaks = peaks[:50]
+	// Limit to top 200 peaks
+	if len(peaks) > 200 {
+		peaks = peaks[:200]
 	}
 
 	return peaks

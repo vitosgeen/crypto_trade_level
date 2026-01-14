@@ -20,11 +20,13 @@ clean:
 	rm -f test_e2e.db
 	rm -f bot.pid
 	rm -f bot.log
+	rm -f funding_bot.log
 
 deps:
 	go mod tidy
 
 start: build
+	rm -f funding_bot.log
 	@echo "Starting bot in background..."
 	@nohup ./$(BUILD_DIR)/$(APP_NAME) > bot.log 2>&1 & echo $$! > bot.pid
 	@echo "Bot started with PID $$(cat bot.pid)"

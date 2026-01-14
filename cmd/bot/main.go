@@ -79,7 +79,7 @@ func main() {
 	bybitAdapter := exchange.NewBybitAdapter(bybitCfg.APIKey, bybitCfg.APISecret, bybitCfg.RESTEndpoint, bybitCfg.WSEndpoint)
 
 	// 5. Init Service
-	marketService := usecase.NewMarketService(bybitAdapter)
+	marketService := usecase.NewMarketService(bybitAdapter, store)
 	svc := usecase.NewLevelService(store, store, bybitAdapter, marketService)
 
 	// Init Cache
@@ -182,7 +182,17 @@ func main() {
 	// Init Speed Bot Service
 	speedBotService := usecase.NewSpeedBotService(bybitAdapter, marketService, log)
 
-	server := web.NewServer(port, store, store, svc, marketService, speedBotService, log)
+	// Init Funding Bot Service
+	fundingLogger, err := logger.NewFileLogger("funding_bot.log", "debug") // Force debug for now as requested
+	if err != nil {
+		log.Error("Failed to init funding logger, using default", zap.Error(err))
+		fundingLogger = log
+	}
+	fundingBotService := usecase.NewFundingBotService(bybitAdapter, store, marketService, fundingLogger)
+	// Start Auto-Scanner (Disabled by default)
+	// go fundingBotService.StartAutoScanner(context.Background())
+
+	server := web.NewServer(port, store, store, svc, marketService, speedBotService, fundingBotService, log)
 
 	// 8. Start Server
 	go func() {

@@ -7,10 +7,22 @@
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <style>
+        :root {
+            --bg-color: #0a0b1e;
+            --text-color: #e0e0e0;
+            --accent-color: #00ff88;
+            --accent-hover: #00cc6a;
+            --secondary-color: #7000ff;
+            --card-bg: #151632;
+            --nav-bg: rgba(10, 11, 30, 0.95);
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
         body {
-            font-family: sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             padding: 20px;
-            background: #f0f2f5;
+            background-color: var(--bg-color);
+            color: var(--text-color);
         }
 
         .container {
@@ -19,24 +31,41 @@
         }
 
         .card {
-            background: white;
+            background: var(--card-bg);
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
             margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: var(--text-color);
+        }
+
+        h1 {
+            background: linear-gradient(to right, #fff, #a5a5a5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
 
         .back-link {
+            display: inline-block;
             margin-bottom: 20px;
-            color: #007bff;
+            color: var(--accent-color);
             text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
         }
 
         .back-link:hover {
-            text-decoration: underline;
+            color: var(--accent-hover);
+            text-decoration: none;
         }
 
-        /* Table styling for Active Positions and Recent Trades */
+        /* Table styling */
         .table-container {
             overflow-x: auto;
             max-height: 300px;
@@ -49,94 +78,55 @@
 
         .table-container th,
         .table-container td {
-            padding: 8px;
-            border-bottom: 1px solid #ddd;
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
             text-align: left;
             font-size: 14px;
+            color: var(--text-color);
         }
 
         .table-container th {
-            background: #f2f2f2;
+            background: rgba(255, 255, 255, 0.05);
             font-weight: 600;
-        }
-
-        .table-container tr:nth-child(even) {
-            background: #fafafa;
+            color: var(--accent-color);
+            position: sticky;
+            top: 0;
         }
 
         .table-container tr:hover {
-            background: #e9f5ff;
+            background: rgba(255, 255, 255, 0.05);
         }
 
-        /* Gauge Styles */
-        .gauge-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+        /* Form Elements */
+        input,
+        select {
+            background: rgba(0, 0, 0, 0.2) !important;
+            border: 1px solid var(--border-color) !important;
+            color: var(--text-color) !important;
         }
 
-        .gauge {
-            position: relative;
-            width: 200px;
-            height: 100px;
-            overflow: hidden;
-        }
-
-        .gauge-bg {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 200px;
-            height: 200px;
-            border-radius: 50%;
-            background: conic-gradient(from 270deg, #dc3545 0deg 90deg, #28a745 90deg 180deg, transparent 180deg);
-            clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
-        }
-
-        .gauge-needle {
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            width: 4px;
-            height: 90px;
-            background: #333;
-            transform-origin: bottom center;
-            transform: rotate(-90deg);
-            transition: transform 0.5s cubic-bezier(0.4, 0.0, 0.2, 1);
-            z-index: 2;
-            border-radius: 2px;
-        }
-
-        .gauge-center {
-            position: absolute;
-            bottom: -10px;
-            left: 50%;
-            width: 20px;
-            height: 20px;
-            background: #333;
-            border-radius: 50%;
-            transform: translateX(-50%);
-            z-index: 3;
-        }
-
-        .gauge-labels {
-            display: flex;
-            justify-content: space-between;
-            width: 200px;
-            margin-top: 5px;
-            font-weight: bold;
-        }
-
-        .gauge-value {
-            margin-top: 5px;
-            font-family: monospace;
-            font-size: 1.1em;
+        input:focus,
+        select:focus {
+            border-color: var(--accent-color) !important;
+            outline: none;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
+    <nav>
+        <a href="/" class="logo">CRYPTOBOT</a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/level-bot">Level Bot</a>
+            <a href="/speed-bot" style="color: var(--accent-color);">Speed Bot</a>
+            <a href="/funding-bot">Funding Bot</a>
+            <a href="/dashboard">Dashboard</a>
+        </div>
+        <a href="/dashboard" class="cta-button">Launch App</a>
+    </nav>
+
+    <div class="container" style="margin-top: 80px;">
         <a href="/speed-bot" class="back-link">← Back to All Coins</a>
 
         <div class="card">
@@ -285,6 +275,10 @@
                     <h3 id="speed-gauge-title" style="text-align: center; margin-bottom: 10px;">Trade Volume (60s)</h3>
                     <div class="gauge">
                         <div class="gauge-bg"></div>
+                        <div class="gauge-needle" id="speed-30s-needle"
+                            style="height: 30px; width: 1.5px; background: #007bff; opacity: 0.8; z-index: 1;"></div>
+                        <div class="gauge-needle" id="speed-10s-needle"
+                            style="height: 25px; width: 1.5px; background: #000; opacity: 0.8; z-index: 1;"></div>
                         <div class="gauge-needle" id="speed-needle"></div>
                         <div class="gauge-center"></div>
                     </div>
@@ -300,6 +294,10 @@
                     <h3 style="text-align: center; margin-bottom: 10px;">Price Change (60s)</h3>
                     <div class="gauge">
                         <div class="gauge-bg"></div>
+                        <div class="gauge-needle" id="price-change-30s-needle"
+                            style="height: 30px; width: 1.5px; background: #007bff; opacity: 0.8; z-index: 1;"></div>
+                        <div class="gauge-needle" id="price-change-10s-needle"
+                            style="height: 25px; width: 1.5px; background: #000; opacity: 0.8; z-index: 1;"></div>
                         <div class="gauge-needle" id="price-change-needle"></div>
                         <div class="gauge-center"></div>
                     </div>
@@ -443,16 +441,62 @@
         let chart = null;
         let candleSeries = null;
         let liquiditySeries = null;
+        let rsiSeries = null;
         let currentLiquidityLines = [];
         let lastCandle = null;
+
+        // Conclusion Chart
+        let conclusionChart = null;
+        let conclusionSeries = null;
+
+        function calculateRSI(candles, period = 14) {
+            if (candles.length < period + 1) return [];
+
+            const rsiData = [];
+            let avgGain = 0;
+            let avgLoss = 0;
+
+            // First RSI value
+            for (let i = 1; i <= period; i++) {
+                const change = candles[i].close - candles[i - 1].close;
+                if (change > 0) avgGain += change;
+                else avgLoss += Math.abs(change);
+            }
+
+            avgGain /= period;
+            avgLoss /= period;
+
+            let rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+            let rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
+
+            rsiData.push({ time: candles[period].time, value: rsi });
+
+            // Subsequent values
+            for (let i = period + 1; i < candles.length; i++) {
+                const change = candles[i].close - candles[i - 1].close;
+                let gain = change > 0 ? change : 0;
+                let loss = change < 0 ? Math.abs(change) : 0;
+
+                avgGain = (avgGain * (period - 1) + gain) / period;
+                avgLoss = (avgLoss * (period - 1) + loss) / period;
+
+                rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+                rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + rs));
+
+                rsiData.push({ time: candles[i].time, value: rsi });
+            }
+
+            return rsiData;
+        }
 
         function initChart() {
             const chartContainer = document.getElementById('levelChart');
             if (!chartContainer) return;
 
+            // --- Main Chart (Price + RSI) ---
             chart = LightweightCharts.createChart(chartContainer, {
                 width: chartContainer.clientWidth || 800,
-                height: 400,
+                height: 500, // Increased height for RSI pane
                 layout: {
                     background: { type: 'solid', color: 'white' },
                     textColor: 'black',
@@ -463,6 +507,10 @@
                 },
                 rightPriceScale: {
                     borderColor: '#d1d4dc',
+                    scaleMargins: {
+                        top: 0.05,
+                        bottom: 0.35, // Leave space for RSI
+                    },
                 },
                 timeScale: {
                     borderColor: '#d1d4dc',
@@ -499,9 +547,90 @@
                 },
             });
 
+            // RSI Series
+            rsiSeries = chart.addLineSeries({
+                color: '#9c27b0', // Purple
+                lineWidth: 2,
+                priceScaleId: 'rsi', // Separate scale
+                scaleMargins: {
+                    top: 0.75, // Position at bottom
+                    bottom: 0.05,
+                },
+            });
+
+            // RSI Levels
+            rsiSeries.createPriceLine({
+                price: 70,
+                color: '#9c27b0',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dotted,
+                axisLabelVisible: false,
+                title: '',
+            });
+            rsiSeries.createPriceLine({
+                price: 30,
+                color: '#9c27b0',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dotted,
+                axisLabelVisible: false,
+                title: '',
+            });
+
+            // --- Conclusion Chart ---
+            // Create container dynamically if not exists (or assume user adds it to HTML, but let's append it for now)
+            // Actually, let's insert it after the main chart
+            let conclusionContainer = document.getElementById('conclusionChart');
+            if (!conclusionContainer) {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = '<h2>Conclusion Score (Live)</h2><div id="conclusionChart" style="width: 100%; height: 200px;"></div>';
+                chartContainer.parentElement.after(card);
+                conclusionContainer = card.querySelector('#conclusionChart');
+            }
+
+            conclusionChart = LightweightCharts.createChart(conclusionContainer, {
+                width: conclusionContainer.clientWidth || 800,
+                height: 200,
+                layout: {
+                    background: { type: 'solid', color: 'white' },
+                    textColor: 'black',
+                },
+                grid: {
+                    vertLines: { color: '#eee' },
+                    horzLines: { color: '#eee' },
+                },
+                rightPriceScale: {
+                    borderColor: '#d1d4dc',
+                    visible: true,
+                },
+                timeScale: {
+                    borderColor: '#d1d4dc',
+                    timeVisible: true,
+                    secondsVisible: true,
+                },
+            });
+
+            conclusionSeries = conclusionChart.addLineSeries({
+                color: '#2962FF',
+                lineWidth: 2,
+            });
+
+            // Zero line
+            conclusionSeries.createPriceLine({
+                price: 0,
+                color: '#000',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: false,
+                title: '',
+            });
+
             window.addEventListener('resize', () => {
                 if (chart && chartContainer) {
                     chart.applyOptions({ width: chartContainer.clientWidth });
+                }
+                if (conclusionChart && conclusionContainer) {
+                    conclusionChart.applyOptions({ width: conclusionContainer.clientWidth });
                 }
             });
 
@@ -520,6 +649,10 @@
                     // Sync liquidity series
                     const lineData = candles.map(c => ({ time: c.time, value: c.close }));
                     liquiditySeries.setData(lineData);
+
+                    // Calculate and set RSI
+                    const rsiData = calculateRSI(candles);
+                    rsiSeries.setData(rsiData);
 
                     chart.timeScale().fitContent();
 
@@ -575,7 +708,7 @@
         // Update chart with real-time price (simulated via periodic candle refresh)
         async function updateChart() {
             try {
-                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=5`);
+                const response = await fetch(`/api/candles?symbol=${symbol}&interval=1&limit=200`); // Fetch more to recalc RSI accurately
                 const candles = await response.json();
                 if (candles && candles.length > 0) {
                     candles.sort((a, b) => a.time - b.time);
@@ -592,8 +725,15 @@
                         liquiditySeries.update({ time: latestCandle.time, value: latestCandle.close });
                     }
 
-                    lastCandle = latestCandle;
+                    // Recalculate RSI for the latest data
+                    const rsiData = calculateRSI(candles);
+                    if (rsiData && rsiData.length > 0) {
+                        const lastRSI = rsiData[rsiData.length - 1];
+                        rsiSeries.update(lastRSI);
+                    }
                 }
+
+                lastCandle = latestCandle;
             } catch (e) {
                 console.error("Failed to update chart", e);
             }
@@ -641,6 +781,18 @@
                 const speedValue = document.getElementById('speed-value');
                 if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(2)} / ${stats.speed_buy.toFixed(2)}`;
 
+                // 1b. 30s and 10s Volume needles
+                const calculateSpeedDeg = (buy, sell) => {
+                    const total = buy + sell;
+                    let ratio = 0.5;
+                    if (total > 0) ratio = buy / total;
+                    return (ratio * 180) - 90;
+                };
+                const speed30sNeedle = document.getElementById('speed-30s-needle');
+                if (speed30sNeedle) speed30sNeedle.style.transform = `rotate(${calculateSpeedDeg(stats.speed_buy_30s, stats.speed_sell_30s)}deg)`;
+                const speed10sNeedle = document.getElementById('speed-10s-needle');
+                if (speed10sNeedle) speed10sNeedle.style.transform = `rotate(${calculateSpeedDeg(stats.speed_buy_10s, stats.speed_sell_10s)}deg)`;
+
                 // Update Depth Gauge
                 const totalDepth = stats.depth_bid + stats.depth_ask;
                 let depthRatio = 0.5;
@@ -664,6 +816,19 @@
                 const changeDeg = changeRatio * 90; // -90 to +90 degrees
                 const changeNeedle = document.getElementById('price-change-needle');
                 if (changeNeedle) changeNeedle.style.transform = `rotate(${changeDeg}deg)`;
+
+                // 3b. 30s and 10s Price Change needles
+                const calculateChangeDeg = (change) => {
+                    const maxScale = 5;
+                    let ratio = change / maxScale;
+                    if (ratio > 1) ratio = 1;
+                    if (ratio < -1) ratio = -1;
+                    return ratio * 90;
+                };
+                const change30sNeedle = document.getElementById('price-change-30s-needle');
+                if (change30sNeedle) change30sNeedle.style.transform = `rotate(${calculateChangeDeg(stats.price_change_30s)}deg)`;
+                const change10sNeedle = document.getElementById('price-change-10s-needle');
+                if (change10sNeedle) change10sNeedle.style.transform = `rotate(${calculateChangeDeg(stats.price_change_10s)}deg)`;
 
                 const changeValue = document.getElementById('price-change-value');
                 if (changeValue) {
@@ -767,6 +932,15 @@
                 if (bullCircle) bullCircle.style.opacity = bullOpacity;
                 if (scoreText) scoreText.textContent = `${(finalScore * 100).toFixed(0)}%`;
 
+                // Update Conclusion Chart
+                if (conclusionSeries) {
+                    const now = Math.floor(Date.now() / 1000);
+                    conclusionSeries.update({
+                        time: now,
+                        value: finalScore
+                    });
+                }
+
             } catch (e) {
                 console.error("Failed to fetch market stats", e);
             }
@@ -821,7 +995,8 @@
 
                 updateButtonStates(false);
                 showStatus('Speed Bot stopped', 'info');
-                stopStatusPolling();
+                // Ensure UI eventually reflects the stopped state accurately.
+                updateBotStatus();
             } catch (e) {
                 showStatus(`Error: ${e.message}`, 'error');
             }
@@ -829,7 +1004,7 @@
 
         async function updateBotStatus() {
             try {
-                const response = await fetch(`/api/speedbot/status?symbol=${symbol}`);
+                const response = await fetch(`/api/speedbot/status?symbol=${symbol}&t=${Date.now()}`);
                 const status = await response.json();
 
                 const card = document.getElementById('bot-status-card');
@@ -857,12 +1032,18 @@
                 } else {
                     card.style.display = 'none';
                 }
+
+                // Sync button states
+                updateButtonStates(status.running);
             } catch (e) {
                 console.error('Failed to fetch bot status', e);
             }
         }
 
         function startStatusPolling() {
+            if (statusPollingInterval) {
+                clearInterval(statusPollingInterval);
+            }
             updateBotStatus(); // Initial update
             statusPollingInterval = setInterval(updateBotStatus, 2000); // Poll every 2 seconds
         }
@@ -930,7 +1111,7 @@
             document.getElementById('stop-bot-btn').addEventListener('click', stopBot);
 
             // Check if bot is running and start polling
-            updateBotStatus();
+            startStatusPolling();
 
             // Update chart every 2 seconds
             setInterval(updateChart, 2000);

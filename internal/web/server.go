@@ -11,14 +11,15 @@ import (
 )
 
 type Server struct {
-	router          *http.ServeMux
-	server          *http.Server
-	levelRepo       domain.LevelRepository
-	tradeRepo       domain.TradeRepository
-	service         *usecase.LevelService
-	marketService   *usecase.MarketService
-	speedBotService *usecase.SpeedBotService
-	logger          *zap.Logger
+	router            *http.ServeMux
+	server            *http.Server
+	levelRepo         domain.LevelRepository
+	tradeRepo         domain.TradeRepository
+	service           *usecase.LevelService
+	marketService     *usecase.MarketService
+	speedBotService   *usecase.SpeedBotService
+	fundingBotService *usecase.FundingBotService
+	logger            *zap.Logger
 }
 
 func NewServer(
@@ -28,16 +29,18 @@ func NewServer(
 	service *usecase.LevelService,
 	marketService *usecase.MarketService,
 	speedBotService *usecase.SpeedBotService,
+	fundingBotService *usecase.FundingBotService,
 	logger *zap.Logger,
 ) *Server {
 	s := &Server{
-		router:          http.NewServeMux(),
-		levelRepo:       levelRepo,
-		tradeRepo:       tradeRepo,
-		service:         service,
-		marketService:   marketService,
-		speedBotService: speedBotService,
-		logger:          logger,
+		router:            http.NewServeMux(),
+		levelRepo:         levelRepo,
+		tradeRepo:         tradeRepo,
+		service:           service,
+		marketService:     marketService,
+		speedBotService:   speedBotService,
+		fundingBotService: fundingBotService,
+		logger:            logger,
 	}
 	s.routes()
 	s.server = &http.Server{
@@ -58,6 +61,8 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /levels", s.handleLevelsTable)
 	s.router.HandleFunc("POST /levels", s.handleAddLevel)
 	s.router.HandleFunc("DELETE /levels/{id}", s.handleDeleteLevel)
+	s.router.HandleFunc("POST /levels/{id}/increment-closes", s.handleIncrementCloses)
+	s.router.HandleFunc("POST /levels/{id}/auto", s.handleAutoCreateLevel)
 
 	// Tiers
 	s.router.HandleFunc("POST /tiers", s.handleUpdateTiers)
@@ -72,6 +77,7 @@ func (s *Server) routes() {
 
 	// Liquidity
 	s.router.HandleFunc("GET /api/liquidity", s.handleLiquidity)
+	s.router.HandleFunc("GET /api/liquidity-history", s.handleLiquidityHistory)
 
 	// Status
 	s.router.HandleFunc("GET /status", s.handleStatus)
@@ -82,14 +88,32 @@ func (s *Server) routes() {
 	// Market Stats
 	s.router.HandleFunc("GET /api/market-stats", s.handleMarketStats)
 
+	// Level Bot
+	s.router.HandleFunc("GET /level-bot", s.handleLevelBot)
+
 	// Speed Bot
 	s.router.HandleFunc("GET /speed-bot", s.handleSpeedBot)
 	s.router.HandleFunc("GET /speed-bot/coin/{symbol}", s.handleCoinDetail)
+
+	// Funding Bot
+	s.router.HandleFunc("GET /funding-bot", s.handleFundingBot)
+	s.router.HandleFunc("GET /funding-bot/coin/{symbol}", s.handleCoinDetail)
 
 	// Speed Bot API
 	s.router.HandleFunc("POST /api/speedbot/start", s.handleStartSpeedBot)
 	s.router.HandleFunc("POST /api/speedbot/stop", s.handleStopSpeedBot)
 	s.router.HandleFunc("GET /api/speedbot/status", s.handleSpeedBotStatus)
+
+	// Funding Bot API
+	s.router.HandleFunc("POST /api/fundingbot/start", s.handleStartFundingBot)
+	s.router.HandleFunc("POST /api/fundingbot/stop", s.handleStopFundingBot)
+	s.router.HandleFunc("POST /api/fundingbot/test", s.handleTestFundingBot)
+	s.router.HandleFunc("GET /api/fundingbot/status", s.handleFundingBotStatus)
+	s.router.HandleFunc("POST /api/fundingbot/auto/start", s.handleStartAutoScanner)
+	s.router.HandleFunc("POST /api/fundingbot/auto/stop", s.handleStopAutoScanner)
+	s.router.HandleFunc("GET /api/fundingbot/auto/status", s.handleGetAutoScannerStatus)
+	s.router.HandleFunc("GET /api/fundingbot/session-logs", s.handleListSessionLogs)
+	s.router.HandleFunc("GET /api/fundingbot/session-logs/{id}", s.handleGetSessionLog)
 }
 
 func (s *Server) Start() error {

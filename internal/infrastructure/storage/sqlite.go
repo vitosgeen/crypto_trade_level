@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -44,6 +45,9 @@ func (s *SQLiteStore) initSchema() error {
 			max_consecutive_base_closes INTEGER NOT NULL DEFAULT 0,
 			base_close_cooldown_ms INTEGER NOT NULL DEFAULT 0,
 			take_profit_pct REAL NOT NULL DEFAULT 0.02,
+			take_profit_mode TEXT NOT NULL DEFAULT 'fixed',
+			is_auto BOOLEAN NOT NULL DEFAULT 0,
+			auto_mode_enabled BOOLEAN NOT NULL DEFAULT 0,
 			source TEXT,
 			created_at DATETIME NOT NULL
 		);`,
@@ -81,6 +85,20 @@ func (s *SQLiteStore) initSchema() error {
 			margin_type TEXT NOT NULL,
 			closed_at DATETIME NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS liquidity_snapshots (
+			symbol TEXT NOT NULL,
+			time INTEGER NOT NULL,
+			bids_json TEXT NOT NULL,
+			asks_json TEXT NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_liquidity_symbol_time ON liquidity_snapshots(symbol, time DESC);`,
+		`CREATE TABLE IF NOT EXISTS trade_session_logs (
+			id TEXT PRIMARY KEY,
+			symbol TEXT NOT NULL,
+			start_time INTEGER NOT NULL,
+			end_time INTEGER NOT NULL,
+			ticks_json TEXT NOT NULL
+		);`,
 	}
 
 	for _, q := range queries {
@@ -97,6 +115,9 @@ func (s *SQLiteStore) initSchema() error {
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN max_consecutive_base_closes INTEGER NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN base_close_cooldown_ms INTEGER NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN take_profit_pct REAL NOT NULL DEFAULT 0.02`)
+	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN take_profit_mode TEXT NOT NULL DEFAULT 'fixed'`)
+	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN is_auto BOOLEAN NOT NULL DEFAULT 0`)
+	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN auto_mode_enabled BOOLEAN NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE trades ADD COLUMN realized_pnl REAL NOT NULL DEFAULT 0`)
 
 	return nil
@@ -105,20 +126,20 @@ func (s *SQLiteStore) initSchema() error {
 // LevelRepository Implementation
 
 func (s *SQLiteStore) SaveLevel(ctx context.Context, level *domain.Level) error {
-	query := `INSERT INTO levels (id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, source, created_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO levels (id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, source, created_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, query,
 		level.ID, level.Exchange, level.Symbol, level.LevelPrice, level.BaseSize,
-		level.Leverage, level.MarginType, level.CoolDownMs, level.StopLossAtBase, level.StopLossMode, level.DisableSpeedClose, level.MaxConsecutiveBaseCloses, level.BaseCloseCooldownMs, level.TakeProfitPct, level.Source, level.CreatedAt)
+		level.Leverage, level.MarginType, level.CoolDownMs, level.StopLossAtBase, level.StopLossMode, level.DisableSpeedClose, level.MaxConsecutiveBaseCloses, level.BaseCloseCooldownMs, level.TakeProfitPct, level.TakeProfitMode, level.IsAuto, level.AutoModeEnabled, level.Source, level.CreatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetLevel(ctx context.Context, id string) (*domain.Level, error) {
-	query := `SELECT id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, source, created_at FROM levels WHERE id = ?`
+	query := `SELECT id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, source, created_at FROM levels WHERE id = ?`
 	row := s.db.QueryRowContext(ctx, query, id)
 
 	var l domain.Level
-	err := row.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs, &l.TakeProfitPct, &l.Source, &l.CreatedAt)
+	err := row.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs, &l.TakeProfitPct, &l.TakeProfitMode, &l.IsAuto, &l.AutoModeEnabled, &l.Source, &l.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +147,7 @@ func (s *SQLiteStore) GetLevel(ctx context.Context, id string) (*domain.Level, e
 }
 
 func (s *SQLiteStore) ListLevels(ctx context.Context) ([]*domain.Level, error) {
-	query := `SELECT id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, source, created_at FROM levels`
+	query := `SELECT id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, source, created_at FROM levels`
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -136,7 +157,7 @@ func (s *SQLiteStore) ListLevels(ctx context.Context) ([]*domain.Level, error) {
 	var levels []*domain.Level
 	for rows.Next() {
 		var l domain.Level
-		if err := rows.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs, &l.TakeProfitPct, &l.Source, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs, &l.TakeProfitPct, &l.TakeProfitMode, &l.IsAuto, &l.AutoModeEnabled, &l.Source, &l.CreatedAt); err != nil {
 			return nil, err
 		}
 		levels = append(levels, &l)
@@ -228,4 +249,129 @@ func (s *SQLiteStore) ListPositionHistory(ctx context.Context, limit int) ([]*do
 		history = append(history, &h)
 	}
 	return history, nil
+}
+func (s *SQLiteStore) GetLevelsBySymbol(ctx context.Context, symbol string) ([]*domain.Level, error) {
+	query := `SELECT id, exchange, symbol, level_price, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, source, created_at FROM levels WHERE symbol = ?`
+	rows, err := s.db.QueryContext(ctx, query, symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var levels []*domain.Level
+	for rows.Next() {
+		var l domain.Level
+		if err := rows.Scan(
+			&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs,
+			&l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs,
+			&l.TakeProfitPct, &l.TakeProfitMode, &l.IsAuto, &l.AutoModeEnabled, &l.Source, &l.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		levels = append(levels, &l)
+	}
+	return levels, nil
+}
+
+func (s *SQLiteStore) CountActiveLevels(ctx context.Context, symbol string) (int, error) {
+	query := `SELECT COUNT(*) FROM levels WHERE symbol = ?`
+	var count int
+	err := s.db.QueryRowContext(ctx, query, symbol).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (s *SQLiteStore) SaveLiquiditySnapshot(ctx context.Context, snap *domain.LiquiditySnapshot) error {
+	bidsJSON, _ := json.Marshal(snap.Bids)
+	asksJSON, _ := json.Marshal(snap.Asks)
+
+	query := `INSERT INTO liquidity_snapshots (symbol, time, bids_json, asks_json) VALUES (?, ?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, query, snap.Symbol, snap.Time, string(bidsJSON), string(asksJSON))
+	return err
+}
+
+func (s *SQLiteStore) ListLiquiditySnapshots(ctx context.Context, symbol string, limit int) ([]*domain.LiquiditySnapshot, error) {
+	query := `SELECT symbol, time, bids_json, asks_json FROM liquidity_snapshots WHERE symbol = ? ORDER BY time DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, symbol, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var snapshots []*domain.LiquiditySnapshot
+	for rows.Next() {
+		var snap domain.LiquiditySnapshot
+		var bidsJSON, asksJSON string
+		if err := rows.Scan(&snap.Symbol, &snap.Time, &bidsJSON, &asksJSON); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(bidsJSON), &snap.Bids)
+		json.Unmarshal([]byte(asksJSON), &snap.Asks)
+		snapshots = append(snapshots, &snap)
+	}
+	return snapshots, nil
+}
+
+func (s *SQLiteStore) SaveTradeSessionLog(ctx context.Context, log *domain.TradeSessionLog) error {
+	ticksJSON, err := json.Marshal(log.Ticks)
+	if err != nil {
+		return fmt.Errorf("failed to marshal ticks: %w", err)
+	}
+
+	query := `INSERT INTO trade_session_logs (id, symbol, start_time, end_time, ticks_json) VALUES (?, ?, ?, ?, ?)`
+	_, err = s.db.ExecContext(ctx, query, log.ID, log.Symbol, log.StartTime, log.EndTime, string(ticksJSON))
+	return err
+}
+
+func (s *SQLiteStore) ListTradeSessionLogs(ctx context.Context, symbol string, limit int) ([]*domain.TradeSessionLog, error) {
+	query := `SELECT id, symbol, start_time, end_time, json_array_length(ticks_json) FROM trade_session_logs`
+	var args []interface{}
+	if symbol != "" {
+		query += ` WHERE symbol = ?`
+		args = append(args, symbol)
+	}
+	query += ` ORDER BY start_time DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []*domain.TradeSessionLog
+	for rows.Next() {
+		var l domain.TradeSessionLog
+		var tickCount int
+		if err := rows.Scan(&l.ID, &l.Symbol, &l.StartTime, &l.EndTime, &tickCount); err != nil {
+			return nil, err
+		}
+		// We can't strictly set l.Ticks to a slice of that length without data,
+		// but we can use an internal field or just let the UI handle it if we return it.
+		// Since TradeSessionLog.Ticks is []TickData, we'll just mock it or add a Count field.
+		// Let's just add a comment or return it in a way the UI can use.
+		// Actually, I'll add a 'TickCount' field to the struct for convenience.
+		l.Ticks = make([]domain.TickData, tickCount)
+		logs = append(logs, &l)
+	}
+	return logs, nil
+}
+
+func (s *SQLiteStore) GetTradeSessionLog(ctx context.Context, id string) (*domain.TradeSessionLog, error) {
+	query := `SELECT id, symbol, start_time, end_time, ticks_json FROM trade_session_logs WHERE id = ?`
+	row := s.db.QueryRowContext(ctx, query, id)
+
+	var l domain.TradeSessionLog
+	var ticksJSON string
+	if err := row.Scan(&l.ID, &l.Symbol, &l.StartTime, &l.EndTime, &ticksJSON); err != nil {
+		return nil, err
+	}
+
+	if err := json.Unmarshal([]byte(ticksJSON), &l.Ticks); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal ticks: %w", err)
+	}
+
+	return &l, nil
 }

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Level Bot - All Coins</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0a0b1e;
+            --text-color: #e0e0e0;
+            --text-muted: #a0a0a0;
+            --accent-color: #00ff88;
+            --accent-hover: #00cc6a;
+            --secondary-color: #7000ff;
+            --card-bg: #151632;
+            --nav-bg: rgba(10, 11, 30, 0.95);
+            --border-color: rgba(255, 255, 255, 0.05);
+            --input-bg: #0f1025;
+            --success: #28a745;
+            --danger: #dc3545;
+            --warning: #ffc107;
+            --info: #007bff;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding-top: 80px;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            padding: 1rem 2rem;
+            background: var(--nav-bg);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            text-decoration: none;
+            letter-spacing: 1px;
+        }
+
+        .nav-links a {
+            color: var(--text-color);
+            text-decoration: none;
+            margin-left: 2rem;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent-color);
+        }
+
+        .cta-button {
+            background: linear-gradient(45deg, var(--accent-color), var(--secondary-color));
+            color: #000;
+            padding: 0.5rem 1.2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
+        }
+
+        /* Layout */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: var(--text-color);
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+
+        /* Search Box */
+        .search-box {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 20px;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-color);
+            font-size: 1rem;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+        }
+
+        th {
+            text-align: left;
+            padding: 15px;
+            color: var(--text-muted);
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th:hover {
+            color: var(--accent-color);
+        }
+
+        td {
+            padding: 15px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-color);
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        /* Status Colors */
+        .text-success {
+            color: var(--success);
+        }
+
+        .text-danger {
+            color: var(--danger);
+        }
+
+        .text-muted {
+            color: var(--text-muted);
+        }
+
+        a.action-link {
+            color: var(--accent-color);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .filter-btn {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px 16px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .filter-btn:hover {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        .filter-btn.active {
+            background: var(--accent-color);
+            color: #000;
+            border-color: var(--accent-color);
+        }
+
+        .badge-good {
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--accent-color);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border: 1px solid rgba(0, 255, 136, 0.2);
+            margin-left: 5px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <a href="/" class="logo">CRYPTOBOT</a>
+        <div class="nav-links">
+            <a href="/#features">Features</a>
+            <a href="/level-bot" style="color: var(--accent-color);">Level Bot</a>
+            <a href="/speed-bot">Speed Bot</a>
+            <a href="/funding-bot">Funding Bot</a>
+            <a href="/dashboard">Dashboard</a>
+        </div>
+        <a href="/dashboard" class="cta-button">Launch App</a>
+    </nav>
+
+    <div class="container">
+        <div class="card">
+            <div
+                style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap; gap: 20px;">
+                <h1 style="margin-bottom: 0;">Trading Level Bot - Find Matching Coin</h1>
+                <div style="font-size: 0.85rem; color: var(--text-muted);">
+                    <span style="color: var(--accent-color);">●</span> 10m/1h/4h Ranges calculated for top 60 coins by
+                    OI
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                <button class="filter-btn active" id="filter-all" onclick="applyPresetFilter('all')">All Coins</button>
+                <button class="filter-btn" id="filter-good" onclick="applyPresetFilter('good')">💎 Good for Levels (10m
+                    Range < 2% & OI> $10M)</button>
+                <button class="filter-btn" id="filter-high-oi" onclick="applyPresetFilter('high-oi')">🔥 High OI (>
+                    $50M)</button>
+                <button class="filter-btn" id="filter-low-vol" onclick="applyPresetFilter('low-vol')">📉 Super Stable
+                    (10m Range < 1%)</button>
+            </div>
+
+            <input type="text" id="searchBox" class="search-box" placeholder="Search by symbol or base coin..."
+                onkeyup="filterTable()">
+
+            <table id="coinsTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">Symbol ▼</th>
+                        <th onclick="sortTable(1)">Last Price ▼</th>
+                        <th onclick="sortTable(2)">24h Change % ▼</th>
+                        <th onclick="sortTable(3)">24h Volume ▼</th>
+                        <th onclick="sortTable(4)">Open Interest (USD) ▼</th>
+                        <th onclick="sortTable(5)">Funding Rate ▼</th>
+                        <th onclick="sortTable(6)">10m Range ▼</th>
+                        <th onclick="sortTable(7)">1h Range ▼</th>
+                        <th onclick="sortTable(8)">4h Range ▼</th>
+                        <th onclick="sortTable(9)">Status ▼</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Instruments}}
+                    <tr data-oi="{{.OpenInterestValue}}" data-range10m="{{.Range10m}}" data-range1h="{{.Range1h}}"
+                        data-range4h="{{.Range4h}}">
+                        <td style="font-weight: 600;">
+                            {{.Symbol}}
+                            {{if and (gt .OpenInterestValue 10000000.0) (lt .Range10m 2.0) (gt .Range10m 0.0)}}
+                            <span class="badge-good">GOOD</span>
+                            {{end}}
+                        </td>
+                        <td>{{printf "%.4f" .LastPrice}}</td>
+                        <td
+                            class="{{if gt .Price24hPcnt 0.0}}text-success{{else if lt .Price24hPcnt 0.0}}text-danger{{else}}text-muted{{end}}">
+                            {{printf "%.2f%%" .Price24hPcnt}}
+                        </td>
+                        <td class="text-muted">${{if gt .Volume24h 1000000.0}}{{printf "%.1fM" (div .Volume24h
+                            1000000.0)}}{{else}}{{printf "%.0fK" (div .Volume24h 1000.0)}}{{end}}</td>
+                        <td style="font-weight: 500;">${{if gt .OpenInterestValue 1000000.0}}{{printf "%.1fM" (div
+                            .OpenInterestValue 1000000.0)}}{{else}}{{printf "%.0fK" (div .OpenInterestValue
+                            1000.0)}}{{end}}</td>
+                        <td class="{{if gt .FundingRate 0.0}}text-danger{{else if lt .FundingRate 0.0}}text-success{{else}}text-muted{{end}}"
+                            style="font-weight: 500;">
+                            {{printf "%.4f%%" (mul .FundingRate 100.0)}}
+                        </td>
+                        <td class="{{if lt .Range10m 1.0}}text-success{{else if gt .Range10m 3.0}}text-danger{{end}}"
+                            style="font-weight: 600;">
+                            {{if gt .Range10m 0.0}}
+                            {{printf "%.2f%%" .Range10m}}
+                            {{if eq .Trend10m "up"}}<span class="text-success">↑</span>{{else if eq .Trend10m
+                            "down"}}<span class="text-danger">↓</span>{{end}}
+                            {{else}}
+                            <span class="text-muted">-</span>
+                            {{end}}
+                        </td>
+                        <td class="{{if lt .Range1h 3.0}}text-success{{else if gt .Range1h 6.0}}text-danger{{end}}"
+                            style="font-weight: 600;">
+                            {{if gt .Range1h 0.0}}
+                            {{printf "%.2f%%" .Range1h}}
+                            {{if eq .Trend1h "up"}}<span class="text-success">↑</span>{{else if eq .Trend1h
+                            "down"}}<span class="text-danger">↓</span>{{end}}
+                            {{else}}
+                            <span class="text-muted">-</span>
+                            {{end}}
+                        </td>
+                        <td class="{{if lt .Range4h 5.0}}text-success{{else if gt .Range4h 10.0}}text-danger{{end}}"
+                            style="font-weight: 600;">
+                            {{if gt .Range4h 0.0}}
+                            {{printf "%.2f%%" .Range4h}}
+                            {{if eq .Trend4h "up"}}<span class="text-success">↑</span>{{else if eq .Trend4h
+                            "down"}}<span class="text-danger">↓</span>{{end}}
+                            {{else}}
+                            <span class="text-muted">-</span>
+                            {{end}}
+                        </td>
+                        <td>
+                            {{if eq .Status "Trading"}}
+                            <span
+                                style="padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; background: rgba(40, 167, 69, 0.2); color: #28a745;">
+                                {{.Status}}
+                            </span>
+                            {{else}}
+                            <span
+                                style="padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; background: rgba(108, 117, 125, 0.2); color: #a0a0a0;">
+                                {{.Status}}
+                            </span>
+                            {{end}}
+                        </td>
+                        <td><a href="/dashboard?symbol={{.Symbol}}" class="action-link">Set Level →</a></td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Preset Filters
+        function applyPresetFilter(type) {
+            // Update UI
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('filter-' + type).classList.add('active');
+
+            const table = document.getElementById('coinsTable');
+            const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+            for (let i = 0; i < rows.length; i++) {
+                const oi = parseFloat(rows[i].getAttribute('data-oi'));
+                const range10m = parseFloat(rows[i].getAttribute('data-range10m')) || 0;
+                let show = true;
+
+                if (type === 'good') {
+                    show = (oi > 10000000 && range10m > 0 && range10m < 2);
+                } else if (type === 'high-oi') {
+                    show = (oi > 50000000);
+                } else if (type === 'low-vol') {
+                    show = (range10m > 0 && range10m < 1);
+                }
+
+                rows[i].style.display = show ? '' : 'none';
+            }
+        }
+
+        // Search/Filter functionality
+        function filterTable() {
+            const input = document.getElementById('searchBox');
+            const filter = input.value.toUpperCase();
+            const table = document.getElementById('coinsTable');
+            const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+            // Reset preset filters UI when searching
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('filter-all').classList.add('active');
+
+            for (let i = 0; i < rows.length; i++) {
+                const cells = rows[i].getElementsByTagName('td');
+                let found = false;
+
+                // Search in Symbol (0)
+                for (let j = 0; j < 1; j++) {
+                    if (cells[j]) {
+                        const txtValue = cells[j].textContent || cells[j].innerText;
+                        if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+
+                rows[i].style.display = found ? '' : 'none';
+            }
+        }
+
+        // Sort functionality
+        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]; // 1 = ascending, -1 = descending
+
+        function sortTable(columnIndex) {
+            const table = document.getElementById('coinsTable');
+            const tbody = table.getElementsByTagName('tbody')[0];
+            const rows = Array.from(tbody.getElementsByTagName('tr'));
+
+            const direction = sortDirection[columnIndex];
+
+            rows.sort((a, b) => {
+                const aText = a.getElementsByTagName('td')[columnIndex].textContent.trim();
+                const bText = b.getElementsByTagName('td')[columnIndex].textContent.trim();
+
+                // Numeric sorting for columns 1, 2, 3, 4, 5, 6, 7, 8
+                if ([1, 2, 3, 4, 5, 6, 7, 8].includes(columnIndex)) {
+                    // Remove non-numeric chars like %, $, M, K
+                    const parseVal = (text) => {
+                        if (text === '-' || text === '') return -1;
+                        let val = parseFloat(text.replace(/[^0-9.-]/g, ''));
+                        if (text.includes('M')) val *= 1000000;
+                        else if (text.includes('K')) val *= 1000;
+                        return val;
+                    };
+                    const aNum = parseVal(aText);
+                    const bNum = parseVal(bText);
+                    return (aNum - bNum) * direction;
+                }
+
+                if (aText < bText) return -1 * direction;
+                if (aText > bText) return 1 * direction;
+                return 0;
+            });
+
+            // Reverse direction for next click
+            sortDirection[columnIndex] *= -1;
+
+            // Re-append rows in sorted order
+            rows.forEach(row => tbody.appendChild(row));
+        }
+    </script>
+</body>
+
+</html>

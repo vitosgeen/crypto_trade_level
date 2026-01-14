@@ -9,7 +9,7 @@ import (
 
 func TestMarketService_Indicators(t *testing.T) {
 	mockEx := &MockExchangeForService{}
-	service := usecase.NewMarketService(mockEx)
+	service := usecase.NewMarketService(mockEx, nil)
 	ctx := context.Background()
 
 	// Ensure subscription callback is registered

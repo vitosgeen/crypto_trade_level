@@ -31,9 +31,16 @@ func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error {
 func (m *MockExchange) GetPosition(ctx context.Context, symbol string) (*domain.Position, error) {
 	return nil, nil
 }
+func (m *MockExchange) GetPositions(ctx context.Context) ([]*domain.Position, error) {
+	return nil, nil
+}
 func (m *MockExchange) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return nil, nil
 }
+func (m *MockExchange) GetTickers(ctx context.Context, category string) ([]domain.Ticker, error) {
+	return nil, nil
+}
+
 func (m *MockExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
 }
 
@@ -49,9 +56,25 @@ func (m *MockExchange) Subscribe(symbols []string) error {
 	return nil
 }
 
+func (m *MockExchange) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
+	return order, nil
+}
+
+func (m *MockExchange) GetOrder(ctx context.Context, symbol, orderID string) (*domain.Order, error) {
+	return &domain.Order{OrderID: orderID, Symbol: symbol, Status: "Filled"}, nil
+}
+
+func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) error {
+	return nil
+}
+
+func (m *MockExchange) GetWSStatus() domain.WSStatus {
+	return domain.WSStatus{Connected: true}
+}
+
 func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {
 	mockEx := &MockExchange{}
-	service := NewMarketService(mockEx)
+	service := NewMarketService(mockEx, nil)
 
 	// Mock Time
 	currentTime := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
