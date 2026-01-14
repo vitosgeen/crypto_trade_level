@@ -257,16 +257,15 @@
                 <thead>
                     <tr>
                         <th onclick="sortTable(0)">Symbol ▼</th>
-                        <th onclick="sortTable(1)">Base Coin ▼</th>
-                        <th onclick="sortTable(2)">Quote Coin ▼</th>
-                        <th onclick="sortTable(3)">Last Price ▼</th>
-                        <th onclick="sortTable(4)">24h Change % ▼</th>
-                        <th onclick="sortTable(5)">24h Volume ▼</th>
-                        <th onclick="sortTable(6)">Open Interest (USD) ▼</th>
-                        <th onclick="sortTable(7)">10m Range ▼</th>
-                        <th onclick="sortTable(8)">1h Range ▼</th>
-                        <th onclick="sortTable(9)">4h Range ▼</th>
-                        <th onclick="sortTable(10)">Status ▼</th>
+                        <th onclick="sortTable(1)">Last Price ▼</th>
+                        <th onclick="sortTable(2)">24h Change % ▼</th>
+                        <th onclick="sortTable(3)">24h Volume ▼</th>
+                        <th onclick="sortTable(4)">Open Interest (USD) ▼</th>
+                        <th onclick="sortTable(5)">Funding Rate ▼</th>
+                        <th onclick="sortTable(6)">10m Range ▼</th>
+                        <th onclick="sortTable(7)">1h Range ▼</th>
+                        <th onclick="sortTable(8)">4h Range ▼</th>
+                        <th onclick="sortTable(9)">Status ▼</th>
                         <th>Action</th>
                     </tr>
                 </thead>
@@ -280,8 +279,6 @@
                             <span class="badge-good">GOOD</span>
                             {{end}}
                         </td>
-                        <td class="text-muted">{{.BaseCoin}}</td>
-                        <td class="text-muted">{{.QuoteCoin}}</td>
                         <td>{{printf "%.4f" .LastPrice}}</td>
                         <td
                             class="{{if gt .Price24hPcnt 0.0}}text-success{{else if lt .Price24hPcnt 0.0}}text-danger{{else}}text-muted{{end}}">
@@ -292,20 +289,39 @@
                         <td style="font-weight: 500;">${{if gt .OpenInterestValue 1000000.0}}{{printf "%.1fM" (div
                             .OpenInterestValue 1000000.0)}}{{else}}{{printf "%.0fK" (div .OpenInterestValue
                             1000.0)}}{{end}}</td>
+                        <td class="{{if gt .FundingRate 0.0}}text-danger{{else if lt .FundingRate 0.0}}text-success{{else}}text-muted{{end}}"
+                            style="font-weight: 500;">
+                            {{printf "%.4f%%" (mul .FundingRate 100.0)}}
+                        </td>
                         <td class="{{if lt .Range10m 1.0}}text-success{{else if gt .Range10m 3.0}}text-danger{{end}}"
                             style="font-weight: 600;">
-                            {{if gt .Range10m 0.0}}{{printf "%.2f%%" .Range10m}}{{else}}<span
-                                class="text-muted">-</span>{{end}}
+                            {{if gt .Range10m 0.0}}
+                            {{printf "%.2f%%" .Range10m}}
+                            {{if eq .Trend10m "up"}}<span class="text-success">↑</span>{{else if eq .Trend10m
+                            "down"}}<span class="text-danger">↓</span>{{end}}
+                            {{else}}
+                            <span class="text-muted">-</span>
+                            {{end}}
                         </td>
                         <td class="{{if lt .Range1h 3.0}}text-success{{else if gt .Range1h 6.0}}text-danger{{end}}"
                             style="font-weight: 600;">
-                            {{if gt .Range1h 0.0}}{{printf "%.2f%%" .Range1h}}{{else}}<span
-                                class="text-muted">-</span>{{end}}
+                            {{if gt .Range1h 0.0}}
+                            {{printf "%.2f%%" .Range1h}}
+                            {{if eq .Trend1h "up"}}<span class="text-success">↑</span>{{else if eq .Trend1h
+                            "down"}}<span class="text-danger">↓</span>{{end}}
+                            {{else}}
+                            <span class="text-muted">-</span>
+                            {{end}}
                         </td>
                         <td class="{{if lt .Range4h 5.0}}text-success{{else if gt .Range4h 10.0}}text-danger{{end}}"
                             style="font-weight: 600;">
-                            {{if gt .Range4h 0.0}}{{printf "%.2f%%" .Range4h}}{{else}}<span
-                                class="text-muted">-</span>{{end}}
+                            {{if gt .Range4h 0.0}}
+                            {{printf "%.2f%%" .Range4h}}
+                            {{if eq .Trend4h "up"}}<span class="text-success">↑</span>{{else if eq .Trend4h
+                            "down"}}<span class="text-danger">↓</span>{{end}}
+                            {{else}}
+                            <span class="text-muted">-</span>
+                            {{end}}
                         </td>
                         <td>
                             {{if eq .Status "Trading"}}
@@ -370,8 +386,8 @@
                 const cells = rows[i].getElementsByTagName('td');
                 let found = false;
 
-                // Search in Symbol (0) and Base Coin (1)
-                for (let j = 0; j < 2; j++) {
+                // Search in Symbol (0)
+                for (let j = 0; j < 1; j++) {
                     if (cells[j]) {
                         const txtValue = cells[j].textContent || cells[j].innerText;
                         if (txtValue.toUpperCase().indexOf(filter) > -1) {
@@ -399,8 +415,8 @@
                 const aText = a.getElementsByTagName('td')[columnIndex].textContent.trim();
                 const bText = b.getElementsByTagName('td')[columnIndex].textContent.trim();
 
-                // Numeric sorting for columns 3, 4, 5, 6, 7, 8, 9
-                if ([3, 4, 5, 6, 7, 8, 9].includes(columnIndex)) {
+                // Numeric sorting for columns 1, 2, 3, 4, 5, 6, 7, 8
+                if ([1, 2, 3, 4, 5, 6, 7, 8].includes(columnIndex)) {
                     // Remove non-numeric chars like %, $, M, K
                     const parseVal = (text) => {
                         if (text === '-' || text === '') return -1;

@@ -423,6 +423,10 @@ type CoinData struct {
 	Range10m          float64
 	Range1h           float64
 	Range4h           float64
+	Trend10m          string // "up", "down", or ""
+	Trend1h           string
+	Trend4h           string
+	FundingRate       float64
 }
 
 func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
@@ -465,6 +469,7 @@ func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
 			coin.Volume24h = t.Volume24h
 			coin.OpenInterest = t.OpenInterest
 			coin.OpenInterestValue = t.OpenInterest * t.LastPrice
+			coin.FundingRate = t.FundingRate
 		}
 		allCoins = append(allCoins, coin)
 	}
@@ -505,6 +510,13 @@ func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
 				}
 				if minL > 0 {
 					allCoins[idx].Range10m = ((maxH - minL) / minL) * 100
+					// Trend: Current vs Start of range
+					startPrice := candles10m[0].Open
+					if allCoins[idx].LastPrice > startPrice {
+						allCoins[idx].Trend10m = "up"
+					} else if allCoins[idx].LastPrice < startPrice {
+						allCoins[idx].Trend10m = "down"
+					}
 				}
 			}
 
@@ -522,6 +534,13 @@ func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
 				}
 				if minL > 0 {
 					allCoins[idx].Range1h = ((maxH - minL) / minL) * 100
+					// Trend: Current vs Start of range
+					startPrice := candles1h[0].Open
+					if allCoins[idx].LastPrice > startPrice {
+						allCoins[idx].Trend1h = "up"
+					} else if allCoins[idx].LastPrice < startPrice {
+						allCoins[idx].Trend1h = "down"
+					}
 				}
 			}
 
@@ -539,6 +558,13 @@ func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
 				}
 				if minL > 0 {
 					allCoins[idx].Range4h = ((maxH - minL) / minL) * 100
+					// Trend: Current vs Start of range
+					startPrice := candles4h[0].Open
+					if allCoins[idx].LastPrice > startPrice {
+						allCoins[idx].Trend4h = "up"
+					} else if allCoins[idx].LastPrice < startPrice {
+						allCoins[idx].Trend4h = "down"
+					}
 				}
 			}
 		}(i)

@@ -275,6 +275,10 @@
                     <h3 id="speed-gauge-title" style="text-align: center; margin-bottom: 10px;">Trade Volume (60s)</h3>
                     <div class="gauge">
                         <div class="gauge-bg"></div>
+                        <div class="gauge-needle" id="speed-30s-needle"
+                            style="height: 30px; width: 1.5px; background: #007bff; opacity: 0.8; z-index: 1;"></div>
+                        <div class="gauge-needle" id="speed-10s-needle"
+                            style="height: 25px; width: 1.5px; background: #000; opacity: 0.8; z-index: 1;"></div>
                         <div class="gauge-needle" id="speed-needle"></div>
                         <div class="gauge-center"></div>
                     </div>
@@ -290,6 +294,10 @@
                     <h3 style="text-align: center; margin-bottom: 10px;">Price Change (60s)</h3>
                     <div class="gauge">
                         <div class="gauge-bg"></div>
+                        <div class="gauge-needle" id="price-change-30s-needle"
+                            style="height: 30px; width: 1.5px; background: #007bff; opacity: 0.8; z-index: 1;"></div>
+                        <div class="gauge-needle" id="price-change-10s-needle"
+                            style="height: 25px; width: 1.5px; background: #000; opacity: 0.8; z-index: 1;"></div>
                         <div class="gauge-needle" id="price-change-needle"></div>
                         <div class="gauge-center"></div>
                     </div>
@@ -773,6 +781,18 @@
                 const speedValue = document.getElementById('speed-value');
                 if (speedValue) speedValue.textContent = `${stats.speed_sell.toFixed(2)} / ${stats.speed_buy.toFixed(2)}`;
 
+                // 1b. 30s and 10s Volume needles
+                const calculateSpeedDeg = (buy, sell) => {
+                    const total = buy + sell;
+                    let ratio = 0.5;
+                    if (total > 0) ratio = buy / total;
+                    return (ratio * 180) - 90;
+                };
+                const speed30sNeedle = document.getElementById('speed-30s-needle');
+                if (speed30sNeedle) speed30sNeedle.style.transform = `rotate(${calculateSpeedDeg(stats.speed_buy_30s, stats.speed_sell_30s)}deg)`;
+                const speed10sNeedle = document.getElementById('speed-10s-needle');
+                if (speed10sNeedle) speed10sNeedle.style.transform = `rotate(${calculateSpeedDeg(stats.speed_buy_10s, stats.speed_sell_10s)}deg)`;
+
                 // Update Depth Gauge
                 const totalDepth = stats.depth_bid + stats.depth_ask;
                 let depthRatio = 0.5;
@@ -796,6 +816,19 @@
                 const changeDeg = changeRatio * 90; // -90 to +90 degrees
                 const changeNeedle = document.getElementById('price-change-needle');
                 if (changeNeedle) changeNeedle.style.transform = `rotate(${changeDeg}deg)`;
+
+                // 3b. 30s and 10s Price Change needles
+                const calculateChangeDeg = (change) => {
+                    const maxScale = 5;
+                    let ratio = change / maxScale;
+                    if (ratio > 1) ratio = 1;
+                    if (ratio < -1) ratio = -1;
+                    return ratio * 90;
+                };
+                const change30sNeedle = document.getElementById('price-change-30s-needle');
+                if (change30sNeedle) change30sNeedle.style.transform = `rotate(${calculateChangeDeg(stats.price_change_30s)}deg)`;
+                const change10sNeedle = document.getElementById('price-change-10s-needle');
+                if (change10sNeedle) change10sNeedle.style.transform = `rotate(${calculateChangeDeg(stats.price_change_10s)}deg)`;
 
                 const changeValue = document.getElementById('price-change-value');
                 if (changeValue) {

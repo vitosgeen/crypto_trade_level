@@ -189,8 +189,8 @@ func main() {
 		fundingLogger = log
 	}
 	fundingBotService := usecase.NewFundingBotService(bybitAdapter, store, marketService, fundingLogger)
-	// Start Auto-Scanner
-	go fundingBotService.StartAutoScanner(context.Background())
+	// Start Auto-Scanner (Disabled by default)
+	// go fundingBotService.StartAutoScanner(context.Background())
 
 	server := web.NewServer(port, store, store, svc, marketService, speedBotService, fundingBotService, log)
 
