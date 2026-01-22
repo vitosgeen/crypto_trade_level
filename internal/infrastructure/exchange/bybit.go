@@ -1138,6 +1138,8 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 				Price24hPcnt    string `json:"price24hPcnt"`
 				Turnover24h     string `json:"turnover24h"`
 				OpenInterest    string `json:"openInterest"`
+				HighPrice24h    string `json:"highPrice24h"`
+				LowPrice24h     string `json:"lowPrice24h"`
 				FundingRate     string `json:"fundingRate"`
 				NextFundingTime string `json:"nextFundingTime"`
 			} `json:"list"`
@@ -1158,6 +1160,8 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 		price24hPcnt, _ := strconv.ParseFloat(item.Price24hPcnt, 64)
 		volume24h, _ := strconv.ParseFloat(item.Turnover24h, 64)
 		openInterest, _ := strconv.ParseFloat(item.OpenInterest, 64)
+		high24h, _ := strconv.ParseFloat(item.HighPrice24h, 64)
+		low24h, _ := strconv.ParseFloat(item.LowPrice24h, 64)
 		fundingRate, _ := strconv.ParseFloat(item.FundingRate, 64)
 		nextFundingTime, _ := strconv.ParseInt(item.NextFundingTime, 10, 64)
 
@@ -1167,6 +1171,8 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 			Price24hPcnt:    price24hPcnt,
 			Volume24h:       volume24h,
 			OpenInterest:    openInterest,
+			High24h:         high24h,
+			Low24h:          low24h,
 			FundingRate:     fundingRate,
 			NextFundingTime: nextFundingTime,
 		})

@@ -14,6 +14,8 @@ type Ticker struct {
 	Price24hPcnt    float64 `json:"price_24h_pcnt"`
 	Volume24h       float64 `json:"volume_24h"` // Turnover (USD)
 	OpenInterest    float64 `json:"open_interest"`
+	High24h         float64 `json:"high_24h"`
+	Low24h          float64 `json:"low_24h"`
 	FundingRate     float64 `json:"funding_rate"`
 	NextFundingTime int64   `json:"next_funding_time"`
 }
