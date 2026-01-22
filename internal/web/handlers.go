@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"path/filepath"
 	"sort"
@@ -426,7 +427,23 @@ type CoinData struct {
 	Trend10m          string // "up", "down", or ""
 	Trend1h           string
 	Trend4h           string
+	Trend24h          string
 	FundingRate       float64
+	Max10m            float64
+	Min10m            float64
+	Max1h             float64
+	Min1h             float64
+	Max4h             float64
+	Min4h             float64
+	Range24h          float64
+	Max24h            float64
+	Min24h            float64
+	Near4hMax         bool
+	Near4hMin         bool
+	Near1hMax         bool
+	Near1hMin         bool
+	Near24hMax        bool
+	Near24hMin        bool
 }
 
 func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
@@ -470,6 +487,39 @@ func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
 			coin.OpenInterest = t.OpenInterest
 			coin.OpenInterestValue = t.OpenInterest * t.LastPrice
 			coin.FundingRate = t.FundingRate
+			// Add 24h Range data from ticker
+			if t.Low24h > 0 {
+				coin.Range24h = ((t.High24h - t.Low24h) / t.Low24h) * 100
+				coin.Max24h = t.High24h
+				coin.Min24h = t.Low24h
+				// Trend 24h: current vs 24h ago (estimated from 24h change)
+				if t.Price24hPcnt > 0 {
+					coin.Trend24h = "up"
+				} else if t.Price24hPcnt < 0 {
+					coin.Trend24h = "down"
+				}
+
+				// Highlight logic: within 0.1% of boundary
+				threshold := 0.001 // 0.1%
+				if coin.Max4h > 0 && math.Abs(coin.LastPrice-coin.Max4h)/coin.Max4h <= threshold {
+					coin.Near4hMax = true
+				}
+				if coin.Min4h > 0 && math.Abs(coin.LastPrice-coin.Min4h)/coin.Min4h <= threshold {
+					coin.Near4hMin = true
+				}
+				if coin.Max1h > 0 && math.Abs(coin.LastPrice-coin.Max1h)/coin.Max1h <= threshold {
+					coin.Near1hMax = true
+				}
+				if coin.Min1h > 0 && math.Abs(coin.LastPrice-coin.Min1h)/coin.Min1h <= threshold {
+					coin.Near1hMin = true
+				}
+				if coin.Max24h > 0 && math.Abs(coin.LastPrice-coin.Max24h)/coin.Max24h <= threshold {
+					coin.Near24hMax = true
+				}
+				if coin.Min24h > 0 && math.Abs(coin.LastPrice-coin.Min24h)/coin.Min24h <= threshold {
+					coin.Near24hMin = true
+				}
+			}
 		}
 		allCoins = append(allCoins, coin)
 	}
@@ -510,6 +560,8 @@ func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
 				}
 				if minL > 0 {
 					allCoins[idx].Range10m = ((maxH - minL) / minL) * 100
+					allCoins[idx].Max10m = maxH
+					allCoins[idx].Min10m = minL
 					// Trend: Current vs Start of range
 					startPrice := candles10m[0].Open
 					if allCoins[idx].LastPrice > startPrice {
@@ -534,6 +586,8 @@ func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
 				}
 				if minL > 0 {
 					allCoins[idx].Range1h = ((maxH - minL) / minL) * 100
+					allCoins[idx].Max1h = maxH
+					allCoins[idx].Min1h = minL
 					// Trend: Current vs Start of range
 					startPrice := candles1h[0].Open
 					if allCoins[idx].LastPrice > startPrice {
@@ -558,6 +612,8 @@ func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
 				}
 				if minL > 0 {
 					allCoins[idx].Range4h = ((maxH - minL) / minL) * 100
+					allCoins[idx].Max4h = maxH
+					allCoins[idx].Min4h = minL
 					// Trend: Current vs Start of range
 					startPrice := candles4h[0].Open
 					if allCoins[idx].LastPrice > startPrice {

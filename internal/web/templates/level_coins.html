@@ -212,6 +212,111 @@
             border: 1px solid rgba(0, 255, 136, 0.2);
             margin-left: 5px;
         }
+
+        .badge-near-max {
+            background: rgba(40, 167, 69, 0.2);
+            color: #28a745;
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            border: 1px solid rgba(40, 167, 69, 0.3);
+            animation: pulse-green 2s infinite;
+        }
+
+        .badge-near-min {
+            background: rgba(220, 53, 69, 0.2);
+            color: #dc3545;
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            border: 1px solid rgba(220, 53, 69, 0.3);
+            animation: pulse-red 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0% {
+                box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 6px rgba(40, 167, 69, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+            }
+        }
+
+        @keyframes pulse-red {
+            0% {
+                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 6px rgba(220, 53, 69, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+            }
+        }
+
+        .highlight-boundary {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border: 1px solid var(--accent-color) !important;
+        }
+
+        .tag-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 20px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            align-items: center;
+        }
+
+        .tag-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-weight: 700;
+            margin-right: 10px;
+        }
+
+        .search-tag {
+            background: rgba(0, 255, 136, 0.05);
+            border: 1px solid rgba(0, 255, 136, 0.1);
+            color: var(--accent-color);
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .search-tag:hover {
+            background: rgba(0, 255, 136, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .search-tag.near-max {
+            background: rgba(40, 167, 69, 0.1);
+            border-color: rgba(40, 167, 69, 0.2);
+            color: #28a745;
+        }
+
+        .search-tag.near-min {
+            background: rgba(220, 53, 69, 0.1);
+            border-color: rgba(220, 53, 69, 0.2);
+            color: #dc3545;
+        }
     </style>
 </head>
 
@@ -250,45 +355,91 @@
                     (10m Range < 1%)</button>
             </div>
 
+            <div class="tag-group">
+                <div class="tag-label">Fast Search:</div>
+                <div class="search-tag" onclick="quickSearch('BTC')">BTC</div>
+                <div class="search-tag" onclick="quickSearch('ETH')">ETH</div>
+                <div class="search-tag" onclick="quickSearch('SOL')">SOL</div>
+                <div class="search-tag" onclick="quickSearch('HYPE')">HYPE</div>
+                <div class="search-tag" onclick="quickSearch('BNB')">BNB</div>
+                <div class="search-tag" onclick="quickSearch('XRP')">XRP</div>
+                <div class="search-tag" onclick="quickSearch('SUI')">SUI</div>
+                <div style="width: 10px; border-left: 1px solid rgba(255,255,255,0.1); margin: 0 5px; height: 15px;">
+                </div>
+                <div class="search-tag near-max" onclick="quickSearch('MAX 1H')">📈 1H MAX</div>
+                <div class="search-tag near-min" onclick="quickSearch('MIN 1H')">📉 1H MIN</div>
+                <div style="width: 5px;"></div>
+                <div class="search-tag near-max" onclick="quickSearch('MAX 4H')">📈 4H MAX</div>
+                <div class="search-tag near-min" onclick="quickSearch('MIN 4H')">📉 4H MIN</div>
+                <div style="width: 5px;"></div>
+                <div class="search-tag near-max" onclick="quickSearch('MAX 24H')">📈 24H MAX</div>
+                <div class="search-tag near-min" onclick="quickSearch('MIN 24H')">📉 24H MIN</div>
+            </div>
+
             <input type="text" id="searchBox" class="search-box" placeholder="Search by symbol or base coin..."
                 onkeyup="filterTable()">
 
             <table id="coinsTable">
                 <thead>
                     <tr>
-                        <th onclick="sortTable(0)">Symbol ▼</th>
-                        <th onclick="sortTable(1)">Last Price ▼</th>
-                        <th onclick="sortTable(2)">24h Change % ▼</th>
-                        <th onclick="sortTable(3)">24h Volume ▼</th>
-                        <th onclick="sortTable(4)">Open Interest (USD) ▼</th>
-                        <th onclick="sortTable(5)">Funding Rate ▼</th>
-                        <th onclick="sortTable(6)">10m Range ▼</th>
-                        <th onclick="sortTable(7)">1h Range ▼</th>
-                        <th onclick="sortTable(8)">4h Range ▼</th>
-                        <th onclick="sortTable(9)">Status ▼</th>
+                        <th onclick="sortTable(0)">Symbol / Price ▼</th>
+                        <th onclick="sortTable(1)">Vol / OI ▼</th>
+                        <th onclick="sortTable(2)">Funding Rate ▼</th>
+                        <th onclick="sortTable(3)">10m Range ▼</th>
+                        <th onclick="sortTable(4)">1h Range ▼</th>
+                        <th onclick="sortTable(5)">4h Range ▼</th>
+                        <th onclick="sortTable(6)">24h Range ▼</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     {{range .Instruments}}
-                    <tr data-oi="{{.OpenInterestValue}}" data-range10m="{{.Range10m}}" data-range1h="{{.Range1h}}"
-                        data-range4h="{{.Range4h}}">
+                    <tr data-oi="{{.OpenInterestValue}}" data-volume="{{.Volume24h}}" data-range10m="{{.Range10m}}"
+                        data-range1h="{{.Range1h}}" data-range4h="{{.Range4h}}" data-range24h="{{.Range24h}}"
+                        data-symbol="{{.Symbol}}" data-price="{{.LastPrice}}">
                         <td style="font-weight: 600;">
-                            {{.Symbol}}
-                            {{if and (gt .OpenInterestValue 10000000.0) (lt .Range10m 2.0) (gt .Range10m 0.0)}}
-                            <span class="badge-good">GOOD</span>
-                            {{end}}
+                            <div
+                                style="font-size: 0.85rem; font-weight: 400; color: var(--accent-color); margin-bottom: 2px;">
+                                {{printf "%.4f" .LastPrice}}
+                            </div>
+                            <div
+                                style="display: flex; align-items: center; gap: 5px; margin-bottom: 4px; flex-wrap: wrap;">
+                                {{.Symbol}}
+                                {{if and (gt .OpenInterestValue 10000000.0) (lt .Range10m 2.0) (gt .Range10m 0.0)}}
+                                <span class="badge-good">GOOD</span>
+                                {{end}}
+
+                                {{if .Near1hMax}}<span class="badge-near-max">MAX 1H</span>{{end}}
+                                {{if .Near1hMin}}<span class="badge-near-min">MIN 1H</span>{{end}}
+                                {{if .Near4hMax}}<span class="badge-near-max">MAX 4H</span>{{end}}
+                                {{if .Near4hMin}}<span class="badge-near-min">MIN 4H</span>{{end}}
+                                {{if .Near24hMax}}<span class="badge-near-max">MAX 24H</span>{{end}}
+                                {{if .Near24hMin}}<span class="badge-near-min">MIN 24H</span>{{end}}
+                            </div>
+                            <div style="font-size: 0.7rem; font-weight: 500;">
+                                {{if eq .Status "Trading"}}
+                                <span
+                                    style="color: #28a745; background: rgba(40, 167, 69, 0.1); padding: 1px 4px; border-radius: 3px; border: 1px solid rgba(40, 167, 69, 0.2);">
+                                    {{.Status}}
+                                </span>
+                                {{else}}
+                                <span
+                                    style="color: #a0a0a0; background: rgba(108, 117, 125, 0.1); padding: 1px 4px; border-radius: 3px; border: 1px solid rgba(108, 117, 125, 0.2);">
+                                    {{.Status}}
+                                </span>
+                                {{end}}
+                            </div>
                         </td>
-                        <td>{{printf "%.4f" .LastPrice}}</td>
-                        <td
-                            class="{{if gt .Price24hPcnt 0.0}}text-success{{else if lt .Price24hPcnt 0.0}}text-danger{{else}}text-muted{{end}}">
-                            {{printf "%.2f%%" .Price24hPcnt}}
+                        <td>
+                            <div style="font-weight: 500; color: var(--text-color);">
+                                Vol: ${{if gt .Volume24h 1000000.0}}{{printf "%.1fM" (div .Volume24h
+                                1000000.0)}}{{else}}{{printf "%.0fK" (div .Volume24h 1000.0)}}{{end}}
+                            </div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">
+                                OI: ${{if gt .OpenInterestValue 1000000.0}}{{printf "%.1fM" (div .OpenInterestValue
+                                1000000.0)}}{{else}}{{printf "%.0fK" (div .OpenInterestValue 1000.0)}}{{end}}
+                            </div>
                         </td>
-                        <td class="text-muted">${{if gt .Volume24h 1000000.0}}{{printf "%.1fM" (div .Volume24h
-                            1000000.0)}}{{else}}{{printf "%.0fK" (div .Volume24h 1000.0)}}{{end}}</td>
-                        <td style="font-weight: 500;">${{if gt .OpenInterestValue 1000000.0}}{{printf "%.1fM" (div
-                            .OpenInterestValue 1000000.0)}}{{else}}{{printf "%.0fK" (div .OpenInterestValue
-                            1000.0)}}{{end}}</td>
                         <td class="{{if gt .FundingRate 0.0}}text-danger{{else if lt .FundingRate 0.0}}text-success{{else}}text-muted{{end}}"
                             style="font-weight: 500;">
                             {{printf "%.4f%%" (mul .FundingRate 100.0)}}
@@ -296,44 +447,81 @@
                         <td class="{{if lt .Range10m 1.0}}text-success{{else if gt .Range10m 3.0}}text-danger{{end}}"
                             style="font-weight: 600;">
                             {{if gt .Range10m 0.0}}
-                            {{printf "%.2f%%" .Range10m}}
-                            {{if eq .Trend10m "up"}}<span class="text-success">↑</span>{{else if eq .Trend10m
-                            "down"}}<span class="text-danger">↓</span>{{end}}
+                            <div>
+                                {{printf "%.2f%%" .Range10m}}
+                                {{if eq .Trend10m "up"}}<span class="text-success">↑</span>{{else if eq .Trend10m
+                                "down"}}<span class="text-danger">↓</span>{{end}}
+                            </div>
+                            <div
+                                style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400; margin-top: 4px; line-height: 1.2;">
+                                H: {{printf "%.4f" .Max10m}}<br>
+                                L: {{printf "%.4f" .Min10m}}
+                            </div>
                             {{else}}
                             <span class="text-muted">-</span>
                             {{end}}
                         </td>
                         <td class="{{if lt .Range1h 3.0}}text-success{{else if gt .Range1h 6.0}}text-danger{{end}}"
-                            style="font-weight: 600;">
+                            style="font-weight: 600; {{if or .Near1hMax .Near1hMin}}background: rgba(255,255,255,0.05);{{end}}">
                             {{if gt .Range1h 0.0}}
-                            {{printf "%.2f%%" .Range1h}}
-                            {{if eq .Trend1h "up"}}<span class="text-success">↑</span>{{else if eq .Trend1h
-                            "down"}}<span class="text-danger">↓</span>{{end}}
+                            <div class="{{if .Near1hMax}}text-success{{else if .Near1hMin}}text-danger{{end}}">
+                                {{printf "%.2f%%" .Range1h}}
+                                {{if eq .Trend1h "up"}}<span class="text-success">↑</span>{{else if eq .Trend1h
+                                "down"}}<span class="text-danger">↓</span>{{end}}
+                            </div>
+                            <div
+                                style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400; margin-top: 4px; line-height: 1.2;">
+                                H: <span
+                                    style="{{if .Near1hMax}}color: var(--accent-color); font-weight: 700;{{end}}">{{printf
+                                    "%.4f" .Max1h}}</span><br>
+                                L: <span
+                                    style="{{if .Near1hMin}}color: var(--danger); font-weight: 700;{{end}}">{{printf
+                                    "%.4f" .Min1h}}</span>
+                            </div>
                             {{else}}
                             <span class="text-muted">-</span>
                             {{end}}
                         </td>
                         <td class="{{if lt .Range4h 5.0}}text-success{{else if gt .Range4h 10.0}}text-danger{{end}}"
-                            style="font-weight: 600;">
+                            style="font-weight: 600; {{if or .Near4hMax .Near4hMin}}background: rgba(255,255,255,0.05);{{end}}">
                             {{if gt .Range4h 0.0}}
-                            {{printf "%.2f%%" .Range4h}}
-                            {{if eq .Trend4h "up"}}<span class="text-success">↑</span>{{else if eq .Trend4h
-                            "down"}}<span class="text-danger">↓</span>{{end}}
+                            <div class="{{if .Near4hMax}}text-success{{else if .Near4hMin}}text-danger{{end}}">
+                                {{printf "%.2f%%" .Range4h}}
+                                {{if eq .Trend4h "up"}}<span class="text-success">↑</span>{{else if eq .Trend4h
+                                "down"}}<span class="text-danger">↓</span>{{end}}
+                            </div>
+                            <div
+                                style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400; margin-top: 4px; line-height: 1.2;">
+                                H: <span
+                                    style="{{if .Near4hMax}}color: var(--accent-color); font-weight: 700;{{end}}">{{printf
+                                    "%.4f" .Max4h}}</span><br>
+                                L: <span
+                                    style="{{if .Near4hMin}}color: var(--danger); font-weight: 700;{{end}}">{{printf
+                                    "%.4f" .Min4h}}</span>
+                            </div>
                             {{else}}
                             <span class="text-muted">-</span>
                             {{end}}
                         </td>
-                        <td>
-                            {{if eq .Status "Trading"}}
-                            <span
-                                style="padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; background: rgba(40, 167, 69, 0.2); color: #28a745;">
-                                {{.Status}}
-                            </span>
+                        <td class="{{if lt .Range24h 10.0}}text-success{{else if gt .Range24h 25.0}}text-danger{{end}}"
+                            style="font-weight: 600; {{if or .Near24hMax .Near24hMin}}background: rgba(255,255,255,0.05);{{end}}">
+                            {{if gt .Range24h 0.0}}
+                            <div class="{{if .Near24hMax}}text-success{{else if .Near24hMin}}text-danger{{end}}">
+                                {{printf "%.2f%%" .Range24h}}
+                                {{if eq .Trend24h "up"}}<span class="text-success">↑</span>{{else if eq .Trend24h
+                                "down"}}<span class="text-danger">↓</span>{{end}}
+                            </div>
+                            <div
+                                style="font-size: 0.75rem; color: var(--text-muted); font-weight: 400; margin-top: 4px; line-height: 1.2;">
+                                H: <span
+                                    style="{{if .Near24hMax}}color: var(--accent-color); font-weight: 700;{{end}}">{{printf
+                                    "%.4f" .Max24h}}</span><br>
+                                L: <span
+                                    style="{{if .Near24hMin}}color: var(--danger); font-weight: 700;{{end}}">{{printf
+                                    "%.4f" .Min24h}}</span>
+                            </div>
                             {{else}}
-                            <span
-                                style="padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; background: rgba(108, 117, 125, 0.2); color: #a0a0a0;">
-                                {{.Status}}
-                            </span>
+                            <span class="text-muted">-</span>
                             {{end}}
                         </td>
                         <td><a href="/dashboard?symbol={{.Symbol}}" class="action-link">Set Level →</a></td>
@@ -371,6 +559,13 @@
             }
         }
 
+        // Quick Search helper
+        function quickSearch(term) {
+            const searchBox = document.getElementById('searchBox');
+            searchBox.value = term;
+            filterTable();
+        }
+
         // Search/Filter functionality
         function filterTable() {
             const input = document.getElementById('searchBox');
@@ -402,7 +597,7 @@
         }
 
         // Sort functionality
-        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]; // 1 = ascending, -1 = descending
+        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1]; // Adjusted length
 
         function sortTable(columnIndex) {
             const table = document.getElementById('coinsTable');
@@ -415,8 +610,16 @@
                 const aText = a.getElementsByTagName('td')[columnIndex].textContent.trim();
                 const bText = b.getElementsByTagName('td')[columnIndex].textContent.trim();
 
-                // Numeric sorting for columns 1, 2, 3, 4, 5, 6, 7, 8
-                if ([1, 2, 3, 4, 5, 6, 7, 8].includes(columnIndex)) {
+                // Numeric sorting for columns
+                if ([1, 2, 3, 4, 5, 6].includes(columnIndex)) {
+                    // New indices: 0:Symbol/Price, 1:Vol/OI, 2:Funding, 3:10m, 4:1h, 5:4h, 6:24h
+
+                    if (columnIndex === 1) return (parseFloat(a.getAttribute('data-volume')) - parseFloat(b.getAttribute('data-volume'))) * direction;
+                    if (columnIndex === 3) return (parseFloat(a.getAttribute('data-range10m')) - parseFloat(b.getAttribute('data-range10m'))) * direction;
+                    if (columnIndex === 4) return (parseFloat(a.getAttribute('data-range1h')) - parseFloat(b.getAttribute('data-range1h'))) * direction;
+                    if (columnIndex === 5) return (parseFloat(a.getAttribute('data-range4h')) - parseFloat(b.getAttribute('data-range4h'))) * direction;
+                    if (columnIndex === 6) return (parseFloat(a.getAttribute('data-range24h')) - parseFloat(b.getAttribute('data-range24h'))) * direction;
+
                     // Remove non-numeric chars like %, $, M, K
                     const parseVal = (text) => {
                         if (text === '-' || text === '') return -1;
@@ -428,6 +631,15 @@
                     const aNum = parseVal(aText);
                     const bNum = parseVal(bText);
                     return (aNum - bNum) * direction;
+                }
+
+                // Special handling for Symbol/Price (index 0)
+                if (columnIndex === 0) {
+                    const aSym = a.getAttribute('data-symbol');
+                    const bSym = b.getAttribute('data-symbol');
+                    if (aSym < bSym) return -1 * direction;
+                    if (aSym > bSym) return 1 * direction;
+                    return 0;
                 }
 
                 if (aText < bText) return -1 * direction;
