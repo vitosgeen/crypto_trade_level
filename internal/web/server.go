@@ -19,6 +19,7 @@ type Server struct {
 	marketService     *usecase.MarketService
 	speedBotService   *usecase.SpeedBotService
 	fundingBotService *usecase.FundingBotService
+	levelBotWorker    *usecase.LevelBotWorker
 	logger            *zap.Logger
 }
 
@@ -40,6 +41,7 @@ func NewServer(
 		marketService:     marketService,
 		speedBotService:   speedBotService,
 		fundingBotService: fundingBotService,
+		levelBotWorker:    usecase.NewLevelBotWorker(service, logger),
 		logger:            logger,
 	}
 	s.routes()
@@ -90,6 +92,8 @@ func (s *Server) routes() {
 
 	// Level Bot
 	s.router.HandleFunc("GET /level-bot", s.handleLevelBot)
+	s.router.HandleFunc("GET /analysis", s.handleLogAnalysis)
+	s.router.HandleFunc("GET /api/analysis/chart", s.handleGetLogChartData)
 
 	// Speed Bot
 	s.router.HandleFunc("GET /speed-bot", s.handleSpeedBot)
@@ -118,6 +122,7 @@ func (s *Server) routes() {
 
 func (s *Server) Start() error {
 	s.logger.Info("Starting web server", zap.String("addr", s.server.Addr))
+	s.levelBotWorker.Start(context.Background())
 	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}

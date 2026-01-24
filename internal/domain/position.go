@@ -7,6 +7,7 @@ type Side string
 const (
 	SideLong  Side = "LONG"
 	SideShort Side = "SHORT"
+	SideBoth  Side = "BOTH"
 )
 
 // Position represents an open position on the exchange.

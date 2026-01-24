@@ -479,6 +479,11 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 		return
 	}
 
+	// 1b. Respect Side Filter
+	if level.Side != "" && level.Side != domain.SideBoth && level.Side != side {
+		return
+	}
+
 	// 2. Calculate Boundaries
 	boundaries := s.evaluator.CalculateBoundaries(level, tiers, side)
 

@@ -463,10 +463,23 @@
                     <input type="number" name="leverage" placeholder="Lev" value="10" required style="width: 80px;">
                 </div>
 
-                <select name="margin_type">
-                    <option value="isolated">Isolated</option>
-                    <option value="cross">Cross</option>
-                </select>
+                <div class="flex-row">
+                    <div class="flex-1">
+                        <label>Margin</label>
+                        <select name="margin_type">
+                            <option value="isolated">Isolated</option>
+                            <option value="cross">Cross</option>
+                        </select>
+                    </div>
+                    <div class="flex-1">
+                        <label>Side Filter</label>
+                        <select name="side">
+                            <option value="BOTH">Both</option>
+                            <option value="LONG">Long Only</option>
+                            <option value="SHORT">Short Only</option>
+                        </select>
+                    </div>
+                </div>
 
                 <input type="number" name="cool_down_ms" placeholder="Cooldown (ms)" value="5000" required>
 
@@ -565,7 +578,8 @@
                             style="width: auto; margin: 0; padding: 5px;">
                             <option value="" selected disabled>Select a level...</option>
                             {{range .Levels}}
-                            <option value="{{.Symbol}}-{{.LevelPrice}}">{{.Exchange}} - {{.Symbol}} - {{.LevelPrice}}
+                            <option value="{{.Symbol}}-{{.LevelPrice}}">[{{.Side}}] {{.Exchange}} - {{.Symbol}} -
+                                {{.LevelPrice}}
                             </option>
                             {{end}}
                         </select>
@@ -1233,17 +1247,18 @@
 
             rows.forEach((row) => {
                 const cells = row.querySelectorAll('td');
-                if (cells.length < 3) return;
+                if (cells.length < 5) return;
                 const symbol = cells[1].textContent.trim();
                 const levelPrice = parseFloat(cells[3].textContent);
+                const sideText = cells[4].textContent.trim();
                 const id = `${symbol}-${levelPrice}`;
                 activeIds.push(id);
-                availableLevels.push({ id, text: `${symbol} @ ${levelPrice}` });
+                availableLevels.push({ id, text: `[${sideText}] ${symbol} @ ${levelPrice}` });
 
                 if (!currentOptions.includes(id)) {
                     const option = document.createElement('option');
                     option.value = id;
-                    option.text = `${symbol} @ ${levelPrice}`;
+                    option.text = `[${sideText}] ${symbol} @ ${levelPrice}`;
                     selector.appendChild(option);
                 }
             });
@@ -1322,7 +1337,8 @@
             }
 
             // Tiers
-            const tierCell = cells[5];
+            const sideText = cells[4].textContent.trim().toUpperCase();
+            const tierCell = cells[6];
             let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
 
             // Parse from the div/span structure
@@ -1392,13 +1408,17 @@
                     }));
                 };
 
-                addTierLine(longTier1, 'L-T1', '#00ff88');
-                addTierLine(longTier2, 'L-T2', '#00ff88');
-                addTierLine(longTier3, 'L-T3', '#00ff88');
+                if (sideText === 'BOTH' || sideText === 'LONG') {
+                    addTierLine(longTier1, 'L-T1', '#00ff88');
+                    addTierLine(longTier2, 'L-T2', '#00ff88');
+                    addTierLine(longTier3, 'L-T3', '#00ff88');
+                }
 
-                addTierLine(shortTier1, 'S-T1', '#dc3545');
-                addTierLine(shortTier2, 'S-T2', '#dc3545');
-                addTierLine(shortTier3, 'S-T3', '#dc3545');
+                if (sideText === 'BOTH' || sideText === 'SHORT') {
+                    addTierLine(shortTier1, 'S-T1', '#dc3545');
+                    addTierLine(shortTier2, 'S-T2', '#dc3545');
+                    addTierLine(shortTier3, 'S-T3', '#dc3545');
+                }
 
                 window.lastLevelDetails = levelDetailsJson;
             }
@@ -1793,6 +1813,7 @@
             <th>Symbol</th>
             <th>Mode</th>
             <th>Level Price</th>
+            <th>Side</th>
             <th>Current Price</th>
             <th>Zone/Tiers</th>
             <th>Size</th>
@@ -1819,11 +1840,25 @@
                 {{end}}
             </td>
             <td>{{ printf "%.6f" .LevelPrice }}</td>
+            <td>
+                {{if eq .Side "BOTH"}}
+                <span class="badge"
+                    style="background: rgba(255, 255, 255, 0.1); color: var(--text-color); border: 1px solid var(--border-color);">Both</span>
+                {{else if eq .Side "LONG"}}
+                <span class="badge bg-success-subtle text-success" style="border: 1px solid var(--success);">Long</span>
+                {{else if eq .Side "SHORT"}}
+                <span class="badge bg-danger-subtle text-danger" style="border: 1px solid var(--danger);">Short</span>
+                {{else}}
+                <span class="badge"
+                    style="background: rgba(255, 255, 255, 0.1); color: var(--text-color); border: 1px solid var(--border-color);">{{.Side}}</span>
+                {{end}}
+            </td>
             <td>{{ printf "%.6f" .CurrentPrice }}</td>
             <td>
                 <div style="font-size: 0.85em; display: grid; grid-template-columns: auto 1fr; gap: 5px;">
-                    <span class="text-success" style="font-weight: bold;">LONG</span>
-                    <div style="display: flex; gap: 5px;">
+                    <span class="{{if eq .ZoneSide " LONG"}}text-success{{else}}text-muted{{end}}"
+                        style="font-weight: bold;">LONG</span>
+                    <div style="display: flex; gap: 5px; opacity: {{if eq .ZoneSide " LONG"}}1{{else}}0.5{{end}};">
                         <span class="bg-success-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
                             (index .LongTiers 0) }}</span>
                         <span class="bg-success-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
@@ -1831,8 +1866,9 @@
                         <span class="bg-success-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
                             (index .LongTiers 2) }}</span>
                     </div>
-                    <span class="text-danger" style="font-weight: bold;">SHORT</span>
-                    <div style="display: flex; gap: 5px;">
+                    <span class="{{if eq .ZoneSide " SHORT"}}text-danger{{else}}text-muted{{end}}"
+                        style="font-weight: bold;">SHORT</span>
+                    <div style="display: flex; gap: 5px; opacity: {{if eq .ZoneSide " SHORT"}}1{{else}}0.5{{end}};">
                         <span class="bg-danger-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
                             (index .ShortTiers 0) }}</span>
                         <span class="bg-danger-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"

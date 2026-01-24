@@ -8,6 +8,7 @@ type Level struct {
 	Exchange                 string
 	Symbol                   string
 	LevelPrice               float64
+	Side                     Side
 	BaseSize                 float64
 	Leverage                 int
 	MarginType               string // "isolated" or "cross"

@@ -317,6 +317,43 @@
             border-color: rgba(220, 53, 69, 0.2);
             color: #dc3545;
         }
+
+        /* Column Descriptions */
+        .info-section {
+            margin-top: 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .info-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            padding: 15px;
+            border-radius: 10px;
+            transition: transform 0.2s;
+        }
+
+        .info-card:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(0, 255, 136, 0.2);
+        }
+
+        .info-title {
+            color: var(--accent-color);
+            font-size: 0.9rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .info-text {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
     </style>
 </head>
 
@@ -339,9 +376,13 @@
             <div
                 style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap; gap: 20px;">
                 <h1 style="margin-bottom: 0;">Trading Level Bot - Find Matching Coin</h1>
-                <div style="font-size: 0.85rem; color: var(--text-muted);">
-                    <span style="color: var(--accent-color);">●</span> 10m/1h/4h Ranges calculated for top 60 coins by
-                    OI
+                <div style="display: flex; gap: 15px; align-items: center;">
+                    <a href="/analysis" class="cta-button" style="padding: 0.4rem 1rem; font-size: 0.8rem;">📊 View
+                        Analysis</a>
+                    <div style="font-size: 0.85rem; color: var(--text-muted); text-align: right;">
+                        <span style="color: var(--accent-color);">●</span> 10m/1h/4h Ranges calculated for top 60 coins
+                        by OI
+                    </div>
                 </div>
             </div>
 
@@ -530,130 +571,168 @@
                 </tbody>
             </table>
         </div>
-    </div>
 
-    <script>
-        // Preset Filters
-        function applyPresetFilter(type) {
-            // Update UI
-            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-            document.getElementById('filter-' + type).classList.add('active');
+        <div class="info-section">
+            <div class="info-card">
+                <div class="info-title">Symbol / Price</div>
+                <div class="info-text">The trading pair and its current real-time price. The <b>GOOD</b> badge appears
+                    when a coin has high Open Interest (>$10M) and low 10m volatility (<2%), making it ideal for level
+                        trading.</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-title">Vol / OI</div>
+                    <div class="info-text"><b>Volume:</b> Total value traded in the last 24 hours. <br><b>Open Interest
+                            (OI):</b> Total value of all active derivative contracts. High OI suggests strong interest
+                        and liquidity.</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-title">Funding Rate</div>
+                    <div class="info-text">Periodic payments between traders. <span class="text-danger">Positive</span>
+                        rate means longs pay shorts (bullish sentiment). <span class="text-success">Negative</span> rate
+                        means shorts pay longs (bearish sentiment).</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-title">Timeframe Ranges</div>
+                    <div class="info-text">Percentage difference between High (H) and Low (L) prices over 10m, 1h, 4h,
+                        and 24h. <b>↑/↓</b> arrows indicate current trend direction relative to the start of the period.
+                    </div>
+                </div>
+                <div class="info-card">
+                    <div class="info-title">Extreme Levels</div>
+                    <div class="info-text"><span class="badge-near-max" style="animation: none;">MAX</span> or <span
+                            class="badge-near-min" style="animation: none;">MIN</span> badges indicate the price is
+                        currently at its historical high or low for that specific timeframe.</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-title">Action</div>
+                    <div class="info-text">Click <b>Set Level →</b> to open the professional trading dashboard with this
+                        coin pre-selected and ready for configuration.</div>
+                </div>
+            </div>
+        </div>
 
-            const table = document.getElementById('coinsTable');
-            const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+        <script>
+            // Preset Filters
+            function applyPresetFilter(type) {
+                // Update UI
+                document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+                document.getElementById('filter-' + type).classList.add('active');
 
-            for (let i = 0; i < rows.length; i++) {
-                const oi = parseFloat(rows[i].getAttribute('data-oi'));
-                const range10m = parseFloat(rows[i].getAttribute('data-range10m')) || 0;
-                let show = true;
+                const table = document.getElementById('coinsTable');
+                const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
 
-                if (type === 'good') {
-                    show = (oi > 10000000 && range10m > 0 && range10m < 2);
-                } else if (type === 'high-oi') {
-                    show = (oi > 50000000);
-                } else if (type === 'low-vol') {
-                    show = (range10m > 0 && range10m < 1);
+                for (let i = 0; i < rows.length; i++) {
+                    const oi = parseFloat(rows[i].getAttribute('data-oi'));
+                    const range10m = parseFloat(rows[i].getAttribute('data-range10m')) || 0;
+                    let show = true;
+
+                    if (type === 'good') {
+                        show = (oi > 10000000 && range10m > 0 && range10m < 2);
+                    } else if (type === 'high-oi') {
+                        show = (oi > 50000000);
+                    } else if (type === 'low-vol') {
+                        show = (range10m > 0 && range10m < 1);
+                    }
+
+                    rows[i].style.display = show ? '' : 'none';
                 }
-
-                rows[i].style.display = show ? '' : 'none';
             }
-        }
 
-        // Quick Search helper
-        function quickSearch(term) {
-            const searchBox = document.getElementById('searchBox');
-            searchBox.value = term;
-            filterTable();
-        }
+            // Quick Search helper
+            function quickSearch(term) {
+                const searchBox = document.getElementById('searchBox');
+                searchBox.value = term;
+                filterTable();
+            }
 
-        // Search/Filter functionality
-        function filterTable() {
-            const input = document.getElementById('searchBox');
-            const filter = input.value.toUpperCase();
-            const table = document.getElementById('coinsTable');
-            const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+            // Search/Filter functionality
+            function filterTable() {
+                const input = document.getElementById('searchBox');
+                const filter = input.value.toUpperCase();
+                const table = document.getElementById('coinsTable');
+                const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
 
-            // Reset preset filters UI when searching
-            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-            document.getElementById('filter-all').classList.add('active');
+                // Reset preset filters UI when searching
+                document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+                document.getElementById('filter-all').classList.add('active');
 
-            for (let i = 0; i < rows.length; i++) {
-                const cells = rows[i].getElementsByTagName('td');
-                let found = false;
+                for (let i = 0; i < rows.length; i++) {
+                    const cells = rows[i].getElementsByTagName('td');
+                    let found = false;
 
-                // Search in Symbol (0)
-                for (let j = 0; j < 1; j++) {
-                    if (cells[j]) {
-                        const txtValue = cells[j].textContent || cells[j].innerText;
-                        if (txtValue.toUpperCase().indexOf(filter) > -1) {
-                            found = true;
-                            break;
+                    // Search in Symbol (0)
+                    for (let j = 0; j < 1; j++) {
+                        if (cells[j]) {
+                            const txtValue = cells[j].textContent || cells[j].innerText;
+                            if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                                found = true;
+                                break;
+                            }
                         }
                     }
-                }
 
-                rows[i].style.display = found ? '' : 'none';
+                    rows[i].style.display = found ? '' : 'none';
+                }
             }
-        }
 
-        // Sort functionality
-        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1]; // Adjusted length
+            // Sort functionality
+            let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1]; // Adjusted length
 
-        function sortTable(columnIndex) {
-            const table = document.getElementById('coinsTable');
-            const tbody = table.getElementsByTagName('tbody')[0];
-            const rows = Array.from(tbody.getElementsByTagName('tr'));
+            function sortTable(columnIndex) {
+                const table = document.getElementById('coinsTable');
+                const tbody = table.getElementsByTagName('tbody')[0];
+                const rows = Array.from(tbody.getElementsByTagName('tr'));
 
-            const direction = sortDirection[columnIndex];
+                const direction = sortDirection[columnIndex];
 
-            rows.sort((a, b) => {
-                const aText = a.getElementsByTagName('td')[columnIndex].textContent.trim();
-                const bText = b.getElementsByTagName('td')[columnIndex].textContent.trim();
+                rows.sort((a, b) => {
+                    const aText = a.getElementsByTagName('td')[columnIndex].textContent.trim();
+                    const bText = b.getElementsByTagName('td')[columnIndex].textContent.trim();
 
-                // Numeric sorting for columns
-                if ([1, 2, 3, 4, 5, 6].includes(columnIndex)) {
-                    // New indices: 0:Symbol/Price, 1:Vol/OI, 2:Funding, 3:10m, 4:1h, 5:4h, 6:24h
+                    // Numeric sorting for columns
+                    if ([1, 2, 3, 4, 5, 6].includes(columnIndex)) {
+                        // New indices: 0:Symbol/Price, 1:Vol/OI, 2:Funding, 3:10m, 4:1h, 5:4h, 6:24h
 
-                    if (columnIndex === 1) return (parseFloat(a.getAttribute('data-volume')) - parseFloat(b.getAttribute('data-volume'))) * direction;
-                    if (columnIndex === 3) return (parseFloat(a.getAttribute('data-range10m')) - parseFloat(b.getAttribute('data-range10m'))) * direction;
-                    if (columnIndex === 4) return (parseFloat(a.getAttribute('data-range1h')) - parseFloat(b.getAttribute('data-range1h'))) * direction;
-                    if (columnIndex === 5) return (parseFloat(a.getAttribute('data-range4h')) - parseFloat(b.getAttribute('data-range4h'))) * direction;
-                    if (columnIndex === 6) return (parseFloat(a.getAttribute('data-range24h')) - parseFloat(b.getAttribute('data-range24h'))) * direction;
+                        if (columnIndex === 1) return (parseFloat(a.getAttribute('data-volume')) - parseFloat(b.getAttribute('data-volume'))) * direction;
+                        if (columnIndex === 3) return (parseFloat(a.getAttribute('data-range10m')) - parseFloat(b.getAttribute('data-range10m'))) * direction;
+                        if (columnIndex === 4) return (parseFloat(a.getAttribute('data-range1h')) - parseFloat(b.getAttribute('data-range1h'))) * direction;
+                        if (columnIndex === 5) return (parseFloat(a.getAttribute('data-range4h')) - parseFloat(b.getAttribute('data-range4h'))) * direction;
+                        if (columnIndex === 6) return (parseFloat(a.getAttribute('data-range24h')) - parseFloat(b.getAttribute('data-range24h'))) * direction;
 
-                    // Remove non-numeric chars like %, $, M, K
-                    const parseVal = (text) => {
-                        if (text === '-' || text === '') return -1;
-                        let val = parseFloat(text.replace(/[^0-9.-]/g, ''));
-                        if (text.includes('M')) val *= 1000000;
-                        else if (text.includes('K')) val *= 1000;
-                        return val;
-                    };
-                    const aNum = parseVal(aText);
-                    const bNum = parseVal(bText);
-                    return (aNum - bNum) * direction;
-                }
+                        // Remove non-numeric chars like %, $, M, K
+                        const parseVal = (text) => {
+                            if (text === '-' || text === '') return -1;
+                            let val = parseFloat(text.replace(/[^0-9.-]/g, ''));
+                            if (text.includes('M')) val *= 1000000;
+                            else if (text.includes('K')) val *= 1000;
+                            return val;
+                        };
+                        const aNum = parseVal(aText);
+                        const bNum = parseVal(bText);
+                        return (aNum - bNum) * direction;
+                    }
 
-                // Special handling for Symbol/Price (index 0)
-                if (columnIndex === 0) {
-                    const aSym = a.getAttribute('data-symbol');
-                    const bSym = b.getAttribute('data-symbol');
-                    if (aSym < bSym) return -1 * direction;
-                    if (aSym > bSym) return 1 * direction;
+                    // Special handling for Symbol/Price (index 0)
+                    if (columnIndex === 0) {
+                        const aSym = a.getAttribute('data-symbol');
+                        const bSym = b.getAttribute('data-symbol');
+                        if (aSym < bSym) return -1 * direction;
+                        if (aSym > bSym) return 1 * direction;
+                        return 0;
+                    }
+
+                    if (aText < bText) return -1 * direction;
+                    if (aText > bText) return 1 * direction;
                     return 0;
-                }
+                });
 
-                if (aText < bText) return -1 * direction;
-                if (aText > bText) return 1 * direction;
-                return 0;
-            });
+                // Reverse direction for next click
+                sortDirection[columnIndex] *= -1;
 
-            // Reverse direction for next click
-            sortDirection[columnIndex] *= -1;
-
-            // Re-append rows in sorted order
-            rows.forEach(row => tbody.appendChild(row));
-        }
-    </script>
+                // Re-append rows in sorted order
+                rows.forEach(row => tbody.appendChild(row));
+            }
+        </script>
 </body>
 
 </html>

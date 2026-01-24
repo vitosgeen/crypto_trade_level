@@ -4,13 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"math"
 	"net/http"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/vitos/crypto_trade_level/internal/domain"
@@ -33,6 +30,12 @@ func InitTemplates(dir string) error {
 			}
 			return a / b
 		},
+		"abs": func(a float64) float64 {
+			if a < 0 {
+				return -a
+			}
+			return a
+		},
 	}
 	templates, err = template.New("").Funcs(funcMap).ParseGlob(filepath.Join(dir, "*.html"))
 	return err
@@ -41,7 +44,7 @@ func InitTemplates(dir string) error {
 type LevelView struct {
 	*domain.Level
 	CurrentPrice          float64
-	Side                  domain.Side
+	ZoneSide              domain.Side
 	LongTiers             []float64
 	ShortTiers            []float64
 	ConsecutiveBaseCloses int
@@ -89,7 +92,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		views = append(views, LevelView{
 			Level:                 l,
 			CurrentPrice:          price,
-			Side:                  side,
+			ZoneSide:              side,
 			LongTiers:             longTiers,
 			ShortTiers:            shortTiers,
 			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
@@ -138,7 +141,7 @@ func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 		views = append(views, LevelView{
 			Level:                 l,
 			CurrentPrice:          price,
-			Side:                  side,
+			ZoneSide:              side,
 			LongTiers:             longTiers,
 			ShortTiers:            shortTiers,
 			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
@@ -197,11 +200,17 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	baseCloseCooldownMs := int64(baseCloseCooldownMinutes) * 60 * 1000
 	autoModeEnabled := r.FormValue("auto_mode_enabled") == "on"
 
+	side := domain.Side(r.FormValue("side"))
+	if side == "" {
+		side = domain.SideBoth
+	}
+
 	level := &domain.Level{
 		ID:                       fmt.Sprintf("%d", time.Now().UnixNano()),
 		Exchange:                 exchange,
 		Symbol:                   symbol,
 		LevelPrice:               price,
+		Side:                     side,
 		BaseSize:                 baseSize,
 		Leverage:                 leverage,
 		MarginType:               marginType,
@@ -411,222 +420,8 @@ func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stats)
 }
 
-type CoinData struct {
-	Symbol            string
-	BaseCoin          string
-	QuoteCoin         string
-	Status            string
-	LastPrice         float64
-	Price24hPcnt      float64
-	Volume24h         float64
-	OpenInterest      float64
-	OpenInterestValue float64
-	Range10m          float64
-	Range1h           float64
-	Range4h           float64
-	Trend10m          string // "up", "down", or ""
-	Trend1h           string
-	Trend4h           string
-	Trend24h          string
-	FundingRate       float64
-	Max10m            float64
-	Min10m            float64
-	Max1h             float64
-	Min1h             float64
-	Max4h             float64
-	Min4h             float64
-	Range24h          float64
-	Max24h            float64
-	Min24h            float64
-	Near4hMax         bool
-	Near4hMin         bool
-	Near1hMax         bool
-	Near1hMin         bool
-	Near24hMax        bool
-	Near24hMin        bool
-}
-
 func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	instruments, err := s.service.GetExchange().GetInstruments(ctx, "linear")
-	if err != nil {
-		s.logger.Error("Failed to get instruments", zap.Error(err))
-		http.Error(w, "Failed to fetch instruments", http.StatusInternalServerError)
-		return
-	}
-
-	tickers, err := s.service.GetExchange().GetTickers(ctx, "linear")
-	if err != nil {
-		s.logger.Error("Failed to get tickers", zap.Error(err))
-		http.Error(w, "Failed to fetch tickers", http.StatusInternalServerError)
-		return
-	}
-
-	// Map tickers by symbol for easy lookup
-	tickerMap := make(map[string]domain.Ticker)
-	for _, t := range tickers {
-		tickerMap[t.Symbol] = t
-	}
-
-	var allCoins []CoinData
-	for _, inst := range instruments {
-		if inst.Status != "Trading" {
-			continue
-		}
-		t, ok := tickerMap[inst.Symbol]
-		coin := CoinData{
-			Symbol:    inst.Symbol,
-			BaseCoin:  inst.BaseCoin,
-			QuoteCoin: inst.QuoteCoin,
-			Status:    inst.Status,
-		}
-		if ok {
-			coin.LastPrice = t.LastPrice
-			coin.Price24hPcnt = t.Price24hPcnt
-			coin.Volume24h = t.Volume24h
-			coin.OpenInterest = t.OpenInterest
-			coin.OpenInterestValue = t.OpenInterest * t.LastPrice
-			coin.FundingRate = t.FundingRate
-			// Add 24h Range data from ticker
-			if t.Low24h > 0 {
-				coin.Range24h = ((t.High24h - t.Low24h) / t.Low24h) * 100
-				coin.Max24h = t.High24h
-				coin.Min24h = t.Low24h
-				// Trend 24h: current vs 24h ago (estimated from 24h change)
-				if t.Price24hPcnt > 0 {
-					coin.Trend24h = "up"
-				} else if t.Price24hPcnt < 0 {
-					coin.Trend24h = "down"
-				}
-
-				// Highlight logic: within 0.1% of boundary
-				threshold := 0.001 // 0.1%
-				if coin.Max4h > 0 && math.Abs(coin.LastPrice-coin.Max4h)/coin.Max4h <= threshold {
-					coin.Near4hMax = true
-				}
-				if coin.Min4h > 0 && math.Abs(coin.LastPrice-coin.Min4h)/coin.Min4h <= threshold {
-					coin.Near4hMin = true
-				}
-				if coin.Max1h > 0 && math.Abs(coin.LastPrice-coin.Max1h)/coin.Max1h <= threshold {
-					coin.Near1hMax = true
-				}
-				if coin.Min1h > 0 && math.Abs(coin.LastPrice-coin.Min1h)/coin.Min1h <= threshold {
-					coin.Near1hMin = true
-				}
-				if coin.Max24h > 0 && math.Abs(coin.LastPrice-coin.Max24h)/coin.Max24h <= threshold {
-					coin.Near24hMax = true
-				}
-				if coin.Min24h > 0 && math.Abs(coin.LastPrice-coin.Min24h)/coin.Min24h <= threshold {
-					coin.Near24hMin = true
-				}
-			}
-		}
-		allCoins = append(allCoins, coin)
-	}
-
-	// Sort by Open Interest Value to find "big" coins
-	sort.Slice(allCoins, func(i, j int) bool {
-		return allCoins[i].OpenInterestValue > allCoins[j].OpenInterestValue
-	})
-
-	// Take top coins to calculate range (limit to 60 for performance)
-	limit := 60
-	if len(allCoins) < limit {
-		limit = len(allCoins)
-	}
-
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 10) // Concurrency limit
-
-	for i := 0; i < limit; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			symbol := allCoins[idx].Symbol
-			// Range 10m: 10 x 1m candles
-			candles10m, _ := s.service.GetExchange().GetCandles(ctx, symbol, "1", 10)
-			if len(candles10m) > 0 {
-				minL, maxH := candles10m[0].Low, candles10m[0].High
-				for _, c := range candles10m {
-					if c.Low < minL {
-						minL = c.Low
-					}
-					if c.High > maxH {
-						maxH = c.High
-					}
-				}
-				if minL > 0 {
-					allCoins[idx].Range10m = ((maxH - minL) / minL) * 100
-					allCoins[idx].Max10m = maxH
-					allCoins[idx].Min10m = minL
-					// Trend: Current vs Start of range
-					startPrice := candles10m[0].Open
-					if allCoins[idx].LastPrice > startPrice {
-						allCoins[idx].Trend10m = "up"
-					} else if allCoins[idx].LastPrice < startPrice {
-						allCoins[idx].Trend10m = "down"
-					}
-				}
-			}
-
-			// Range 1h: 60 x 1m candles (safer than 1h candle if it just started)
-			candles1h, _ := s.service.GetExchange().GetCandles(ctx, symbol, "1", 60)
-			if len(candles1h) > 0 {
-				minL, maxH := candles1h[0].Low, candles1h[0].High
-				for _, c := range candles1h {
-					if c.Low < minL {
-						minL = c.Low
-					}
-					if c.High > maxH {
-						maxH = c.High
-					}
-				}
-				if minL > 0 {
-					allCoins[idx].Range1h = ((maxH - minL) / minL) * 100
-					allCoins[idx].Max1h = maxH
-					allCoins[idx].Min1h = minL
-					// Trend: Current vs Start of range
-					startPrice := candles1h[0].Open
-					if allCoins[idx].LastPrice > startPrice {
-						allCoins[idx].Trend1h = "up"
-					} else if allCoins[idx].LastPrice < startPrice {
-						allCoins[idx].Trend1h = "down"
-					}
-				}
-			}
-
-			// Range 4h: 4 x 60m candles (last 4 hours)
-			candles4h, _ := s.service.GetExchange().GetCandles(ctx, symbol, "60", 4)
-			if len(candles4h) > 0 {
-				minL, maxH := candles4h[0].Low, candles4h[0].High
-				for _, c := range candles4h {
-					if c.Low < minL {
-						minL = c.Low
-					}
-					if c.High > maxH {
-						maxH = c.High
-					}
-				}
-				if minL > 0 {
-					allCoins[idx].Range4h = ((maxH - minL) / minL) * 100
-					allCoins[idx].Max4h = maxH
-					allCoins[idx].Min4h = minL
-					// Trend: Current vs Start of range
-					startPrice := candles4h[0].Open
-					if allCoins[idx].LastPrice > startPrice {
-						allCoins[idx].Trend4h = "up"
-					} else if allCoins[idx].LastPrice < startPrice {
-						allCoins[idx].Trend4h = "down"
-					}
-				}
-			}
-		}(i)
-	}
-
-	wg.Wait()
+	allCoins := s.levelBotWorker.GetData()
 
 	data := map[string]interface{}{
 		"Instruments": allCoins,
@@ -660,10 +455,10 @@ func (s *Server) handleSpeedBot(w http.ResponseWriter, r *http.Request) {
 		tickerMap[t.Symbol] = t
 	}
 
-	var coins []CoinData
+	var coins []domain.CoinData
 	for _, inst := range instruments {
 		t, ok := tickerMap[inst.Symbol]
-		coin := CoinData{
+		coin := domain.CoinData{
 			Symbol:    inst.Symbol,
 			BaseCoin:  inst.BaseCoin,
 			QuoteCoin: inst.QuoteCoin,
@@ -811,6 +606,33 @@ func (s *Server) handleFundingCoinDetail(w http.ResponseWriter, r *http.Request,
 	}
 }
 
+func (s *Server) handleLogAnalysis(w http.ResponseWriter, r *http.Request) {
+	analyzer := usecase.NewLogAnalyzerService(s.logger)
+	results, err := analyzer.AnalyzeLatestLogs()
+	if err != nil {
+		s.logger.Error("Failed to analyze logs", zap.Error(err))
+		http.Error(w, fmt.Sprintf("Analysis failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Results": results,
+	}
+
+	if r.URL.Query().Get("partial") == "true" {
+		if err := templates.ExecuteTemplate(w, "log_analysis_rows.html", data); err != nil {
+			s.logger.Error("Template error", zap.Error(err))
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if err := templates.ExecuteTemplate(w, "log_analysis.html", data); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
 // Speed Bot API Handlers
 
 func (s *Server) handleStartSpeedBot(w http.ResponseWriter, r *http.Request) {
@@ -898,4 +720,23 @@ func (s *Server) handleSpeedBotStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+func (s *Server) handleGetLogChartData(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol required", http.StatusBadRequest)
+		return
+	}
+
+	analyzer := usecase.NewLogAnalyzerService(s.logger)
+	points, err := analyzer.GetSymbolHistory(symbol)
+	if err != nil {
+		s.logger.Error("Failed to get chart data", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(points)
 }
