@@ -95,7 +95,7 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 
 	// Check Cooldown
 	if !state.LastTriggerTime.IsZero() && time.Since(state.LastTriggerTime) < time.Duration(level.CoolDownMs)*time.Millisecond {
-		// log.Printf("DEBUG: Level %s in cooldown. Remaining: %v", level.ID, time.Duration(level.CoolDownMs)*time.Millisecond - time.Since(state.LastTriggerTime))
+		// log.Printf("DEBUG: Level %s in cooldown. Remaining: %v", level.ID, time.Duration(level.CoolDownMs)*time.Millisecond-time.Since(state.LastTriggerTime))
 		return ActionNone, 0
 	}
 
@@ -198,10 +198,11 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		// So we check crossesUp.
 
 		// Debug Log
-		// log.Printf("DEBUG: Eval Short. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
+		// log.Printf("DEBUG: Eval Short. Level: %s. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", level.ID, prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
 		// Tier 1
-		if !state.Tier1Triggered && crossesUp(prevPrice, currPrice, tier1Price) {
+		// Trigger if crossed UP OR currently INSIDE the zone (between Tier 1 and Level)
+		if !state.Tier1Triggered && (crossesUp(prevPrice, currPrice, tier1Price) || (currPrice >= tier1Price && currPrice < level.LevelPrice)) {
 			log.Printf("AUDIT: Tier 1 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f. Wins: %d. Mult: %f", level.ID, prevPrice, currPrice, tier1Price, state.ConsecutiveWins, multiplier)
 			state.Tier1Triggered = true
 			state.ActiveSide = domain.SideShort
@@ -231,9 +232,11 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		// So we check crossesDown.
 
 		// Debug Log
-		// log.Printf("DEBUG: Eval Long. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
+		// log.Printf("DEBUG: Eval Long. Level: %s. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", level.ID, prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
-		if !state.Tier1Triggered && crossesDown(prevPrice, currPrice, tier1Price) {
+		// Tier 1
+		// Trigger if crossed DOWN OR currently INSIDE the zone (between Tier 1 and Level)
+		if !state.Tier1Triggered && (crossesDown(prevPrice, currPrice, tier1Price) || (currPrice <= tier1Price && currPrice > level.LevelPrice)) {
 			log.Printf("AUDIT: Tier 1 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f. Wins: %d. Mult: %f", level.ID, prevPrice, currPrice, tier1Price, state.ConsecutiveWins, multiplier)
 			state.Tier1Triggered = true
 			state.ActiveSide = domain.SideLong

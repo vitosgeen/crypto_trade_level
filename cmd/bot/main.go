@@ -86,6 +86,9 @@ func main() {
 	if err := svc.UpdateCache(context.Background()); err != nil {
 		log.Error("Failed to init cache", zap.Error(err))
 	}
+	if err := svc.LoadInitialPrices(context.Background()); err != nil {
+		log.Error("Failed to load initial prices", zap.Error(err))
+	}
 
 	// 9. Wait for Shutdown (moved up to allow goroutines to use 'stop')
 	stop := make(chan os.Signal, 1)
@@ -112,6 +115,9 @@ func main() {
 			// Update Cache
 			if err := svc.UpdateCache(ctx); err != nil {
 				log.Error("Failed to update cache", zap.Error(err))
+			}
+			if err := svc.LoadInitialPrices(ctx); err != nil {
+				log.Error("Failed to sync prices", zap.Error(err))
 			}
 
 			levels, err := store.ListLevels(ctx)

@@ -66,6 +66,25 @@ func (s *LevelService) GetLatestPrice(symbol string) float64 {
 	return s.lastPrices[symbol]
 }
 
+// LoadInitialPrices fetches latest prices from exchange and seeds the cache for any missing symbols
+func (s *LevelService) LoadInitialPrices(ctx context.Context) error {
+	tickers, err := s.exchange.GetTickers(ctx, "linear")
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, t := range tickers {
+		// Only update if missing or zero to avoid overwriting live WS data with potentially stale REST data
+		if val, ok := s.lastPrices[t.Symbol]; !ok || val == 0 {
+			s.lastPrices[t.Symbol] = t.LastPrice
+		}
+	}
+	return nil
+}
+
 // GetLevelState returns the current runtime state of a level
 func (s *LevelService) GetLevelState(levelID string) LevelState {
 	return s.engine.GetState(levelID)
@@ -114,8 +133,15 @@ func (s *LevelService) UpdateCache(ctx context.Context) error {
 
 		tiers, err := s.levelRepo.GetSymbolTiers(ctx, exchangeName, symbol)
 		if err != nil {
-			log.Printf("Warning: Failed to fetch tiers for %s: %v", symbol, err)
-			continue
+			log.Printf("Warning: Failed to fetch tiers for %s: %v. Using defaults.", symbol, err)
+			tiers = &domain.SymbolTiers{
+				Exchange:  exchangeName,
+				Symbol:    symbol,
+				Tier1Pct:  0.005,
+				Tier2Pct:  0.003,
+				Tier3Pct:  0.0015,
+				UpdatedAt: time.Now(),
+			}
 		}
 		newTiersCache[symbol] = tiers
 	}
@@ -208,6 +234,7 @@ func (s *LevelService) invalidatePositionCache(symbol string) {
 // ProcessTick should be called when a new price arrives (e.g. from WebSocket).
 func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol string, price float64) error {
 	// fmt.Printf("Tick: %s %f\n", symbol, price) // Too noisy
+	// log.Printf("DEBUG: Tick %s %f", symbol, price) // Add this one
 	s.mu.Lock()
 	prevPrice, ok := s.lastPrices[symbol]
 	s.lastPrices[symbol] = price
@@ -466,23 +493,30 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	}
 
 	for _, level := range relevantLevels {
-		s.processLevel(ctx, level, tiers, prevPrice, price, sentiment, sentimentThreshold)
+		s.processLevel(ctx, level, tiers, pos, prevPrice, price, sentiment, sentimentThreshold)
 	}
 
 	return nil
 }
 
-func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, prevPrice, currPrice, sentiment, sentimentThreshold float64) {
+func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, pos *domain.Position, prevPrice, currPrice, sentiment, sentimentThreshold float64) {
 	// 1. Determine Side
-	side := s.evaluator.DetermineSide(level.LevelPrice, currPrice)
+	// If the level has a fixed side, use it. Otherwise, determine based on price relative to level.
+	side := level.Side
+	if side == "" || side == domain.SideBoth {
+		side = s.evaluator.DetermineSide(level.LevelPrice, currPrice)
+	}
+
 	if side == "" {
 		return
 	}
 
-	// 1b. Respect Side Filter
-	if level.Side != "" && level.Side != domain.SideBoth && level.Side != side {
-		return
-	}
+	// 1b. Respect Side Filter (Redundant if we just used it, but keeps logic safe for 'Both' case)
+	// If Side was Both, we calculated 'side' dynamically.
+	// If Side was Fixed, 'side' is Fixed.
+	// So we don't need the filter check anymore, just proceed with 'side'.
+	// But wait, if Side=Both, and DetermineSide says Short, we process as Short.
+	// That's correct.
 
 	// 2. Calculate Boundaries
 	boundaries := s.evaluator.CalculateBoundaries(level, tiers, side)
@@ -500,6 +534,30 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 			if side == domain.SideShort && sentiment > sentimentThreshold {
 				log.Printf("SENTIMENT: Skipping SHORT on %s. Sentiment is Bullish (%f).", level.Symbol, sentiment)
 				return
+			}
+
+			// --- STATE SYNC / DOUBLE ENTRY PROTECTION ---
+			if pos != nil && pos.Size > 0 {
+				// We already have a position. Check if we should skip this action.
+				// If ActionOpen, we should definitely skip and just ensure state is synced.
+				if action == ActionOpen {
+					log.Printf("STATE SYNC: Detected existing position for %s while attempting OPEN. Syncing state only.", level.Symbol)
+					s.engine.UpdateState(level.ID, func(ls *LevelState) {
+						ls.Tier1Triggered = true
+						ls.ActiveSide = side
+						ls.LastTriggerTime = time.Now()
+					})
+					return
+				}
+				// If ActionAddToPosition, we might process it if it's a higher tier?
+				// But Evaluate() already checks !Tier2Triggered.
+				// However, if we restarted, Tier2Triggered is false.
+				// If we have a large position, we probably already added.
+				// Simple heuristic: If position size >= calculated target size, skip.
+				// Target Size for Tier 2 = Base + Base = 2x Base.
+				// But leverage/size management is complex.
+				// SAFE BET: If we have ANY position, assume state recovery is needed for OPEN, but maybe allow Adds if significantly larger?
+				// For now, let's just Sync OPEN. If the user wants to add, they can manually or let the next tier trigger.
 			}
 		}
 

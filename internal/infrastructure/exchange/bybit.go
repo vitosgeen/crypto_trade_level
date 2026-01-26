@@ -713,7 +713,7 @@ func (b *BybitAdapter) subscribe(symbols []string) error {
 	}
 	args := make([]interface{}, len(symbols))
 	for i, s := range symbols {
-		args[i] = "orderbook.1." + s
+		args[i] = "tickers." + s
 	}
 	// Also subscribe to publicTrade
 	tradeArgs := make([]interface{}, len(symbols))
@@ -781,7 +781,7 @@ func (b *BybitAdapter) readLoop() {
 			return
 		}
 
-		// log.Printf("WS Received: %s", string(message)) // Very verbose, maybe just topic?
+		// // log.Printf("WS Received: %s", string(message)) // Temporary debug
 
 		b.mu.Lock()
 		b.messageCount++
@@ -820,38 +820,45 @@ func (b *BybitAdapter) readLoop() {
 
 			symbol := strings.TrimPrefix(topic, "orderbook.1.")
 
+			// Flexible Parsing: Get Best Bid and Best Ask if available
+			var bid, ask float64
+			var hasBid, hasAsk bool
+
 			// Parse Ask
-			a, ok := data["a"].([]interface{})
-			if !ok || len(a) == 0 {
-				continue
+			if a, ok := data["a"].([]interface{}); ok && len(a) > 0 {
+				if askEntry, ok := a[0].([]interface{}); ok && len(askEntry) > 0 {
+					if askStr, ok := askEntry[0].(string); ok {
+						if val, err := strconv.ParseFloat(askStr, 64); err == nil {
+							ask = val
+							hasAsk = true
+						}
+					}
+				}
 			}
-			askEntry, ok := a[0].([]interface{})
-			if !ok || len(askEntry) < 1 {
-				continue
-			}
-			askStr, ok := askEntry[0].(string)
-			if !ok {
-				continue
-			}
-			ask, _ := strconv.ParseFloat(askStr, 64)
 
 			// Parse Bid
-			bidList, ok := data["b"].([]interface{})
-			if !ok || len(bidList) == 0 {
-				continue
+			if bList, ok := data["b"].([]interface{}); ok && len(bList) > 0 {
+				if bidEntry, ok := bList[0].([]interface{}); ok && len(bidEntry) > 0 {
+					if bidStr, ok := bidEntry[0].(string); ok {
+						if val, err := strconv.ParseFloat(bidStr, 64); err == nil {
+							bid = val
+							hasBid = true
+						}
+					}
+				}
 			}
-			bidEntry, ok := bidList[0].([]interface{})
-			if !ok || len(bidEntry) < 1 {
-				continue
-			}
-			bidStr, ok := bidEntry[0].(string)
-			if !ok {
-				continue
-			}
-			bid, _ := strconv.ParseFloat(bidStr, 64)
 
-			// Use mid price
-			price := (ask + bid) / 2
+			// Calculate Price based on available data
+			var price float64
+			if hasAsk && hasBid {
+				price = (ask + bid) / 2
+			} else if hasBid {
+				price = bid
+			} else if hasAsk {
+				price = ask
+			} else {
+				continue
+			}
 
 			b.mu.Lock()
 			callbacks := make([]func(string, float64), len(b.callbacks))
@@ -861,6 +868,39 @@ func (b *BybitAdapter) readLoop() {
 			for _, cb := range callbacks {
 				cb(symbol, price)
 			}
+
+		} else if strings.HasPrefix(topic, "tickers.") {
+			// Handle Ticker Data
+			data, ok := event["data"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			symbol := strings.TrimPrefix(topic, "tickers.")
+
+			// We only care about lastPrice
+			priceStr, ok := data["lastPrice"].(string)
+			if !ok {
+				// Ticker update might not contain lastPrice if it hasn't changed (delta update)
+				// But we need price to process ticks.
+				// If it's effectively a heartbeat or other field update, we skip.
+				continue
+			}
+
+			price, err := strconv.ParseFloat(priceStr, 64)
+			if err != nil {
+				continue
+			}
+
+			b.mu.Lock()
+			callbacks := make([]func(string, float64), len(b.callbacks))
+			copy(callbacks, b.callbacks)
+			b.mu.Unlock()
+
+			for _, cb := range callbacks {
+				cb(symbol, price)
+			}
+
 		} else if strings.HasPrefix(topic, "publicTrade.") {
 			data, ok := event["data"].([]interface{})
 			if !ok {

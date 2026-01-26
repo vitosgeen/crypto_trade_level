@@ -196,13 +196,31 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	disableSpeedClose := r.FormValue("disable_speed_close") == "on"
 
 	maxConsecutiveBaseCloses, _ := strconv.Atoi(r.FormValue("max_consecutive_base_closes"))
-	baseCloseCooldownMinutes, _ := strconv.Atoi(r.FormValue("base_close_cooldown_minutes"))
-	baseCloseCooldownMs := int64(baseCloseCooldownMinutes) * 60 * 1000
+	baseCloseCooldownMs, _ := strconv.ParseInt(r.FormValue("base_close_cooldown_ms"), 10, 64)
 	autoModeEnabled := r.FormValue("auto_mode_enabled") == "on"
 
 	side := domain.Side(r.FormValue("side"))
 	if side == "" {
 		side = domain.SideBoth
+	}
+
+	// Validation
+	if price <= 0 {
+		http.Error(w, "Invalid Price (must be > 0)", http.StatusBadRequest)
+		return
+	}
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+	if exchange == "" {
+		// Default to bybit if missing, or error?
+		// Let's error, or default to bybit
+		exchange = "bybit"
+	}
+	if baseSize <= 0 {
+		http.Error(w, "Base Size must be > 0", http.StatusBadRequest)
+		return
 	}
 
 	level := &domain.Level{

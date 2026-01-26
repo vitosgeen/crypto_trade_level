@@ -296,6 +296,30 @@
                     <input type="number" id="monitorValue" value="500000" step="100000"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
                 </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Auto
+                        Level Size ($)</label>
+                    <input type="number" id="autoLevelSize" value="100" step="10"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Auto
+                        TP (%)</label>
+                    <input type="number" id="autoLevelTP" value="1.0" step="0.1"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Auto
+                        Lev</label>
+                    <input type="number" id="autoLevelLev" value="10" step="1"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Auto
+                        Cooldown (ms)</label>
+                    <input type="number" id="autoLevelCool" value="60000" step="1000"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
             </div>
 
             <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color);">
@@ -310,6 +334,11 @@
                             <input type="checkbox" id="pushToggle" style="width: 18px; height: 18px;"
                                 onchange="togglePushNotifications()">
                             <span>Enable Push Notifications</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;">
+                            <input type="checkbox" id="autoLevelToggle" style="width: 18px; height: 18px;">
+                            <span style="color: var(--accent-color);">Auto Create Level</span>
                         </label>
                     </div>
                     <div id="lastCheckTime" style="font-size: 0.8rem; color: var(--text-muted);"></div>
@@ -722,13 +751,29 @@
             }
         }
 
-        function checkAlerts() {
+        async function checkAlerts() {
             const timeframeIndex = parseInt(document.getElementById('monitorTimeframe').value);
             const minPcnt = parseFloat(document.getElementById('monitorPcnt').value);
             const minValue = parseFloat(document.getElementById('monitorValue').value);
+            const autoLevelSize = parseFloat(document.getElementById('autoLevelSize').value) || 100;
+            const autoLevelTP = parseFloat(document.getElementById('autoLevelTP').value) || 1.0;
+            const autoLevelLev = parseInt(document.getElementById('autoLevelLev').value) || 10;
+            const autoLevelCool = parseInt(document.getElementById('autoLevelCool').value) || 60000;
+
+            // Fetch active levels to prevent duplicates
+            let activeSymbols = new Set();
+            try {
+                const levels = await fetch('/api/levels').then(r => r.json());
+                if (levels && Array.isArray(levels)) {
+                    levels.forEach(l => activeSymbols.add(l.Symbol));
+                }
+            } catch (err) {
+                console.error("Failed to fetch active levels for deduplication", err);
+            }
 
             const rows = document.querySelectorAll("#analysisTable tbody tr");
             let anomalies = [];
+            let levelRequests = [];
 
             // Clear previous highlight markers for UI, but logic should be persistent
             rows.forEach(row => row.classList.remove('anomaly-alert'));
@@ -739,7 +784,7 @@
             rows.forEach(row => {
                 if (row.cells.length < 2) return; // Skip no data row
 
-                const symbol = row.cells[0].innerText;
+                const symbol = row.cells[0].innerText.trim();
                 const cell = row.cells[timeframeIndex];
 
                 if (!cell) return;
@@ -761,7 +806,14 @@
                     }
                 }
 
-                if (Math.abs(pcntChange) >= minPcnt && Math.abs(valueChange) >= minValue) {
+                let pcntCondition = false;
+                if (minPcnt < 0) {
+                    pcntCondition = pcntChange <= minPcnt;
+                } else {
+                    pcntCondition = pcntChange >= minPcnt;
+                }
+
+                if (pcntCondition && Math.abs(valueChange) >= minValue) {
                     row.classList.add('anomaly-alert'); // Highlight on table regardless of sound history
 
                     const alertKey = `${symbol}-${timeframeIndex}`;
@@ -771,6 +823,23 @@
                         const msg = `${symbol}: ${pcntChange.toFixed(2)}% ($${(valueChange / 1000).toFixed(1)}K)`;
                         anomalies.push(msg);
                         alertedHistory.set(alertKey, now);
+
+                        // Parse Current Price for Level Creation
+                        // Check if level already exists
+                        if (!activeSymbols.has(symbol)) {
+                            const priceText = row.cells[1].innerText;
+                            const priceMatch = priceText.match(/\$([0-9.]+)/);
+                            if (priceMatch) {
+                                levelRequests.push({
+                                    symbol: symbol,
+                                    price: priceMatch[1]
+                                });
+                            } else {
+                                console.warn(`Could not parse price for ${symbol} from text: ${priceText}`);
+                            }
+                        } else {
+                            console.log(`Skipping auto-create for ${symbol}: Level already exists.`);
+                        }
                     }
                 }
             });
@@ -798,16 +867,74 @@
                 logEntry.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
                 logEntry.style.paddingBottom = "4px";
                 logEntry.innerText = `[${new Date().toLocaleTimeString()}] Found ${anomalies.length} new anomalies: ` + anomalies.join(", ");
-                logDiv.prepend(logEntry);
+                logDiv.appendChild(logEntry);
+                logDiv.scrollTop = logDiv.scrollHeight;
 
-                // Telegram/Email Simulation
-                if (document.getElementById('telegramToggle').checked) {
-                    console.log("Simulating Telegram Alert:", anomalies);
-                }
-                if (document.getElementById('emailToggle').checked) {
-                    console.log("Simulating Email Alert:", anomalies);
+                // Auto Create Levels
+                if (document.getElementById('autoLevelToggle').checked) {
+                    if (levelRequests.length > 0) {
+                        console.log("Triggering auto-creation for:", levelRequests);
+                    }
+                    levelRequests.forEach(req => {
+                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool);
+                    });
                 }
             }
+        }
+
+        function createLevel(symbol, price, size, tp, lev, cool) {
+            console.log(`Sending create request for ${symbol} @ ${price}`);
+
+            // Calculate Base Size (Coin Quantity) from USDT Size
+            // User requested: Round up to nearest 10 (e.g. 713 -> 720)
+            const priceVal = parseFloat(price);
+            const sizeUsd = parseFloat(size);
+            let coinQty = 0;
+            if (priceVal > 0) {
+                const rawQty = sizeUsd / priceVal;
+                coinQty = Math.ceil(rawQty / 10) * 10;
+            }
+            console.log(`Calculated size: $${sizeUsd} / $${priceVal} = ${sizeUsd / priceVal} coins -> Rounded to ${coinQty}`);
+
+            const params = new URLSearchParams();
+            params.append('symbol', symbol);
+            params.append('level_price', price);
+            params.append('base_size', coinQty);
+            params.append('leverage', lev.toString());
+            params.append('exchange', 'bybit');
+            params.append('margin_type', 'isolated');
+            params.append('side', 'both');
+            params.append('take_profit_pct', tp.toString());
+            params.append('stop_loss_mode', 'exchange');
+            params.append('cool_down_ms', cool.toString()); // Value is already in ms
+            // Tier Defaults
+            params.append('tier1', '0.5');
+            params.append('tier2', '0.3');
+            params.append('tier3', '0.2');
+
+            // Add auto flag
+            params.append('auto_mode_enabled', 'on');
+
+            fetch('/levels', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: params
+            }).then(response => {
+                if (response.ok) {
+                    console.log(`Auto-created level for ${symbol} at ${price}`);
+                    const logDiv = document.getElementById('alertLog');
+                    const entry = document.createElement('div');
+                    entry.style.color = 'var(--accent-color)';
+                    entry.innerText = `>>> Auto-created level for ${symbol} @ $${price}`;
+                    logDiv.appendChild(entry);
+                    logDiv.scrollTop = logDiv.scrollHeight;
+                } else {
+                    console.error("Failed to create level", response.status, response.statusText);
+                    response.text().then(text => console.error("Response body:", text));
+                }
+            }).catch(err => console.error("Error creating level:", err));
         }
 
         // Auto Refresh

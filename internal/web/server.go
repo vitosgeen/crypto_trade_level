@@ -61,6 +61,7 @@ func (s *Server) routes() {
 
 	// Levels
 	s.router.HandleFunc("GET /levels", s.handleLevelsTable)
+	s.router.HandleFunc("GET /api/levels", s.handleListLevelsJSON)
 	s.router.HandleFunc("POST /levels", s.handleAddLevel)
 	s.router.HandleFunc("DELETE /levels/{id}", s.handleDeleteLevel)
 	s.router.HandleFunc("POST /levels/{id}/increment-closes", s.handleIncrementCloses)
