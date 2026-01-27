@@ -102,6 +102,13 @@ func main() {
 		}
 	})
 
+	// Also process individual trades for responsiveness and to catch all price moves
+	bybitAdapter.OnTradeUpdate(func(symbol string, side string, size float64, price float64) {
+		if err := svc.ProcessTick(context.Background(), "bybit", symbol, price); err != nil {
+			log.Error("Error processing trade tick", zap.Error(err))
+		}
+	})
+
 	go func() {
 		ticker := time.NewTicker(time.Duration(cfg.Polling.LevelsReloadMs) * time.Millisecond)
 		defer ticker.Stop()

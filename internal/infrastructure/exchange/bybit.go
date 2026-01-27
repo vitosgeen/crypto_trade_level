@@ -997,13 +997,9 @@ func (b *BybitAdapter) GetCandles(ctx context.Context, symbol, interval string, 
 }
 
 func (b *BybitAdapter) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
-	params := map[string]interface{}{
-		"category": "linear",
-		"symbol":   symbol,
-		"limit":    limit,
-	}
+	path := fmt.Sprintf("/v5/market/recent-trade?category=linear&symbol=%s&limit=%d", symbol, limit)
 
-	resp, err := b.sendRequest(ctx, "GET", "/v5/market/recent-trade", params)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, err
 	}

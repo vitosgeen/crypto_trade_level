@@ -187,7 +187,9 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 
 	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
 	mockTradeRepo := &MockTradeRepo{}
-	mockEx := &MockExchangeForService{} // Reusing MockExchange from trade_executor_test.go if in same package, but we are in usecase_test
+	mockEx := &MockExchangeForService{
+		Position: &domain.Position{Size: 0},
+	} // Reusing MockExchange from trade_executor_test.go if in same package, but we are in usecase_test
 
 	// We need to define MockExchange here since we are in a new file/package (or same package test)
 	// Let's redefine minimal mock
@@ -214,6 +216,13 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 	if !mockEx.BuyCalled {
 		t.Fatal("Expected Buy on Tier 1")
 	}
+	// Simulate Position Opened
+	mockEx.Position = &domain.Position{
+		Symbol:     "BTCUSDT",
+		Side:       domain.SideLong,
+		Size:       0.1,
+		EntryPrice: 10040,
+	}
 
 	// 2. Trigger Close (Base Level)
 	// Price falls to 10000
@@ -222,12 +231,14 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 
 	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10000)
 
+	// Mock that position is gone (consistent with "position not found")
+	mockEx.Position = &domain.Position{Size: 0}
+	mockEx.BuyCalled = false // Reset
+	mockEx.CloseError = nil
+
 	// 3. Trigger Open Again (Re-entry)
 	// Must reset price above Tier 1 first to trigger "Cross Down"
 	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10100)
-
-	mockEx.BuyCalled = false // Reset
-	mockEx.CloseError = nil
 
 	// Trigger Open (Cross 10050 Downward)
 	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10040)
@@ -391,7 +402,9 @@ func TestLevelService_SentimentLogic(t *testing.T) {
 
 	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
 	mockTradeRepo := &MockTradeRepo{}
-	mockEx := &MockExchangeForService{} // Use Enhanced Mock
+	mockEx := &MockExchangeForService{
+		Position: &domain.Position{Size: 0},
+	} // Use Enhanced Mock
 
 	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
@@ -505,7 +518,13 @@ func TestLevelService_SentimentLogic(t *testing.T) {
 	}
 
 	// 5. Test Exit Trigger
-	// We have a Long Position on ETH (from Mock GetPosition default)
+	// We have a Long Position on ETH (Manual Set)
+	mockEx.Position = &domain.Position{
+		Symbol:     "ETHUSDT",
+		Side:       domain.SideLong,
+		Size:       1.0,
+		EntryPrice: 2000,
+	}
 	// Inject Bearish Sentiment for ETH
 	mockEx.TradeCallback("ETHUSDT", "Sell", 5000, 2000) // Flip to Bearish
 

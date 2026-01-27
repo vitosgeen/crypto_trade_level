@@ -21,8 +21,9 @@ type LevelService struct {
 	engine    *SublevelEngine
 	executor  *TradeExecutor
 
-	mu         sync.RWMutex
-	lastPrices map[string]float64 // symbol -> price
+	mu             sync.RWMutex
+	lastPrices     map[string]float64   // symbol -> price
+	lastPriceTimes map[string]time.Time // symbol -> timestamp
 
 	// Cache
 	levelsCache map[string][]*domain.Level     // symbol -> levels
@@ -44,18 +45,19 @@ func NewLevelService(
 	market *MarketService,
 ) *LevelService {
 	return &LevelService{
-		levelRepo:     levelRepo,
-		tradeRepo:     tradeRepo,
-		exchange:      exchange,
-		market:        market,
-		evaluator:     NewLevelEvaluator(),
-		engine:        NewSublevelEngine(),
-		executor:      NewTradeExecutor(exchange),
-		lastPrices:    make(map[string]float64),
-		levelsCache:   make(map[string][]*domain.Level),
-		tiersCache:    make(map[string]*domain.SymbolTiers),
-		positionCache: make(map[string]*domain.Position),
-		positionTime:  make(map[string]time.Time),
+		levelRepo:      levelRepo,
+		tradeRepo:      tradeRepo,
+		exchange:       exchange,
+		market:         market,
+		evaluator:      NewLevelEvaluator(),
+		engine:         NewSublevelEngine(),
+		executor:       NewTradeExecutor(exchange),
+		lastPrices:     make(map[string]float64),
+		lastPriceTimes: make(map[string]time.Time),
+		levelsCache:    make(map[string][]*domain.Level),
+		tiersCache:     make(map[string]*domain.SymbolTiers),
+		positionCache:  make(map[string]*domain.Position),
+		positionTime:   make(map[string]time.Time),
 	}
 }
 
@@ -77,9 +79,10 @@ func (s *LevelService) LoadInitialPrices(ctx context.Context) error {
 	defer s.mu.Unlock()
 
 	for _, t := range tickers {
-		// Only update if missing or zero to avoid overwriting live WS data with potentially stale REST data
-		if val, ok := s.lastPrices[t.Symbol]; !ok || val == 0 {
+		// Update if missing, zero, or stale (> 5 seconds)
+		if val, ok := s.lastPrices[t.Symbol]; !ok || val == 0 || time.Since(s.lastPriceTimes[t.Symbol]) > 5*time.Second {
 			s.lastPrices[t.Symbol] = t.LastPrice
+			s.lastPriceTimes[t.Symbol] = time.Now()
 		}
 	}
 	return nil
@@ -234,10 +237,11 @@ func (s *LevelService) invalidatePositionCache(symbol string) {
 // ProcessTick should be called when a new price arrives (e.g. from WebSocket).
 func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol string, price float64) error {
 	// fmt.Printf("Tick: %s %f\n", symbol, price) // Too noisy
-	// log.Printf("DEBUG: Tick %s %f", symbol, price) // Add this one
+	// log.Printf("DEBUG: Tick %s %f", symbol, price)
 	s.mu.Lock()
 	prevPrice, ok := s.lastPrices[symbol]
 	s.lastPrices[symbol] = price
+	s.lastPriceTimes[symbol] = time.Now()
 
 	// Read from cache while locked
 	levels := s.levelsCache[symbol]
@@ -249,8 +253,12 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	// }
 
 	if len(levels) == 0 {
+		// Log rarely if no levels, just to be sure we are receiving ticks? No, too noisy.
 		return nil
 	}
+
+	// Only log if we have levels
+	// log.Printf("DEBUG: ProcessTick %s. Prev: %f, Curr: %f. Active Levels: %d", symbol, prevPrice, price, len(levels))
 
 	// Filter for this exchange
 	var relevantLevels []*domain.Level

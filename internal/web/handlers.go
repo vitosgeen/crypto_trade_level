@@ -186,7 +186,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	exchange := r.FormValue("exchange")
-	symbol := r.FormValue("symbol")
+	symbol := strings.ToUpper(r.FormValue("symbol"))
 	marginType := r.FormValue("margin_type")
 	stopLossAtBase := r.FormValue("stop_loss_at_base") == "on"
 	stopLossMode := r.FormValue("stop_loss_mode")
@@ -246,12 +246,6 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:                time.Now(),
 	}
 
-	if err := s.service.CreateLevel(r.Context(), level); err != nil {
-		s.logger.Error("Failed to create level", zap.Error(err))
-		http.Error(w, "Failed to save level", http.StatusInternalServerError)
-		return
-	}
-
 	// Create Tiers
 	tiers := &domain.SymbolTiers{
 		Exchange:  exchange,
@@ -264,6 +258,12 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	if err := s.levelRepo.SaveSymbolTiers(r.Context(), tiers); err != nil {
 		s.logger.Error("Failed to save tiers", zap.Error(err))
 		// Continue, but log error
+	}
+
+	if err := s.service.CreateLevel(r.Context(), level); err != nil {
+		s.logger.Error("Failed to create level", zap.Error(err))
+		http.Error(w, "Failed to save level", http.StatusInternalServerError)
+		return
 	}
 
 	// Return updated table
