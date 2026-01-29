@@ -317,7 +317,7 @@
                 <div>
                     <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Auto
                         Cooldown (ms)</label>
-                    <input type="number" id="autoLevelCool" value="60000" step="1000"
+                    <input type="number" id="autoLevelCool" value="600" step="100"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
                 </div>
             </div>
@@ -376,6 +376,11 @@
                 <div>
                     <h1 style="display: flex; align-items: center; gap: 10px;">
                         📊 Level Bot Analysis
+                        <span
+                            style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 12px; display: flex; gap: 8px;">
+                            <span id="analysisUpdateTime"></span>
+                            <span id="updateCountdown" style="color: var(--accent-color);"></span>
+                        </span>
                     </h1>
                     <div class="subtitle">Open Interest changes across timeframes (Sorted by 1H Volatility)</div>
                 </div>
@@ -758,7 +763,7 @@
             const autoLevelSize = parseFloat(document.getElementById('autoLevelSize').value) || 100;
             const autoLevelTP = parseFloat(document.getElementById('autoLevelTP').value) || 1.0;
             const autoLevelLev = parseInt(document.getElementById('autoLevelLev').value) || 10;
-            const autoLevelCool = parseInt(document.getElementById('autoLevelCool').value) || 60000;
+            const autoLevelCool = parseInt(document.getElementById('autoLevelCool').value) || 60;
 
             // Fetch active levels to prevent duplicates
             let activeSymbols = new Set();
@@ -784,12 +789,12 @@
             rows.forEach(row => {
                 if (row.cells.length < 2) return; // Skip no data row
 
-                const symbol = row.cells[0].innerText.trim();
+                const symbol = row.cells[0].querySelector('.symbol').innerText;
                 const cell = row.cells[timeframeIndex];
 
                 if (!cell) return;
 
-                const pcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
+                let pcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
                 const rawVal = cell.getAttribute('data-val-raw');
                 let valueChange = 0;
                 if (rawVal) {
@@ -807,11 +812,10 @@
                 }
 
                 let pcntCondition = false;
-                if (minPcnt < 0) {
-                    pcntCondition = pcntChange <= minPcnt;
-                } else {
-                    pcntCondition = pcntChange >= minPcnt;
+                if (pcntChange < 0) {
+                    pcntChange = pcntChange * -1;
                 }
+                pcntCondition = pcntChange >= minPcnt;
 
                 if (pcntCondition && Math.abs(valueChange) >= minValue) {
                     row.classList.add('anomaly-alert'); // Highlight on table regardless of sound history
@@ -902,10 +906,12 @@
             params.append('base_size', coinQty);
             params.append('leverage', lev.toString());
             params.append('exchange', 'bybit');
-            params.append('margin_type', 'isolated');
-            params.append('side', 'both');
+            params.append('margin_type', 'cross');
+            params.append('side', 'BOTH');
             params.append('take_profit_pct', tp.toString());
             params.append('stop_loss_mode', 'exchange');
+            params.append('stop_loss_at_base', 'on');
+            params.append('disable_speed_close', 'on');
             params.append('cool_down_ms', cool.toString()); // Value is already in ms
             // Tier Defaults
             params.append('tier1', '0.5');
@@ -938,13 +944,22 @@
         }
 
         // Auto Refresh
+        let countdownSecs = 10;
         setInterval(() => {
+            if (countdownSecs > 0) countdownSecs--;
+            const el = document.getElementById('updateCountdown');
+            if (el) el.innerText = `(Next in ${countdownSecs}s)`;
+        }, 1000);
+
+        setInterval(() => {
+            countdownSecs = 10;
             fetch(window.location.pathname + "?partial=true")
                 .then(response => response.text())
                 .then(html => {
                     const tbody = document.querySelector("#analysisTable tbody");
                     if (tbody && html.trim().length > 0) {
                         tbody.innerHTML = html;
+                        document.getElementById('analysisUpdateTime').innerText = new Date().toLocaleTimeString();
 
                         // Re-apply sort if active
                         // Only sort if we have a valid interactive column active
@@ -965,7 +980,21 @@
                     }
                 })
                 .catch(err => console.error("Auto-refresh failed", err));
-        }, 60000); // 1 minute
+        }, 10000); // 1 minute
+        function manualCreateLevel(event, symbol, price) {
+            event.stopPropagation();
+            if (!confirm('Create level for ' + symbol + ' at $' + price + '?')) return;
+
+            const size = document.getElementById('autoLevelSize').value;
+            const tp = document.getElementById('autoLevelTP').value;
+            const lev = document.getElementById('autoLevelLev').value;
+            const cool = document.getElementById('autoLevelCool').value;
+
+            createLevel(symbol, price, size, tp, lev, cool);
+        }
+
+        // Set initial time
+        document.getElementById('analysisUpdateTime').innerText = new Date().toLocaleTimeString();
     </script>
 </body>
 

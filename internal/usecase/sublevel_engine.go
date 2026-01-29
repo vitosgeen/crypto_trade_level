@@ -94,7 +94,6 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	e.mu.Unlock()
 
 	// short logs for debugging
-	log.Printf("DEBUG 1")
 
 	// Check Cooldown
 	if !state.LastTriggerTime.IsZero() && time.Since(state.LastTriggerTime) < time.Duration(level.CoolDownMs)*time.Millisecond {
@@ -103,7 +102,6 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	}
 
 	// short logs for debugging
-	log.Printf("DEBUG 2")
 
 	// Check Base Close Cooldown
 	if !state.DisabledUntil.IsZero() && time.Now().Before(state.DisabledUntil) {
@@ -112,7 +110,6 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	}
 
 	// short logs for debugging
-	log.Printf("DEBUG 3")
 
 	// Determine Trigger Logic based on Side
 	// Triggers are now BIDIRECTIONAL per updated spec.
@@ -188,12 +185,11 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		return p1 < boundary && p2 >= boundary
 	}
 	// short logs for debugging
-	log.Printf("DEBUG 4")
+
 	crossesDown := func(p1, p2, boundary float64) bool {
 		return p1 > boundary && p2 <= boundary
 	}
 	// short logs for debugging
-	log.Printf("DEBUG 5")
 
 	// Calculate Multiplier based on Consecutive Wins
 	multiplier := 1.0
@@ -249,7 +245,7 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		}
 	} else {
 		// short logs for debugging
-		log.Printf("DEBUG 6")
+
 		// Long (Support): Tiers are ABOVE Level.
 		// EXT Spec: "LONG side (above level) ... Tier1_above = L * (1 + t1)"
 		// YES. Long Zone is Price > Level. Tiers are > Level.
@@ -294,17 +290,15 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	}
 
 	// short logs for debugging
-	log.Printf("DEBUG 7")
 
 	if triggered {
 		// short logs for debugging
-		log.Printf("DEBUG 8")
+
 		state.LastTriggerTime = time.Now()
 		return action, size
 	}
 
 	// short logs for debugging
-	log.Printf("DEBUG 9")
 
 	return ActionNone, 0
 }

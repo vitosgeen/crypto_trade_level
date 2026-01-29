@@ -389,7 +389,7 @@ func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, er
 			return nil, fmt.Errorf("Bybit API error (GetPositions): %d - %s", result.RetCode, string(resp))
 		}
 
-		log.Printf("DEBUG: Bybit returned %d raw positions", len(result.Result.List))
+		// log.Printf("DEBUG: Bybit returned %d raw positions", len(result.Result.List))
 		for _, raw := range result.Result.List {
 			size, _ := strconv.ParseFloat(raw.Size, 64)
 			if size == 0 {
@@ -635,7 +635,7 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 
 	if b.wsConn != nil {
 		// Already connected, just subscribe
-		return b.subscribe(symbols)
+		return b.subscribe(symbols, "ConnectWS_Existing")
 	}
 
 	c, _, err := websocket.DefaultDialer.Dial(b.wsURL, nil)
@@ -663,7 +663,7 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 	go b.readLoop()
 	go b.startPingLoop()
 
-	return b.subscribe(b.subscribedSymbols)
+	return b.subscribe(b.subscribedSymbols, "ConnectWS")
 }
 
 func (b *BybitAdapter) GetWSStatus() domain.WSStatus {
@@ -680,9 +680,9 @@ func (b *BybitAdapter) GetWSStatus() domain.WSStatus {
 
 func (b *BybitAdapter) Subscribe(symbols []string) error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 
 	// Update list of symbols we want to stay subscribed to
+	allExist := true
 	for _, s := range symbols {
 		exists := false
 		for _, ex := range b.subscribedSymbols {
@@ -693,44 +693,61 @@ func (b *BybitAdapter) Subscribe(symbols []string) error {
 		}
 		if !exists {
 			b.subscribedSymbols = append(b.subscribedSymbols, s)
+			allExist = false
 		}
 	}
 
 	if b.wsConn == nil {
-		// Not connected yet, ConnectWS will handle it
-		// But we need to call it without locking again
+		// ConnectWS handles subscription for all subscribedSymbols
+		// We unlock before calling it because it locks internally
 		b.mu.Unlock()
-		err := b.ConnectWS(symbols)
-		b.mu.Lock()
-		return err
+		return b.ConnectWS(symbols)
 	}
-	return b.subscribe(symbols)
+
+	if allExist {
+		b.mu.Unlock()
+		return nil
+	}
+
+	b.mu.Unlock()
+
+	return b.subscribe(symbols, "Subscribe")
 }
 
-func (b *BybitAdapter) subscribe(symbols []string) error {
+func (b *BybitAdapter) subscribe(symbols []string, caller string) error {
 	if len(symbols) == 0 {
 		return nil
 	}
-	args := make([]interface{}, len(symbols))
+
+	// 1. Subscribe to Tickers
+	tickerArgs := make([]interface{}, len(symbols))
 	for i, s := range symbols {
-		args[i] = "tickers." + s
+		tickerArgs[i] = "tickers." + s
 	}
-	// Also subscribe to publicTrade
+	tickerMsg := map[string]interface{}{
+		"op":   "subscribe",
+		"args": tickerArgs,
+	}
+	if err := b.wsConn.WriteJSON(tickerMsg); err != nil {
+		return err
+	}
+
+	// 2. Subscribe to PublicTrade
 	tradeArgs := make([]interface{}, len(symbols))
 	for i, s := range symbols {
 		tradeArgs[i] = "publicTrade." + s
 	}
-	args = append(args, tradeArgs...)
-
-	subMsg := map[string]interface{}{
+	tradeMsg := map[string]interface{}{
 		"op":   "subscribe",
-		"args": args,
+		"args": tradeArgs,
 	}
-	if err := b.wsConn.WriteJSON(subMsg); err != nil {
+	if err := b.wsConn.WriteJSON(tradeMsg); err != nil {
 		return err
 	}
+
 	return nil
 }
+
 func (b *BybitAdapter) startPingLoop() {
 	b.pingTicker = time.NewTicker(20 * time.Second)
 	defer b.pingTicker.Stop()
@@ -776,7 +793,6 @@ func (b *BybitAdapter) readLoop() {
 	for {
 		_, message, err := b.wsConn.ReadMessage()
 		if err != nil {
-			log.Println("WS Read error:", err)
 			close(b.wsDone)
 			return
 		}
@@ -913,7 +929,6 @@ func (b *BybitAdapter) readLoop() {
 				if !ok {
 					continue
 				}
-
 				// Parse Trade
 				side, _ := trade["S"].(string)
 				sizeStr, _ := trade["v"].(string)

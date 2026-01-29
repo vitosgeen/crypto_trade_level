@@ -1,6 +1,15 @@
 {{range .Results}}
 <tr onclick="showChart('{{.Symbol}}')" style="cursor: pointer;">
-    <td style="font-weight: 600; font-size: 1rem;">{{.Symbol}}</td>
+    <td style="font-weight: 600; font-size: 1rem;">
+        <span class="symbol">{{.Symbol}}</span>
+        <div style="margin-top: 5px;">
+            <button class="cta-button"
+                style="font-size: 0.65rem; padding: 2px 6px; background: rgba(0, 255, 136, 0.15); border: 1px solid rgba(0, 255, 136, 0.3); color: var(--accent-color);"
+                onclick="manualCreateLevel(event, '{{.Symbol}}', {{.CurrentPrice}})">
+                + Create Level
+            </button>
+        </div>
+    </td>
     <td style="font-family: monospace; color: var(--text-muted);" data-val="{{.EndOI}}">
         <div>OI: {{printf "%.0f" .EndOI}}</div>
         <div style="color: var(--accent-color); font-size: 0.8rem; margin-top: 2px;">${{printf "%.6f" .CurrentPrice}}
