@@ -508,6 +508,23 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 }
 
 func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, pos *domain.Position, prevPrice, currPrice, sentiment, sentimentThreshold float64) {
+	// Sync Check: Detect external closes
+	// If the state thinks we are triggered, but the exchange says we have no position (Size 0),
+	// we should reset the state so we can trade again.
+	state := s.engine.GetState(level.ID)
+	if state.Tier1Triggered {
+		// Only sync if we successfully fetched position data (pos != nil)
+		// AND that data says we have no size (pos.Size == 0).
+		// We add a 10s buffer to avoid race conditions with just-opened positions where API might lag.
+		if pos != nil && pos.Size == 0 {
+			if time.Since(state.LastTriggerTime) > 10*time.Second {
+				log.Printf("STATE SYNC: Position for %s (Level %s) is closed (Size 0). Resetting state.", level.Symbol, level.ID)
+				s.engine.ResetState(level.ID)
+				// Refresh state variable after reset
+				state = s.engine.GetState(level.ID)
+			}
+		}
+	}
 	// 1. Determine Side
 	// If the level has a fixed side, use it. Otherwise, determine based on price relative to level.
 	side := level.Side
