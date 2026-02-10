@@ -819,6 +819,17 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 		}
 		s.mu.RUnlock()
 
+		// NEW: Check for Profit and Delete
+		if activeLevel != nil && realizedPnL > 0 {
+			log.Printf("FINALIZE: Position closed with PROFIT (%.2f). Deleting level %s (%s).", realizedPnL, levelID, symbol)
+			if err := s.levelRepo.DeleteLevel(ctx, levelID); err != nil {
+				log.Printf("Failed to delete level %s: %v", levelID, err)
+			}
+			// Trigger cache update to immediately reflect removal
+			s.UpdateCache(ctx)
+			return realizedPnL, nil
+		}
+
 		s.engine.UpdateState(levelID, func(ls *LevelState) {
 			// 1. Check for Base Close (Priority)
 			isBaseClose := false
