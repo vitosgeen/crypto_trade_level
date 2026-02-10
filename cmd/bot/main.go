@@ -86,6 +86,9 @@ func main() {
 	if err := svc.UpdateCache(context.Background()); err != nil {
 		log.Error("Failed to init cache", zap.Error(err))
 	}
+	if err := svc.LoadInitialPrices(context.Background()); err != nil {
+		log.Error("Failed to load initial prices", zap.Error(err))
+	}
 
 	// 9. Wait for Shutdown (moved up to allow goroutines to use 'stop')
 	stop := make(chan os.Signal, 1)
@@ -94,8 +97,17 @@ func main() {
 	// 6. Connect WS and Start Processing (with Reload Loop)
 	// Register callback once
 	bybitAdapter.OnPriceUpdate(func(symbol string, price float64) {
+		// log.Info("Processing price tick", zap.String("symbol", symbol), zap.Float64("price", price))
 		if err := svc.ProcessTick(context.Background(), "bybit", symbol, price); err != nil {
 			log.Error("Error processing tick", zap.Error(err))
+		}
+	})
+
+	// Also process individual trades for responsiveness and to catch all price moves
+	bybitAdapter.OnTradeUpdate(func(symbol string, side string, size float64, price float64) {
+		// log.Info("Processing trade tick 1", zap.String("symbol", symbol), zap.String("side", side), zap.Float64("size", size), zap.Float64("price", price))
+		if err := svc.ProcessTick(context.Background(), "bybit", symbol, price); err != nil {
+			log.Error("Error processing trade tick", zap.Error(err))
 		}
 	})
 
@@ -112,6 +124,9 @@ func main() {
 			// Update Cache
 			if err := svc.UpdateCache(ctx); err != nil {
 				log.Error("Failed to update cache", zap.Error(err))
+			}
+			if err := svc.LoadInitialPrices(ctx); err != nil {
+				log.Error("Failed to sync prices", zap.Error(err))
 			}
 
 			levels, err := store.ListLevels(ctx)

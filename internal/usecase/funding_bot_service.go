@@ -628,6 +628,10 @@ func (b *FundingBot) handleFundingEvent(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if position == nil {
+		// Treat nil position as empty (safe to proceed)
+		position = &domain.Position{Symbol: b.config.Symbol, Size: 0}
+	}
 
 	if position.Size > 0 {
 		b.logger.Info("Position already exists, skipping funding entry",

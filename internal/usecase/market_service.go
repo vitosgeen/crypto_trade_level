@@ -211,39 +211,33 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		s.mu.Lock() // Re-acquire lock
 		if err == nil {
 			// Double-check if we still need to refresh (another goroutine might have done it)
+			shouldUpdate := true
 			if len(s.trades[symbol]) > 0 {
 				// Check timestamp of latest trade
 				lastTradeTime := s.trades[symbol][len(s.trades[symbol])-1].Time
 				if s.timeNow().Sub(lastTradeTime) < 60*time.Second {
-					// Already refreshed, proceed to calculation
-					// We need to break out of the update block, but we are inside if err == nil.
-					// We can just set err = nil and skip the update loop?
-					// Or better, wrap the update logic in an else or just use a flag.
-					// Let's just use a goto or restructure.
-					// Restructuring is cleaner.
-				} else {
-					// Replace old trades with fresh ones
-					s.trades[symbol] = nil
-					for _, t := range recentTrades {
-						s.trades[symbol] = append(s.trades[symbol], Trade{
-							Symbol: t.Symbol,
-							Side:   t.Side,
-							Size:   t.Size,
-							Price:  t.Price,
-							Time:   time.UnixMilli(t.Time),
-						})
-					}
+					shouldUpdate = false
 				}
-			} else {
+			}
+
+			if shouldUpdate {
 				// Replace old trades with fresh ones
 				s.trades[symbol] = nil
-				for _, t := range recentTrades {
+				s.priceHistory[symbol] = nil
+				// iterate in reverse (oldest first) because GetRecentTrades returns newest first
+				for i := len(recentTrades) - 1; i >= 0; i-- {
+					t := recentTrades[i]
+					tradeTime := time.UnixMilli(t.Time)
 					s.trades[symbol] = append(s.trades[symbol], Trade{
 						Symbol: t.Symbol,
 						Side:   t.Side,
 						Size:   t.Size,
 						Price:  t.Price,
-						Time:   time.UnixMilli(t.Time),
+						Time:   tradeTime,
+					})
+					s.priceHistory[symbol] = append(s.priceHistory[symbol], PricePoint{
+						Price: t.Price,
+						Time:  tradeTime,
 					})
 				}
 			}
@@ -458,6 +452,13 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 	var lastPrice float64
 	if prices, ok := s.priceHistory[symbol]; ok && len(prices) > 0 {
 		lastPrice = prices[len(prices)-1].Price
+	}
+
+	if lastPrice == 0 {
+		// Fallback to simpler ticker fetch to ensure we have a price for the UI
+		if price, err := s.exchange.GetCurrentPrice(ctx, symbol); err == nil {
+			lastPrice = price
+		}
 	}
 
 	return &MarketStats{

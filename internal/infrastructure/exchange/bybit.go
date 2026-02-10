@@ -389,7 +389,7 @@ func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, er
 			return nil, fmt.Errorf("Bybit API error (GetPositions): %d - %s", result.RetCode, string(resp))
 		}
 
-		log.Printf("DEBUG: Bybit returned %d raw positions", len(result.Result.List))
+		// log.Printf("DEBUG: Bybit returned %d raw positions", len(result.Result.List))
 		for _, raw := range result.Result.List {
 			size, _ := strconv.ParseFloat(raw.Size, 64)
 			if size == 0 {
@@ -635,7 +635,7 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 
 	if b.wsConn != nil {
 		// Already connected, just subscribe
-		return b.subscribe(symbols)
+		return b.subscribe(symbols, "ConnectWS_Existing")
 	}
 
 	c, _, err := websocket.DefaultDialer.Dial(b.wsURL, nil)
@@ -663,7 +663,7 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 	go b.readLoop()
 	go b.startPingLoop()
 
-	return b.subscribe(b.subscribedSymbols)
+	return b.subscribe(b.subscribedSymbols, "ConnectWS")
 }
 
 func (b *BybitAdapter) GetWSStatus() domain.WSStatus {
@@ -680,9 +680,9 @@ func (b *BybitAdapter) GetWSStatus() domain.WSStatus {
 
 func (b *BybitAdapter) Subscribe(symbols []string) error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 
 	// Update list of symbols we want to stay subscribed to
+	allExist := true
 	for _, s := range symbols {
 		exists := false
 		for _, ex := range b.subscribedSymbols {
@@ -693,44 +693,61 @@ func (b *BybitAdapter) Subscribe(symbols []string) error {
 		}
 		if !exists {
 			b.subscribedSymbols = append(b.subscribedSymbols, s)
+			allExist = false
 		}
 	}
 
 	if b.wsConn == nil {
-		// Not connected yet, ConnectWS will handle it
-		// But we need to call it without locking again
+		// ConnectWS handles subscription for all subscribedSymbols
+		// We unlock before calling it because it locks internally
 		b.mu.Unlock()
-		err := b.ConnectWS(symbols)
-		b.mu.Lock()
-		return err
+		return b.ConnectWS(symbols)
 	}
-	return b.subscribe(symbols)
+
+	if allExist {
+		b.mu.Unlock()
+		return nil
+	}
+
+	b.mu.Unlock()
+
+	return b.subscribe(symbols, "Subscribe")
 }
 
-func (b *BybitAdapter) subscribe(symbols []string) error {
+func (b *BybitAdapter) subscribe(symbols []string, caller string) error {
 	if len(symbols) == 0 {
 		return nil
 	}
-	args := make([]interface{}, len(symbols))
+
+	// 1. Subscribe to Tickers
+	tickerArgs := make([]interface{}, len(symbols))
 	for i, s := range symbols {
-		args[i] = "orderbook.1." + s
+		tickerArgs[i] = "tickers." + s
 	}
-	// Also subscribe to publicTrade
+	tickerMsg := map[string]interface{}{
+		"op":   "subscribe",
+		"args": tickerArgs,
+	}
+	if err := b.wsConn.WriteJSON(tickerMsg); err != nil {
+		return err
+	}
+
+	// 2. Subscribe to PublicTrade
 	tradeArgs := make([]interface{}, len(symbols))
 	for i, s := range symbols {
 		tradeArgs[i] = "publicTrade." + s
 	}
-	args = append(args, tradeArgs...)
-
-	subMsg := map[string]interface{}{
+	tradeMsg := map[string]interface{}{
 		"op":   "subscribe",
-		"args": args,
+		"args": tradeArgs,
 	}
-	if err := b.wsConn.WriteJSON(subMsg); err != nil {
+	if err := b.wsConn.WriteJSON(tradeMsg); err != nil {
 		return err
 	}
+
 	return nil
 }
+
 func (b *BybitAdapter) startPingLoop() {
 	b.pingTicker = time.NewTicker(20 * time.Second)
 	defer b.pingTicker.Stop()
@@ -776,12 +793,11 @@ func (b *BybitAdapter) readLoop() {
 	for {
 		_, message, err := b.wsConn.ReadMessage()
 		if err != nil {
-			log.Println("WS Read error:", err)
 			close(b.wsDone)
 			return
 		}
 
-		// log.Printf("WS Received: %s", string(message)) // Very verbose, maybe just topic?
+		// // log.Printf("WS Received: %s", string(message)) // Temporary debug
 
 		b.mu.Lock()
 		b.messageCount++
@@ -820,38 +836,45 @@ func (b *BybitAdapter) readLoop() {
 
 			symbol := strings.TrimPrefix(topic, "orderbook.1.")
 
+			// Flexible Parsing: Get Best Bid and Best Ask if available
+			var bid, ask float64
+			var hasBid, hasAsk bool
+
 			// Parse Ask
-			a, ok := data["a"].([]interface{})
-			if !ok || len(a) == 0 {
-				continue
+			if a, ok := data["a"].([]interface{}); ok && len(a) > 0 {
+				if askEntry, ok := a[0].([]interface{}); ok && len(askEntry) > 0 {
+					if askStr, ok := askEntry[0].(string); ok {
+						if val, err := strconv.ParseFloat(askStr, 64); err == nil {
+							ask = val
+							hasAsk = true
+						}
+					}
+				}
 			}
-			askEntry, ok := a[0].([]interface{})
-			if !ok || len(askEntry) < 1 {
-				continue
-			}
-			askStr, ok := askEntry[0].(string)
-			if !ok {
-				continue
-			}
-			ask, _ := strconv.ParseFloat(askStr, 64)
 
 			// Parse Bid
-			bidList, ok := data["b"].([]interface{})
-			if !ok || len(bidList) == 0 {
-				continue
+			if bList, ok := data["b"].([]interface{}); ok && len(bList) > 0 {
+				if bidEntry, ok := bList[0].([]interface{}); ok && len(bidEntry) > 0 {
+					if bidStr, ok := bidEntry[0].(string); ok {
+						if val, err := strconv.ParseFloat(bidStr, 64); err == nil {
+							bid = val
+							hasBid = true
+						}
+					}
+				}
 			}
-			bidEntry, ok := bidList[0].([]interface{})
-			if !ok || len(bidEntry) < 1 {
-				continue
-			}
-			bidStr, ok := bidEntry[0].(string)
-			if !ok {
-				continue
-			}
-			bid, _ := strconv.ParseFloat(bidStr, 64)
 
-			// Use mid price
-			price := (ask + bid) / 2
+			// Calculate Price based on available data
+			var price float64
+			if hasAsk && hasBid {
+				price = (ask + bid) / 2
+			} else if hasBid {
+				price = bid
+			} else if hasAsk {
+				price = ask
+			} else {
+				continue
+			}
 
 			b.mu.Lock()
 			callbacks := make([]func(string, float64), len(b.callbacks))
@@ -861,6 +884,39 @@ func (b *BybitAdapter) readLoop() {
 			for _, cb := range callbacks {
 				cb(symbol, price)
 			}
+
+		} else if strings.HasPrefix(topic, "tickers.") {
+			// Handle Ticker Data
+			data, ok := event["data"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			symbol := strings.TrimPrefix(topic, "tickers.")
+
+			// We only care about lastPrice
+			priceStr, ok := data["lastPrice"].(string)
+			if !ok {
+				// Ticker update might not contain lastPrice if it hasn't changed (delta update)
+				// But we need price to process ticks.
+				// If it's effectively a heartbeat or other field update, we skip.
+				continue
+			}
+
+			price, err := strconv.ParseFloat(priceStr, 64)
+			if err != nil {
+				continue
+			}
+
+			b.mu.Lock()
+			callbacks := make([]func(string, float64), len(b.callbacks))
+			copy(callbacks, b.callbacks)
+			b.mu.Unlock()
+
+			for _, cb := range callbacks {
+				cb(symbol, price)
+			}
+
 		} else if strings.HasPrefix(topic, "publicTrade.") {
 			data, ok := event["data"].([]interface{})
 			if !ok {
@@ -873,7 +929,6 @@ func (b *BybitAdapter) readLoop() {
 				if !ok {
 					continue
 				}
-
 				// Parse Trade
 				side, _ := trade["S"].(string)
 				sizeStr, _ := trade["v"].(string)
@@ -957,13 +1012,9 @@ func (b *BybitAdapter) GetCandles(ctx context.Context, symbol, interval string, 
 }
 
 func (b *BybitAdapter) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
-	params := map[string]interface{}{
-		"category": "linear",
-		"symbol":   symbol,
-		"limit":    limit,
-	}
+	path := fmt.Sprintf("/v5/market/recent-trade?category=linear&symbol=%s&limit=%d", symbol, limit)
 
-	resp, err := b.sendRequest(ctx, "GET", "/v5/market/recent-trade", params)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1138,6 +1189,8 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 				Price24hPcnt    string `json:"price24hPcnt"`
 				Turnover24h     string `json:"turnover24h"`
 				OpenInterest    string `json:"openInterest"`
+				HighPrice24h    string `json:"highPrice24h"`
+				LowPrice24h     string `json:"lowPrice24h"`
 				FundingRate     string `json:"fundingRate"`
 				NextFundingTime string `json:"nextFundingTime"`
 			} `json:"list"`
@@ -1158,6 +1211,8 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 		price24hPcnt, _ := strconv.ParseFloat(item.Price24hPcnt, 64)
 		volume24h, _ := strconv.ParseFloat(item.Turnover24h, 64)
 		openInterest, _ := strconv.ParseFloat(item.OpenInterest, 64)
+		high24h, _ := strconv.ParseFloat(item.HighPrice24h, 64)
+		low24h, _ := strconv.ParseFloat(item.LowPrice24h, 64)
 		fundingRate, _ := strconv.ParseFloat(item.FundingRate, 64)
 		nextFundingTime, _ := strconv.ParseInt(item.NextFundingTime, 10, 64)
 
@@ -1167,6 +1222,8 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 			Price24hPcnt:    price24hPcnt,
 			Volume24h:       volume24h,
 			OpenInterest:    openInterest,
+			High24h:         high24h,
+			Low24h:          low24h,
 			FundingRate:     fundingRate,
 			NextFundingTime: nextFundingTime,
 		})

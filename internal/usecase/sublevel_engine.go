@@ -93,17 +93,23 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	}
 	e.mu.Unlock()
 
+	// short logs for debugging
+
 	// Check Cooldown
 	if !state.LastTriggerTime.IsZero() && time.Since(state.LastTriggerTime) < time.Duration(level.CoolDownMs)*time.Millisecond {
-		// log.Printf("DEBUG: Level %s in cooldown. Remaining: %v", level.ID, time.Duration(level.CoolDownMs)*time.Millisecond - time.Since(state.LastTriggerTime))
+		// log.Printf("DEBUG: Level %s in cooldown. Remaining: %v", level.ID, time.Duration(level.CoolDownMs)*time.Millisecond-time.Since(state.LastTriggerTime))
 		return ActionNone, 0
 	}
+
+	// short logs for debugging
 
 	// Check Base Close Cooldown
 	if !state.DisabledUntil.IsZero() && time.Now().Before(state.DisabledUntil) {
 		// log.Printf("DEBUG: Level %s disabled until %v", level.ID, state.DisabledUntil)
 		return ActionNone, 0
 	}
+
+	// short logs for debugging
 
 	// Determine Trigger Logic based on Side
 	// Triggers are now BIDIRECTIONAL per updated spec.
@@ -178,9 +184,12 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 	crossesUp := func(p1, p2, boundary float64) bool {
 		return p1 < boundary && p2 >= boundary
 	}
+	// short logs for debugging
+
 	crossesDown := func(p1, p2, boundary float64) bool {
 		return p1 > boundary && p2 <= boundary
 	}
+	// short logs for debugging
 
 	// Calculate Multiplier based on Consecutive Wins
 	multiplier := 1.0
@@ -198,10 +207,21 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		// So we check crossesUp.
 
 		// Debug Log
-		// log.Printf("DEBUG: Eval Short. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
+		// log.Printf("DEBUG: Eval Short. Level: %s. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", level.ID, prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
 		// Tier 1
-		if !state.Tier1Triggered && crossesUp(prevPrice, currPrice, tier1Price) {
+		if crossesUp(prevPrice, currPrice, tier1Price) {
+			log.Printf("INFO: [%s] Price %.2f crossed Tier 1 (%.2f) UP", level.Symbol, currPrice, tier1Price)
+		}
+		if crossesUp(prevPrice, currPrice, tier2Price) {
+			log.Printf("INFO: [%s] Price %.2f crossed Tier 2 (%.2f) UP", level.Symbol, currPrice, tier2Price)
+		}
+		if crossesUp(prevPrice, currPrice, tier3Price) {
+			log.Printf("INFO: [%s] Price %.2f crossed Tier 3 (%.2f) UP", level.Symbol, currPrice, tier3Price)
+		}
+
+		// Trigger if crossed UP OR currently INSIDE the zone (between Tier 1 and Level)
+		if !state.Tier1Triggered && (crossesUp(prevPrice, currPrice, tier1Price) || (currPrice >= tier1Price && currPrice < level.LevelPrice)) {
 			log.Printf("AUDIT: Tier 1 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f. Wins: %d. Mult: %f", level.ID, prevPrice, currPrice, tier1Price, state.ConsecutiveWins, multiplier)
 			state.Tier1Triggered = true
 			state.ActiveSide = domain.SideShort
@@ -224,6 +244,8 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 			size = 2 * level.BaseSize
 		}
 	} else {
+		// short logs for debugging
+
 		// Long (Support): Tiers are ABOVE Level.
 		// EXT Spec: "LONG side (above level) ... Tier1_above = L * (1 + t1)"
 		// YES. Long Zone is Price > Level. Tiers are > Level.
@@ -231,9 +253,21 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		// So we check crossesDown.
 
 		// Debug Log
-		// log.Printf("DEBUG: Eval Long. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
+		// log.Printf("DEBUG: Eval Long. Level: %s. Prev: %f, Curr: %f, T1: %f, T2: %f, T3: %f", level.ID, prevPrice, currPrice, tier1Price, tier2Price, tier3Price)
 
-		if !state.Tier1Triggered && crossesDown(prevPrice, currPrice, tier1Price) {
+		// Tier 1
+		if crossesDown(prevPrice, currPrice, tier1Price) {
+			log.Printf("INFO: [%s] Price %.2f crossed Tier 1 (%.2f) DOWN", level.Symbol, currPrice, tier1Price)
+		}
+		if crossesDown(prevPrice, currPrice, tier2Price) {
+			log.Printf("INFO: [%s] Price %.2f crossed Tier 2 (%.2f) DOWN", level.Symbol, currPrice, tier2Price)
+		}
+		if crossesDown(prevPrice, currPrice, tier3Price) {
+			log.Printf("INFO: [%s] Price %.2f crossed Tier 3 (%.2f) DOWN", level.Symbol, currPrice, tier3Price)
+		}
+
+		// Trigger if crossed DOWN OR currently INSIDE the zone (between Tier 1 and Level)
+		if !state.Tier1Triggered && (crossesDown(prevPrice, currPrice, tier1Price) || (currPrice <= tier1Price && currPrice > level.LevelPrice)) {
 			log.Printf("AUDIT: Tier 1 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f. Wins: %d. Mult: %f", level.ID, prevPrice, currPrice, tier1Price, state.ConsecutiveWins, multiplier)
 			state.Tier1Triggered = true
 			state.ActiveSide = domain.SideLong
@@ -255,10 +289,16 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 		}
 	}
 
+	// short logs for debugging
+
 	if triggered {
+		// short logs for debugging
+
 		state.LastTriggerTime = time.Now()
 		return action, size
 	}
+
+	// short logs for debugging
 
 	return ActionNone, 0
 }

@@ -20,6 +20,7 @@ go.work
 
 # Project specific
 /bot
+/logs
 bot.pid
 bot.db
 bot.log

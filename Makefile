@@ -50,6 +50,10 @@ force-stop:
 	@# Kill the binary if it exists
 	@pkill -x "bot" || true
 	@# Kill go run process, being careful not to kill make
+	@# Kill go run process, being careful not to kill make
 	@pgrep -f "go run.*cmd/bot/main.go" | grep -v $$ | xargs -r kill -9 || true
 	@rm -f bot.pid
 	@echo "All bot processes stopped and port 8078 freed."
+
+analyze:
+	@go run cmd/analyzer/main.go

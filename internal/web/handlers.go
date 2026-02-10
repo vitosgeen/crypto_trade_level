@@ -6,10 +6,8 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/vitos/crypto_trade_level/internal/domain"
@@ -32,6 +30,12 @@ func InitTemplates(dir string) error {
 			}
 			return a / b
 		},
+		"abs": func(a float64) float64 {
+			if a < 0 {
+				return -a
+			}
+			return a
+		},
 	}
 	templates, err = template.New("").Funcs(funcMap).ParseGlob(filepath.Join(dir, "*.html"))
 	return err
@@ -40,7 +44,7 @@ func InitTemplates(dir string) error {
 type LevelView struct {
 	*domain.Level
 	CurrentPrice          float64
-	Side                  domain.Side
+	ZoneSide              domain.Side
 	LongTiers             []float64
 	ShortTiers            []float64
 	ConsecutiveBaseCloses int
@@ -88,7 +92,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		views = append(views, LevelView{
 			Level:                 l,
 			CurrentPrice:          price,
-			Side:                  side,
+			ZoneSide:              side,
 			LongTiers:             longTiers,
 			ShortTiers:            shortTiers,
 			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
@@ -137,7 +141,7 @@ func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 		views = append(views, LevelView{
 			Level:                 l,
 			CurrentPrice:          price,
-			Side:                  side,
+			ZoneSide:              side,
 			LongTiers:             longTiers,
 			ShortTiers:            shortTiers,
 			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
@@ -182,7 +186,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	exchange := r.FormValue("exchange")
-	symbol := r.FormValue("symbol")
+	symbol := strings.ToUpper(r.FormValue("symbol"))
 	marginType := r.FormValue("margin_type")
 	stopLossAtBase := r.FormValue("stop_loss_at_base") == "on"
 	stopLossMode := r.FormValue("stop_loss_mode")
@@ -192,15 +196,39 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	disableSpeedClose := r.FormValue("disable_speed_close") == "on"
 
 	maxConsecutiveBaseCloses, _ := strconv.Atoi(r.FormValue("max_consecutive_base_closes"))
-	baseCloseCooldownMinutes, _ := strconv.Atoi(r.FormValue("base_close_cooldown_minutes"))
-	baseCloseCooldownMs := int64(baseCloseCooldownMinutes) * 60 * 1000
+	baseCloseCooldownMs, _ := strconv.ParseInt(r.FormValue("base_close_cooldown_ms"), 10, 64)
 	autoModeEnabled := r.FormValue("auto_mode_enabled") == "on"
+
+	side := domain.Side(r.FormValue("side"))
+	if side == "" {
+		side = domain.SideBoth
+	}
+
+	// Validation
+	if price <= 0 {
+		http.Error(w, "Invalid Price (must be > 0)", http.StatusBadRequest)
+		return
+	}
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+	if exchange == "" {
+		// Default to bybit if missing, or error?
+		// Let's error, or default to bybit
+		exchange = "bybit"
+	}
+	if baseSize <= 0 {
+		http.Error(w, "Base Size must be > 0", http.StatusBadRequest)
+		return
+	}
 
 	level := &domain.Level{
 		ID:                       fmt.Sprintf("%d", time.Now().UnixNano()),
 		Exchange:                 exchange,
 		Symbol:                   symbol,
 		LevelPrice:               price,
+		Side:                     side,
 		BaseSize:                 baseSize,
 		Leverage:                 leverage,
 		MarginType:               marginType,
@@ -218,12 +246,6 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:                time.Now(),
 	}
 
-	if err := s.service.CreateLevel(r.Context(), level); err != nil {
-		s.logger.Error("Failed to create level", zap.Error(err))
-		http.Error(w, "Failed to save level", http.StatusInternalServerError)
-		return
-	}
-
 	// Create Tiers
 	tiers := &domain.SymbolTiers{
 		Exchange:  exchange,
@@ -236,6 +258,12 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	if err := s.levelRepo.SaveSymbolTiers(r.Context(), tiers); err != nil {
 		s.logger.Error("Failed to save tiers", zap.Error(err))
 		// Continue, but log error
+	}
+
+	if err := s.service.CreateLevel(r.Context(), level); err != nil {
+		s.logger.Error("Failed to create level", zap.Error(err))
+		http.Error(w, "Failed to save level", http.StatusInternalServerError)
+		return
 	}
 
 	// Return updated table
@@ -410,167 +438,8 @@ func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stats)
 }
 
-type CoinData struct {
-	Symbol            string
-	BaseCoin          string
-	QuoteCoin         string
-	Status            string
-	LastPrice         float64
-	Price24hPcnt      float64
-	Volume24h         float64
-	OpenInterest      float64
-	OpenInterestValue float64
-	Range10m          float64
-	Range1h           float64
-	Range4h           float64
-	Trend10m          string // "up", "down", or ""
-	Trend1h           string
-	Trend4h           string
-	FundingRate       float64
-}
-
 func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	instruments, err := s.service.GetExchange().GetInstruments(ctx, "linear")
-	if err != nil {
-		s.logger.Error("Failed to get instruments", zap.Error(err))
-		http.Error(w, "Failed to fetch instruments", http.StatusInternalServerError)
-		return
-	}
-
-	tickers, err := s.service.GetExchange().GetTickers(ctx, "linear")
-	if err != nil {
-		s.logger.Error("Failed to get tickers", zap.Error(err))
-		http.Error(w, "Failed to fetch tickers", http.StatusInternalServerError)
-		return
-	}
-
-	// Map tickers by symbol for easy lookup
-	tickerMap := make(map[string]domain.Ticker)
-	for _, t := range tickers {
-		tickerMap[t.Symbol] = t
-	}
-
-	var allCoins []CoinData
-	for _, inst := range instruments {
-		if inst.Status != "Trading" {
-			continue
-		}
-		t, ok := tickerMap[inst.Symbol]
-		coin := CoinData{
-			Symbol:    inst.Symbol,
-			BaseCoin:  inst.BaseCoin,
-			QuoteCoin: inst.QuoteCoin,
-			Status:    inst.Status,
-		}
-		if ok {
-			coin.LastPrice = t.LastPrice
-			coin.Price24hPcnt = t.Price24hPcnt
-			coin.Volume24h = t.Volume24h
-			coin.OpenInterest = t.OpenInterest
-			coin.OpenInterestValue = t.OpenInterest * t.LastPrice
-			coin.FundingRate = t.FundingRate
-		}
-		allCoins = append(allCoins, coin)
-	}
-
-	// Sort by Open Interest Value to find "big" coins
-	sort.Slice(allCoins, func(i, j int) bool {
-		return allCoins[i].OpenInterestValue > allCoins[j].OpenInterestValue
-	})
-
-	// Take top coins to calculate range (limit to 60 for performance)
-	limit := 60
-	if len(allCoins) < limit {
-		limit = len(allCoins)
-	}
-
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 10) // Concurrency limit
-
-	for i := 0; i < limit; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			symbol := allCoins[idx].Symbol
-			// Range 10m: 10 x 1m candles
-			candles10m, _ := s.service.GetExchange().GetCandles(ctx, symbol, "1", 10)
-			if len(candles10m) > 0 {
-				minL, maxH := candles10m[0].Low, candles10m[0].High
-				for _, c := range candles10m {
-					if c.Low < minL {
-						minL = c.Low
-					}
-					if c.High > maxH {
-						maxH = c.High
-					}
-				}
-				if minL > 0 {
-					allCoins[idx].Range10m = ((maxH - minL) / minL) * 100
-					// Trend: Current vs Start of range
-					startPrice := candles10m[0].Open
-					if allCoins[idx].LastPrice > startPrice {
-						allCoins[idx].Trend10m = "up"
-					} else if allCoins[idx].LastPrice < startPrice {
-						allCoins[idx].Trend10m = "down"
-					}
-				}
-			}
-
-			// Range 1h: 60 x 1m candles (safer than 1h candle if it just started)
-			candles1h, _ := s.service.GetExchange().GetCandles(ctx, symbol, "1", 60)
-			if len(candles1h) > 0 {
-				minL, maxH := candles1h[0].Low, candles1h[0].High
-				for _, c := range candles1h {
-					if c.Low < minL {
-						minL = c.Low
-					}
-					if c.High > maxH {
-						maxH = c.High
-					}
-				}
-				if minL > 0 {
-					allCoins[idx].Range1h = ((maxH - minL) / minL) * 100
-					// Trend: Current vs Start of range
-					startPrice := candles1h[0].Open
-					if allCoins[idx].LastPrice > startPrice {
-						allCoins[idx].Trend1h = "up"
-					} else if allCoins[idx].LastPrice < startPrice {
-						allCoins[idx].Trend1h = "down"
-					}
-				}
-			}
-
-			// Range 4h: 4 x 60m candles (last 4 hours)
-			candles4h, _ := s.service.GetExchange().GetCandles(ctx, symbol, "60", 4)
-			if len(candles4h) > 0 {
-				minL, maxH := candles4h[0].Low, candles4h[0].High
-				for _, c := range candles4h {
-					if c.Low < minL {
-						minL = c.Low
-					}
-					if c.High > maxH {
-						maxH = c.High
-					}
-				}
-				if minL > 0 {
-					allCoins[idx].Range4h = ((maxH - minL) / minL) * 100
-					// Trend: Current vs Start of range
-					startPrice := candles4h[0].Open
-					if allCoins[idx].LastPrice > startPrice {
-						allCoins[idx].Trend4h = "up"
-					} else if allCoins[idx].LastPrice < startPrice {
-						allCoins[idx].Trend4h = "down"
-					}
-				}
-			}
-		}(i)
-	}
-
-	wg.Wait()
+	allCoins := s.levelBotWorker.GetData()
 
 	data := map[string]interface{}{
 		"Instruments": allCoins,
@@ -604,10 +473,10 @@ func (s *Server) handleSpeedBot(w http.ResponseWriter, r *http.Request) {
 		tickerMap[t.Symbol] = t
 	}
 
-	var coins []CoinData
+	var coins []domain.CoinData
 	for _, inst := range instruments {
 		t, ok := tickerMap[inst.Symbol]
-		coin := CoinData{
+		coin := domain.CoinData{
 			Symbol:    inst.Symbol,
 			BaseCoin:  inst.BaseCoin,
 			QuoteCoin: inst.QuoteCoin,
@@ -755,6 +624,33 @@ func (s *Server) handleFundingCoinDetail(w http.ResponseWriter, r *http.Request,
 	}
 }
 
+func (s *Server) handleLogAnalysis(w http.ResponseWriter, r *http.Request) {
+	analyzer := usecase.NewLogAnalyzerService(s.logger)
+	results, err := analyzer.AnalyzeLatestLogs()
+	if err != nil {
+		s.logger.Error("Failed to analyze logs", zap.Error(err))
+		http.Error(w, fmt.Sprintf("Analysis failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]interface{}{
+		"Results": results,
+	}
+
+	if r.URL.Query().Get("partial") == "true" {
+		if err := templates.ExecuteTemplate(w, "log_analysis_rows.html", data); err != nil {
+			s.logger.Error("Template error", zap.Error(err))
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if err := templates.ExecuteTemplate(w, "log_analysis.html", data); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
 // Speed Bot API Handlers
 
 func (s *Server) handleStartSpeedBot(w http.ResponseWriter, r *http.Request) {
@@ -842,4 +738,23 @@ func (s *Server) handleSpeedBotStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+func (s *Server) handleGetLogChartData(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol required", http.StatusBadRequest)
+		return
+	}
+
+	analyzer := usecase.NewLogAnalyzerService(s.logger)
+	points, err := analyzer.GetSymbolHistory(symbol)
+	if err != nil {
+		s.logger.Error("Failed to get chart data", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(points)
 }
