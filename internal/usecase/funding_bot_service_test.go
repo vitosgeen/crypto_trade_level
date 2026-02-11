@@ -121,6 +121,10 @@ func (m *MockFundingExchange) GetWSStatus() domain.WSStatus {
 	return domain.WSStatus{Connected: true}
 }
 
+func (m *MockFundingExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	return []*domain.WalletBalance{}, nil
+}
+
 func TestEvaluate_ProfitableFunding(t *testing.T) {
 	logger := zap.NewNop()
 

@@ -157,6 +157,14 @@ func (m *MockExchange) GetWSStatus() domain.WSStatus {
 	return domain.WSStatus{Connected: true}
 }
 
+func (m *MockExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	return []*domain.WalletBalance{}, nil
+}
+
+func (m *MockExchangeForService) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	return []*domain.WalletBalance{}, nil
+}
+
 func (m *MockExchangeForService) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
 	return order, nil
 }

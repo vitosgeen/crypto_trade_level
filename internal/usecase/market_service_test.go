@@ -72,6 +72,10 @@ func (m *MockExchange) GetWSStatus() domain.WSStatus {
 	return domain.WSStatus{Connected: true}
 }
 
+func (m *MockExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	return []*domain.WalletBalance{}, nil
+}
+
 func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {
 	mockEx := &MockExchange{}
 	service := NewMarketService(mockEx, nil)

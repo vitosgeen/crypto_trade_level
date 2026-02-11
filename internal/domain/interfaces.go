@@ -22,6 +22,7 @@ type Exchange interface {
 	PlaceOrder(ctx context.Context, order *Order) (*Order, error)
 	GetOrder(ctx context.Context, symbol, orderID string) (*Order, error)
 	CancelOrder(ctx context.Context, symbol, orderID string) error
+	GetWalletBalance(ctx context.Context) ([]*WalletBalance, error)
 	GetWSStatus() WSStatus
 }
 
@@ -86,4 +87,9 @@ type TradeRepository interface {
 	SaveTradeSessionLog(ctx context.Context, log *TradeSessionLog) error
 	ListTradeSessionLogs(ctx context.Context, symbol string, limit int) ([]*TradeSessionLog, error)
 	GetTradeSessionLog(ctx context.Context, id string) (*TradeSessionLog, error)
+}
+
+type WalletRepository interface {
+	SaveWalletBalance(ctx context.Context, balance *WalletBalance) error
+	GetWalletBalanceHistory(ctx context.Context, coin string, limit int) ([]*WalletBalance, error)
 }

@@ -15,6 +15,7 @@ type Server struct {
 	server            *http.Server
 	levelRepo         domain.LevelRepository
 	tradeRepo         domain.TradeRepository
+	walletRepo        domain.WalletRepository
 	service           *usecase.LevelService
 	marketService     *usecase.MarketService
 	speedBotService   *usecase.SpeedBotService
@@ -27,6 +28,7 @@ func NewServer(
 	port int,
 	levelRepo domain.LevelRepository,
 	tradeRepo domain.TradeRepository,
+	walletRepo domain.WalletRepository,
 	service *usecase.LevelService,
 	marketService *usecase.MarketService,
 	speedBotService *usecase.SpeedBotService,
@@ -37,6 +39,7 @@ func NewServer(
 		router:            http.NewServeMux(),
 		levelRepo:         levelRepo,
 		tradeRepo:         tradeRepo,
+		walletRepo:        walletRepo,
 		service:           service,
 		marketService:     marketService,
 		speedBotService:   speedBotService,
@@ -119,6 +122,10 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /api/fundingbot/auto/status", s.handleGetAutoScannerStatus)
 	s.router.HandleFunc("GET /api/fundingbot/session-logs", s.handleListSessionLogs)
 	s.router.HandleFunc("GET /api/fundingbot/session-logs/{id}", s.handleGetSessionLog)
+
+	// Wallet
+	s.router.HandleFunc("GET /wallet", s.handleWalletPage)
+	s.router.HandleFunc("GET /api/wallet/history", s.handleWalletHistory)
 }
 
 func (s *Server) Start() error {

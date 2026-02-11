@@ -100,6 +100,14 @@ func (s *SQLiteStore) initSchema() error {
 			end_time INTEGER NOT NULL,
 			ticks_json TEXT NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS wallet_balances (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			coin TEXT NOT NULL,
+			total REAL NOT NULL,
+			free REAL NOT NULL,
+			timestamp DATETIME NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_wallet_coin_time ON wallet_balances(coin, timestamp DESC);`,
 	}
 
 	for _, q := range queries {
@@ -121,6 +129,8 @@ func (s *SQLiteStore) initSchema() error {
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN auto_mode_enabled BOOLEAN NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN side TEXT NOT NULL DEFAULT 'BOTH'`)
 	_, _ = s.db.Exec(`ALTER TABLE trades ADD COLUMN realized_pnl REAL NOT NULL DEFAULT 0`)
+	_, _ = s.db.Exec(`ALTER TABLE wallet_balances ADD COLUMN unrealized_pnl REAL NOT NULL DEFAULT 0`)
+	_, _ = s.db.Exec(`ALTER TABLE wallet_balances ADD COLUMN equity REAL NOT NULL DEFAULT 0`)
 
 	return nil
 }
@@ -376,4 +386,39 @@ func (s *SQLiteStore) GetTradeSessionLog(ctx context.Context, id string) (*domai
 	}
 
 	return &l, nil
+}
+
+// WalletRepository Implementation
+
+func (s *SQLiteStore) SaveWalletBalance(ctx context.Context, balance *domain.WalletBalance) error {
+	query := `INSERT INTO wallet_balances (coin, total, free, unrealized_pnl, equity, timestamp) VALUES (?, ?, ?, ?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, query, balance.Coin, balance.Total, balance.Free, balance.UnrealizedPnL, balance.Equity, balance.Timestamp)
+	return err
+}
+
+func (s *SQLiteStore) GetWalletBalanceHistory(ctx context.Context, coin string, limit int) ([]*domain.WalletBalance, error) {
+	query := `SELECT id, coin, total, free, unrealized_pnl, equity, timestamp FROM wallet_balances`
+	var args []interface{}
+	if coin != "" {
+		query += ` WHERE coin = ?`
+		args = append(args, coin)
+	}
+	query += ` ORDER BY timestamp DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var balances []*domain.WalletBalance
+	for rows.Next() {
+		var b domain.WalletBalance
+		if err := rows.Scan(&b.ID, &b.Coin, &b.Total, &b.Free, &b.UnrealizedPnL, &b.Equity, &b.Timestamp); err != nil {
+			return nil, err
+		}
+		balances = append(balances, &b)
+	}
+	return balances, nil
 }

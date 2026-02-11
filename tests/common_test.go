@@ -123,3 +123,9 @@ func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) 
 func (m *MockExchange) GetWSStatus() domain.WSStatus {
 	return domain.WSStatus{Connected: true}
 }
+
+func (m *MockExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	return []*domain.WalletBalance{
+		{Coin: "USDT", Total: 10000, Free: 5000},
+	}, nil
+}

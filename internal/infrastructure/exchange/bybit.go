@@ -666,6 +666,82 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 	return b.subscribe(b.subscribedSymbols, "ConnectWS")
 }
 
+func (b *BybitAdapter) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	path := "/v5/account/wallet-balance?accountType=UNIFIED"
+	respBody, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				AccountType        string `json:"accountType"`
+				TotalEquity        string `json:"totalEquity"`
+				TotalWalletBalance string `json:"totalWalletBalance"`
+				TotalAvailable     string `json:"totalAvailableBalance"`
+				Coin               []struct {
+					Coin          string `json:"coin"`
+					WalletBal     string `json:"walletBalance"`
+					Available     string `json:"availableToWithdraw"`
+					UnrealisedPnl string `json:"unrealisedPnl"`
+					Equity        string `json:"equity"`
+				} `json:"coin"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("Bybit API error: %d - %s", result.RetCode, result.RetMsg)
+	}
+
+	var balances []*domain.WalletBalance
+	if len(result.Result.List) > 0 {
+		for _, account := range result.Result.List {
+			// Add Account Total (USD)
+			totalEq, _ := strconv.ParseFloat(account.TotalEquity, 64)
+			totalWal, _ := strconv.ParseFloat(account.TotalWalletBalance, 64)
+			totalAvail, _ := strconv.ParseFloat(account.TotalAvailable, 64)
+
+			if totalEq > 0 || totalWal > 0 {
+				balances = append(balances, &domain.WalletBalance{
+					Coin:          "TOTAL_USD", // Synthetic coin for total account value
+					Total:         totalWal,
+					Free:          totalAvail,
+					UnrealizedPnL: totalEq - totalWal, // Approximate Upl as diff
+					Equity:        totalEq,
+					Timestamp:     time.Now(),
+				})
+			}
+
+			for _, coinData := range account.Coin {
+				total, _ := strconv.ParseFloat(coinData.WalletBal, 64)
+				free, _ := strconv.ParseFloat(coinData.Available, 64)
+				upl, _ := strconv.ParseFloat(coinData.UnrealisedPnl, 64)
+				equity, _ := strconv.ParseFloat(coinData.Equity, 64)
+
+				if total > 0 || equity > 0 {
+					balances = append(balances, &domain.WalletBalance{
+						Coin:          coinData.Coin,
+						Total:         total,
+						Free:          free,
+						UnrealizedPnL: upl,
+						Equity:        equity,
+						Timestamp:     time.Now(),
+					})
+				}
+			}
+		}
+	}
+	return balances, nil
+}
+
 func (b *BybitAdapter) GetWSStatus() domain.WSStatus {
 	b.mu.Lock()
 	defer b.mu.Unlock()

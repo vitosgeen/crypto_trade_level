@@ -207,7 +207,11 @@ func main() {
 	// Start Auto-Scanner (Disabled by default)
 	// go fundingBotService.StartAutoScanner(context.Background())
 
-	server := web.NewServer(port, store, store, svc, marketService, speedBotService, fundingBotService, log)
+	// Init Wallet Monitor
+	walletMonitor := usecase.NewWalletMonitor(bybitAdapter, store, log)
+	go walletMonitor.Start(context.Background(), 5*time.Minute)
+
+	server := web.NewServer(port, store, store, store, svc, marketService, speedBotService, fundingBotService, log)
 
 	// 8. Start Server
 	go func() {

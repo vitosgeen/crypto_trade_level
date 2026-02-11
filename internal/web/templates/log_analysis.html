@@ -253,11 +253,11 @@
 
     <nav>
         <a href="/" class="logo">CRYPTOBOT</a>
-        <div class="nav-links">
-            <a href="/level-bot" style="color: var(--accent-color);">Level Bot</a>
-            <a href="/speed-bot">Speed Bot</a>
-            <a href="/funding-bot">Funding Bot</a>
-            <a href="/dashboard">Dashboard</a>
+        <a href="/level-bot" style="color: var(--accent-color);">Level Bot</a>
+        <a href="/speed-bot">Speed Bot</a>
+        <a href="/funding-bot">Funding Bot</a>
+        <a href="/wallet">Wallet</a>
+        <a href="/dashboard">Dashboard</a>
         </div>
         <a href="/dashboard" class="cta-button">Launch App</a>
     </nav>
@@ -324,6 +324,24 @@
                     <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Auto
                         Cooldown (ms)</label>
                     <input type="number" id="autoLevelCool" value="600" step="100"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Tier
+                        1 (x1)</label>
+                    <input type="number" id="autoLevelTier1" value="1.75" step="0.01"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Tier
+                        2 (x1)</label>
+                    <input type="number" id="autoLevelTier2" value="1.6" step="0.01"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Tier
+                        3 (x2)</label>
+                    <input type="number" id="autoLevelTier3" value="1.5" step="0.01"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
                 </div>
             </div>
@@ -771,6 +789,9 @@
             const autoLevelTP = parseFloat(document.getElementById('autoLevelTP').value) || 1.0;
             const autoLevelLev = parseInt(document.getElementById('autoLevelLev').value) || 10;
             const autoLevelCool = parseInt(document.getElementById('autoLevelCool').value) || 60;
+            const autoLevelTier1 = parseFloat(document.getElementById('autoLevelTier1').value) || 1.75;
+            const autoLevelTier2 = parseFloat(document.getElementById('autoLevelTier2').value) || 1.6;
+            const autoLevelTier3 = parseFloat(document.getElementById('autoLevelTier3').value) || 1.5;
 
             // Fetch active levels to prevent duplicates
             let activeSymbols = new Set();
@@ -892,13 +913,13 @@
                         console.log("Triggering auto-creation for:", levelRequests);
                     }
                     levelRequests.forEach(req => {
-                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool);
+                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3);
                     });
                 }
             }
         }
 
-        function createLevel(symbol, price, size, tp, lev, cool) {
+        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3) {
             console.log(`Sending create request for ${symbol} @ ${price}`);
 
             // Calculate Base Size (Coin Quantity) from USDT Size
@@ -926,9 +947,9 @@
             params.append('disable_speed_close', 'on');
             params.append('cool_down_ms', cool.toString()); // Value is already in ms
             // Tier Defaults
-            params.append('tier1', '1.75');
-            params.append('tier2', '1.6');
-            params.append('tier3', '1.5');
+            params.append('tier1', tier1.toString());
+            params.append('tier2', tier2.toString());
+            params.append('tier3', tier3.toString());
 
             // Add auto flag
             params.append('auto_mode_enabled', 'on');
@@ -1001,8 +1022,11 @@
             const tp = document.getElementById('autoLevelTP').value;
             const lev = document.getElementById('autoLevelLev').value;
             const cool = document.getElementById('autoLevelCool').value;
+            const tier1 = document.getElementById('autoLevelTier1').value;
+            const tier2 = document.getElementById('autoLevelTier2').value;
+            const tier3 = document.getElementById('autoLevelTier3').value;
 
-            createLevel(symbol, price, size, tp, lev, cool);
+            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3);
         }
 
         // Set initial time
