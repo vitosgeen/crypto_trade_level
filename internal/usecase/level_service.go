@@ -1277,3 +1277,8 @@ func (s *LevelService) IncrementBaseCloses(ctx context.Context, levelID string) 
 
 	return nil
 }
+
+// GetExchangeHistory fetches the closed PnL history directly from the exchange.
+func (s *LevelService) GetExchangeHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
+	return s.exchange.GetClosedPnL(ctx, "", limit)
+}

@@ -99,10 +99,17 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Fetch exchange history
+	exchangeHistory, err := s.service.GetExchangeHistory(r.Context(), 50)
+	if err != nil {
+		s.logger.Error("Failed to fetch exchange history", zap.Error(err))
+	}
+
 	data := map[string]interface{}{
-		"Levels":     views,
-		"History":    history,
-		"AllSymbols": allSymbols,
+		"Levels":          views,
+		"History":         history,
+		"ExchangeHistory": exchangeHistory,
+		"AllSymbols":      allSymbols,
 	}
 
 	if err := templates.ExecuteTemplate(w, "index.html", data); err != nil {

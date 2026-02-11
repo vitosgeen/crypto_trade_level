@@ -161,6 +161,10 @@ func (m *MockExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBa
 	return []*domain.WalletBalance{}, nil
 }
 
+func (m *MockExchange) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	return []*domain.PositionHistory{}, nil
+}
+
 func (m *MockExchangeForService) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
 	return []*domain.WalletBalance{}, nil
 }
@@ -323,6 +327,10 @@ func (m *MockExchangeForService) Subscribe(symbols []string) error {
 
 func (m *MockExchangeForService) GetWSStatus() domain.WSStatus {
 	return domain.WSStatus{Connected: true}
+}
+
+func (m *MockExchangeForService) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	return []*domain.PositionHistory{}, nil
 }
 
 func TestLevelService_StopLossMode(t *testing.T) {

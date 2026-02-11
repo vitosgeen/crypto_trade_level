@@ -125,6 +125,10 @@ func (m *MockFundingExchange) GetWalletBalance(ctx context.Context) ([]*domain.W
 	return []*domain.WalletBalance{}, nil
 }
 
+func (m *MockFundingExchange) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	return []*domain.PositionHistory{}, nil
+}
+
 func TestEvaluate_ProfitableFunding(t *testing.T) {
 	logger := zap.NewNop()
 

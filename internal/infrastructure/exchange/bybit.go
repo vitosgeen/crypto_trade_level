@@ -1307,3 +1307,73 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 
 	return tickers, nil
 }
+
+func (b *BybitAdapter) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	path := fmt.Sprintf("/v5/position/closed-pnl?category=linear&limit=%d", limit)
+	if symbol != "" {
+		path += "&symbol=" + symbol
+	}
+
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				Symbol        string `json:"symbol"`
+				OrderId       string `json:"orderId"`
+				Side          string `json:"side"` // "Buy" or "Sell"
+				Qty           string `json:"qty"`
+				OrderPrice    string `json:"orderPrice"`    // Entry Price? No, this is avgEntryPrice usually
+				AvgEntryPrice string `json:"avgEntryPrice"` // Better to use this
+				AvgExitPrice  string `json:"avgExitPrice"`
+				ClosedPnl     string `json:"closedPnl"`
+				CreatedTime   string `json:"createdTime"` // Milliseconds
+				Leverage      string `json:"leverage"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit closed-pnl error: %s", result.RetMsg)
+	}
+
+	var history []*domain.PositionHistory
+	for _, item := range result.Result.List {
+		size, _ := strconv.ParseFloat(item.Qty, 64)
+		entryPrice, _ := strconv.ParseFloat(item.AvgEntryPrice, 64)
+		exitPrice, _ := strconv.ParseFloat(item.AvgExitPrice, 64)
+		pnl, _ := strconv.ParseFloat(item.ClosedPnl, 64)
+		createdTime, _ := strconv.ParseInt(item.CreatedTime, 10, 64)
+		leverage, _ := strconv.Atoi(item.Leverage)
+
+		side := domain.SideLong
+		if item.Side == "Sell" {
+			side = domain.SideShort
+		}
+
+		history = append(history, &domain.PositionHistory{
+			// ID: 0, // No internal ID
+			Exchange:    "bybit",
+			Symbol:      item.Symbol,
+			Side:        side,
+			Size:        size,
+			EntryPrice:  entryPrice,
+			ExitPrice:   exitPrice,
+			RealizedPnL: pnl,
+			Leverage:    leverage,
+			MarginType:  "unknown", // Not provided in closed-pnl
+			ClosedAt:    time.Unix(createdTime/1000, 0),
+		})
+	}
+
+	return history, nil
+}

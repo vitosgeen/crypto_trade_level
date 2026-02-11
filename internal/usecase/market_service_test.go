@@ -76,6 +76,10 @@ func (m *MockExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBa
 	return []*domain.WalletBalance{}, nil
 }
 
+func (m *MockExchange) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	return []*domain.PositionHistory{}, nil
+}
+
 func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {
 	mockEx := &MockExchange{}
 	service := NewMarketService(mockEx, nil)

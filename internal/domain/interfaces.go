@@ -23,6 +23,7 @@ type Exchange interface {
 	GetOrder(ctx context.Context, symbol, orderID string) (*Order, error)
 	CancelOrder(ctx context.Context, symbol, orderID string) error
 	GetWalletBalance(ctx context.Context) ([]*WalletBalance, error)
+	GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*PositionHistory, error)
 	GetWSStatus() WSStatus
 }
 

@@ -638,6 +638,14 @@
             </div>
         </div>
 
+        <!-- Full Width: Exchange History -->
+        <div class="card full-width">
+            <h2>Exchange Verified History</h2>
+            <div id="exchange-history-table">
+                {{ template "history_table" .ExchangeHistory }}
+            </div>
+        </div>
+
         <!-- Full Width: Recent Trades -->
         <div class="card full-width">
             <h2>Recent Trades</h2>
@@ -1879,6 +1887,7 @@
                             (index .ShortTiers 2) }}</span>
                     </div>
                 </div>
+
             </td>
             <td>{{ .BaseSize }}</td>
             <td>
@@ -1943,6 +1952,7 @@
 </table>
 {{ end }}
 
+
 {{ define "positions_table" }}
 <table>
     <thead>
@@ -1991,6 +2001,7 @@
 </table>
 {{ end }}
 
+
 {{ define "history_table" }}
 <table>
     <thead>
@@ -2034,4 +2045,5 @@
     </tbody>
 </table>
 {{ end }}
+
 ```

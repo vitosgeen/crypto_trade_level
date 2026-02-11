@@ -129,3 +129,7 @@ func (m *MockExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBa
 		{Coin: "USDT", Total: 10000, Free: 5000},
 	}, nil
 }
+
+func (m *MockExchange) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	return []*domain.PositionHistory{}, nil
+}
