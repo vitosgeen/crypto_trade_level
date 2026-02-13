@@ -323,6 +323,13 @@ func (s *RSIMonitorService) createLevel(ctx context.Context, symbol string, side
 		return
 	}
 
+	// Fetch current tiers for this symbol to use as basis
+	tiers, _ := s.levelService.levelRepo.GetSymbolTiers(ctx, "bybit", symbol)
+	t1, t2, t3 := 0.005, 0.003, 0.0015 // Defaults
+	if tiers != nil {
+		t1, t2, t3 = tiers.Tier1Pct, tiers.Tier2Pct, tiers.Tier3Pct
+	}
+
 	// Parameters for auto-created rsi levels
 	level := &domain.Level{
 		ID:              fmt.Sprintf("rsi_%d", time.Now().UnixNano()),
@@ -342,6 +349,9 @@ func (s *RSIMonitorService) createLevel(ctx context.Context, symbol string, side
 		TakeProfitMode:  "fixed",
 		StopLossAtBase:  true,
 		StopLossMode:    "exchange",
+		Tier1Pct:        t1,
+		Tier2Pct:        t2,
+		Tier3Pct:        t3,
 	}
 
 	// Round base size to something reasonable?

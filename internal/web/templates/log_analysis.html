@@ -303,6 +303,16 @@
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
                 </div>
                 <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Min
+                        Consistent (C)</label>
+                    <select id="monitorConsistent"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                        <option value="0" selected>0 (Never mind)</option>
+                        <option value="1">1 C</option>
+                        <option value="2">2 C or more</option>
+                    </select>
+                </div>
+                <div>
                     <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Auto
                         Level Size ($)</label>
                     <input type="number" id="autoLevelSize" value="100" step="10"
@@ -329,20 +339,30 @@
                 <div>
                     <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Tier
                         1 (x1)</label>
-                    <input type="number" id="autoLevelTier1" value="1.75" step="0.01"
+                    <input type="number" id="autoLevelTier1" value="0.5" step="0.01"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
                 </div>
                 <div>
                     <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Tier
                         2 (x1)</label>
-                    <input type="number" id="autoLevelTier2" value="1.6" step="0.01"
+                    <input type="number" id="autoLevelTier2" value="0.3" step="0.01"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
                 </div>
                 <div>
                     <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Tier
                         3 (x2)</label>
-                    <input type="number" id="autoLevelTier3" value="1.5" step="0.01"
+                    <input type="number" id="autoLevelTier3" value="0.15" step="0.01"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Auto
+                        Price Mode</label>
+                    <select id="autoPriceMode"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                        <option value="current">Current Price</option>
+                        <option value="extremes" selected>Extremes (Standard)</option>
+                        <option value="extremes_opposite">Extremes (Opposite)</option>
+                    </select>
                 </div>
             </div>
 
@@ -789,9 +809,19 @@
             const autoLevelTP = parseFloat(document.getElementById('autoLevelTP').value) || 1.0;
             const autoLevelLev = parseInt(document.getElementById('autoLevelLev').value) || 10;
             const autoLevelCool = parseInt(document.getElementById('autoLevelCool').value) || 60;
-            const autoLevelTier1 = parseFloat(document.getElementById('autoLevelTier1').value) || 1.75;
-            const autoLevelTier2 = parseFloat(document.getElementById('autoLevelTier2').value) || 1.6;
-            const autoLevelTier3 = parseFloat(document.getElementById('autoLevelTier3').value) || 1.5;
+            const autoLevelTier1 = parseFloat(document.getElementById('autoLevelTier1').value) || 0.5;
+            const autoLevelTier2 = parseFloat(document.getElementById('autoLevelTier2').value) || 0.3;
+            const autoLevelTier3 = parseFloat(document.getElementById('autoLevelTier3').value) || 0.15;
+            const minConsistent = parseInt(document.getElementById('monitorConsistent').value) || 0;
+
+            console.log("Auto Level Size: " + autoLevelSize);
+            console.log("Auto Level TP: " + autoLevelTP);
+            console.log("Auto Level Lev: " + autoLevelLev);
+            console.log("Auto Level Cool: " + autoLevelCool);
+            console.log("Auto Level Tier 1: " + autoLevelTier1);
+            console.log("Auto Level Tier 2: " + autoLevelTier2);
+            console.log("Auto Level Tier 3: " + autoLevelTier3);
+            console.log("Min Consistent: " + minConsistent);
 
             // Fetch active levels to prevent duplicates
             let activeSymbols = new Set();
@@ -824,6 +854,10 @@
                 const volCell = row.cells[2];
                 const vol24h = parseFloat(volCell.getAttribute('data-val')) || 0;
                 if (vol24h < minVol) return;
+
+                // Check Consistency Condition
+                const consistentCount = row.querySelectorAll('.badge-consistent').length;
+                if (consistentCount < minConsistent) return;
 
                 if (!cell) return;
 
@@ -861,18 +895,44 @@
                         anomalies.push(msg);
                         alertedHistory.set(alertKey, now);
 
-                        // Parse Current Price for Level Creation
+                        // Parse Price for Level Creation based on change direction and mode
                         // Check if level already exists
                         if (!activeSymbols.has(symbol)) {
+                            let targetPrice = 0;
                             const priceText = row.cells[1].innerText;
                             const priceMatch = priceText.match(/\$([0-9.]+)/);
-                            if (priceMatch) {
+                            const currentPrice = priceMatch ? priceMatch[1] : 0;
+
+                            const mode = document.getElementById('autoPriceMode').value;
+                            const realPcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
+
+                            if (mode === 'current') {
+                                targetPrice = currentPrice;
+                            } else if (mode === 'extremes') {
+                                if (realPcntChange < 0) {
+                                    // change - : highest price
+                                    targetPrice = cell.getAttribute('data-max-price');
+                                } else {
+                                    // change + : lowest price
+                                    targetPrice = cell.getAttribute('data-min-price');
+                                }
+                            } else if (mode === 'extremes_opposite') {
+                                if (realPcntChange < 0) {
+                                    // change - : lowest price
+                                    targetPrice = cell.getAttribute('data-min-price');
+                                } else {
+                                    // change + : highest price
+                                    targetPrice = cell.getAttribute('data-max-price');
+                                }
+                            }
+
+                            if (targetPrice) {
                                 levelRequests.push({
                                     symbol: symbol,
-                                    price: priceMatch[1]
+                                    price: targetPrice
                                 });
                             } else {
-                                console.warn(`Could not parse price for ${symbol} from text: ${priceText}`);
+                                console.warn(`Could not determine target price for ${symbol} with mode ${mode}`);
                             }
                         } else {
                             console.log(`Skipping auto-create for ${symbol}: Level already exists.`);
@@ -926,12 +986,19 @@
             // User requested: Round up to nearest 10 (e.g. 713 -> 720)
             const priceVal = parseFloat(price);
             const sizeUsd = parseFloat(size);
-            let coinQty = 0;
             if (priceVal > 0) {
                 const rawQty = sizeUsd / priceVal;
-                coinQty = Math.ceil(rawQty / 10) * 10;
+                // Smarter rounding: Keep 4 decimals for small quantities, round whole for larger ones
+                if (rawQty < 1) {
+                    coinQty = parseFloat(rawQty.toFixed(4));
+                } else if (rawQty < 100) {
+                    coinQty = parseFloat(rawQty.toFixed(2));
+                } else {
+                    // For cheap coins, round up to nearest whole to keep it clean
+                    coinQty = Math.ceil(rawQty);
+                }
             }
-            console.log(`Calculated size: $${sizeUsd} / $${priceVal} = ${sizeUsd / priceVal} coins -> Rounded to ${coinQty}`);
+            console.log(`Calculated size: $${sizeUsd} / $${priceVal} = ${sizeUsd / priceVal} coins -> Precision: ${coinQty}`);
 
             const params = new URLSearchParams();
             params.append('symbol', symbol);
@@ -1014,9 +1081,31 @@
                 })
                 .catch(err => console.error("Auto-refresh failed", err));
         }, 10000); // 1 minute
-        function manualCreateLevel(event, symbol, price) {
+        function manualCreateLevel(event, symbol, currentPrice) {
             event.stopPropagation();
-            if (!confirm('Create level for ' + symbol + ' at $' + price + '?')) return;
+
+            const timeframeIndex = parseInt(document.getElementById('monitorTimeframe').value);
+            const row = event.target.closest('tr');
+            const cell = row.cells[timeframeIndex];
+            const realPcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
+            const mode = document.getElementById('autoPriceMode').value;
+
+            let price = currentPrice;
+            if (mode === 'extremes') {
+                if (realPcntChange < 0) {
+                    price = cell.getAttribute('data-max-price') || currentPrice;
+                } else if (realPcntChange > 0) {
+                    price = cell.getAttribute('data-min-price') || currentPrice;
+                }
+            } else if (mode === 'extremes_opposite') {
+                if (realPcntChange < 0) {
+                    price = cell.getAttribute('data-min-price') || currentPrice;
+                } else if (realPcntChange > 0) {
+                    price = cell.getAttribute('data-max-price') || currentPrice;
+                }
+            }
+
+            if (!confirm(`Create level for ${symbol} at $${price}? (Mode: ${mode})`)) return;
 
             const size = document.getElementById('autoLevelSize').value;
             const tp = document.getElementById('autoLevelTP').value;

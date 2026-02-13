@@ -27,6 +27,8 @@ type TimeframeChange struct {
 	Direction      string
 	StartPrice     float64
 	EndPrice       float64
+	MinPrice       float64
+	MaxPrice       float64
 	VolChangePcnt  float64
 	VolChangeValue float64
 }
@@ -219,8 +221,18 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 				}
 			}
 
-			changeValue := endOI - startPoint.OI
+			minPrice := current.Price
+			maxPrice := current.Price
+			for i := startIndex; i < len(points); i++ {
+				if points[i].Price < minPrice {
+					minPrice = points[i].Price
+				}
+				if points[i].Price > maxPrice {
+					maxPrice = points[i].Price
+				}
+			}
 
+			changeValue := endOI - startPoint.OI
 			volChangeValue := endVol - startPoint.Volume
 			volChangePcnt := 0.0
 			if startPoint.Volume > 0 {
@@ -234,6 +246,8 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 				Direction:      direction,
 				StartPrice:     startPoint.Price,
 				EndPrice:       current.Price,
+				MinPrice:       minPrice,
+				MaxPrice:       maxPrice,
 				VolChangePcnt:  volChangePcnt,
 				VolChangeValue: volChangeValue,
 			}

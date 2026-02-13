@@ -23,7 +23,8 @@
     </td>
 
     <!-- 1m -->
-    <td data-val="{{.Change1m.ChangePcnt}}" data-val-raw="{{.Change1m.ChangeValue}}">
+    <td data-val="{{.Change1m.ChangePcnt}}" data-val-raw="{{.Change1m.ChangeValue}}"
+        data-min-price="{{.Change1m.MinPrice}}" data-max-price="{{.Change1m.MaxPrice}}">
         {{if ne .Change1m.Direction "flat"}}
         <div class="{{if eq .Change1m.Direction " up"}}change-up{{else}}change-down{{end}}">
             {{printf "%+.2f" .Change1m.ChangePcnt}}%
@@ -55,7 +56,8 @@
     </td>
 
     <!-- 10m -->
-    <td data-val="{{.Change10m.ChangePcnt}}" data-val-raw="{{.Change10m.ChangeValue}}">
+    <td data-val="{{.Change10m.ChangePcnt}}" data-val-raw="{{.Change10m.ChangeValue}}"
+        data-min-price="{{.Change10m.MinPrice}}" data-max-price="{{.Change10m.MaxPrice}}">
         {{if ne .Change10m.Direction "flat"}}
         <div class="{{if eq .Change10m.Direction " up"}}change-up{{else}}change-down{{end}}">
             {{printf "%+.2f" .Change10m.ChangePcnt}}%
@@ -88,7 +90,8 @@
 
     <!-- 1h -->
     <td style="background: rgba(255,255,255,0.02);" data-val="{{.Change1h.ChangePcnt}}"
-        data-val-raw="{{.Change1h.ChangeValue}}">
+        data-val-raw="{{.Change1h.ChangeValue}}" data-min-price="{{.Change1h.MinPrice}}"
+        data-max-price="{{.Change1h.MaxPrice}}">
         {{if ne .Change1h.Direction "flat"}}
         <div class="{{if eq .Change1h.Direction " up"}}change-up{{else}}change-down{{end}}">
             {{printf "%+.2f" .Change1h.ChangePcnt}}%
@@ -120,7 +123,8 @@
     </td>
 
     <!-- 4h -->
-    <td data-val="{{.Change4h.ChangePcnt}}" data-val-raw="{{.Change4h.ChangeValue}}">
+    <td data-val="{{.Change4h.ChangePcnt}}" data-val-raw="{{.Change4h.ChangeValue}}"
+        data-min-price="{{.Change4h.MinPrice}}" data-max-price="{{.Change4h.MaxPrice}}">
         {{if ne .Change4h.Direction "flat"}}
         <div class="{{if eq .Change4h.Direction " up"}}change-up{{else}}change-down{{end}}">
             {{printf "%+.2f" .Change4h.ChangePcnt}}%
@@ -152,7 +156,8 @@
     </td>
 
     <!-- 24h -->
-    <td data-val="{{.Change24h.ChangePcnt}}" data-val-raw="{{.Change24h.ChangeValue}}">
+    <td data-val="{{.Change24h.ChangePcnt}}" data-val-raw="{{.Change24h.ChangeValue}}"
+        data-min-price="{{.Change24h.MinPrice}}" data-max-price="{{.Change24h.MaxPrice}}">
         {{if ne .Change24h.Direction "flat"}}
         <div class="{{if eq .Change24h.Direction " up"}}change-up{{else}}change-down{{end}}">
             {{printf "%+.2f" .Change24h.ChangePcnt}}%

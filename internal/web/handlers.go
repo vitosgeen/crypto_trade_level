@@ -48,6 +48,9 @@ type LevelView struct {
 	ZoneSide              domain.Side
 	LongTiers             []float64
 	ShortTiers            []float64
+	UsedTier1Pct          float64
+	UsedTier2Pct          float64
+	UsedTier3Pct          float64
 	ConsecutiveBaseCloses int
 }
 
@@ -59,6 +62,9 @@ func (s *Server) handleLanding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	// Parse form
+	r.ParseForm()
+
 	// Fetch initial data
 	levels, _ := s.levelRepo.ListLevels(r.Context())
 	history, _ := s.tradeRepo.ListPositionHistory(r.Context(), 50)
@@ -72,20 +78,33 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	for _, l := range levels {
 		price := s.service.GetLatestPrice(l.Symbol)
 
-		// Fetch tiers
-		tiers, err := s.levelRepo.GetSymbolTiers(r.Context(), l.Exchange, l.Symbol)
-		if err != nil || tiers == nil {
-			// Defaults if not found
-			tiers = &domain.SymbolTiers{
-				Tier1Pct: 0.005,
-				Tier2Pct: 0.003,
-				Tier3Pct: 0.0015,
+		// Use level-specific tiers if available, otherwise fallback to DB tiers or defaults
+		usedTiers := &domain.SymbolTiers{
+			Exchange: l.Exchange,
+			Symbol:   l.Symbol,
+			Tier1Pct: l.Tier1Pct,
+			Tier2Pct: l.Tier2Pct,
+			Tier3Pct: l.Tier3Pct,
+		}
+
+		// Fallback to symbol-wide tiers if level tiers are not set
+		if usedTiers.Tier1Pct == 0 {
+			dbTiers, _ := s.levelRepo.GetSymbolTiers(r.Context(), l.Exchange, l.Symbol)
+			if dbTiers != nil {
+				usedTiers.Tier1Pct = dbTiers.Tier1Pct
+				usedTiers.Tier2Pct = dbTiers.Tier2Pct
+				usedTiers.Tier3Pct = dbTiers.Tier3Pct
+			} else {
+				// Defaults
+				usedTiers.Tier1Pct = 0.005
+				usedTiers.Tier2Pct = 0.003
+				usedTiers.Tier3Pct = 0.0015
 			}
 		}
 
 		side := evaluator.DetermineSide(l.LevelPrice, price)
-		longTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideLong)
-		shortTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideShort)
+		longTiers := evaluator.CalculateBoundaries(l, usedTiers, domain.SideLong)
+		shortTiers := evaluator.CalculateBoundaries(l, usedTiers, domain.SideShort)
 
 		// Get Runtime State
 		state := s.service.GetLevelState(l.ID)
@@ -100,6 +119,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			ZoneSide:              side,
 			LongTiers:             longTiers,
 			ShortTiers:            shortTiers,
+			UsedTier1Pct:          usedTiers.Tier1Pct,
+			UsedTier2Pct:          usedTiers.Tier2Pct,
+			UsedTier3Pct:          usedTiers.Tier3Pct,
 			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
 		})
 	}
@@ -124,6 +146,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
+	// Parse form
+	r.ParseForm()
+
 	levels, _ := s.levelRepo.ListLevels(r.Context())
 
 	var views []LevelView
@@ -132,20 +157,33 @@ func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 	for _, l := range levels {
 		price := s.service.GetLatestPrice(l.Symbol)
 
-		// Fetch tiers
-		tiers, err := s.levelRepo.GetSymbolTiers(r.Context(), l.Exchange, l.Symbol)
-		if err != nil || tiers == nil {
-			// Defaults if not found
-			tiers = &domain.SymbolTiers{
-				Tier1Pct: 0.001,
-				Tier2Pct: 0.002,
-				Tier3Pct: 0.003,
+		// Use level-specific tiers if available, otherwise fallback to DB tiers or defaults
+		usedTiers := &domain.SymbolTiers{
+			Exchange: l.Exchange,
+			Symbol:   l.Symbol,
+			Tier1Pct: l.Tier1Pct,
+			Tier2Pct: l.Tier2Pct,
+			Tier3Pct: l.Tier3Pct,
+		}
+
+		// Fallback to symbol-wide tiers if level tiers are not set
+		if usedTiers.Tier1Pct == 0 {
+			dbTiers, _ := s.levelRepo.GetSymbolTiers(r.Context(), l.Exchange, l.Symbol)
+			if dbTiers != nil {
+				usedTiers.Tier1Pct = dbTiers.Tier1Pct
+				usedTiers.Tier2Pct = dbTiers.Tier2Pct
+				usedTiers.Tier3Pct = dbTiers.Tier3Pct
+			} else {
+				// Defaults
+				usedTiers.Tier1Pct = 0.005
+				usedTiers.Tier2Pct = 0.003
+				usedTiers.Tier3Pct = 0.0015
 			}
 		}
 
 		side := evaluator.DetermineSide(l.LevelPrice, price)
-		longTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideLong)
-		shortTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideShort)
+		longTiers := evaluator.CalculateBoundaries(l, usedTiers, domain.SideLong)
+		shortTiers := evaluator.CalculateBoundaries(l, usedTiers, domain.SideShort)
 
 		// Get Runtime State
 		state := s.service.GetLevelState(l.ID)
@@ -160,6 +198,9 @@ func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 			ZoneSide:              side,
 			LongTiers:             longTiers,
 			ShortTiers:            shortTiers,
+			UsedTier1Pct:          usedTiers.Tier1Pct,
+			UsedTier2Pct:          usedTiers.Tier2Pct,
+			UsedTier3Pct:          usedTiers.Tier3Pct,
 			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
 		})
 	}
@@ -260,6 +301,9 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		IsAuto:                   false,
 		AutoModeEnabled:          autoModeEnabled, // Enabled if checkbox checked
 		IgnoreSentimentFilter:    ignoreSentimentFilter,
+		Tier1Pct:                 tier1,
+		Tier2Pct:                 tier2,
+		Tier3Pct:                 tier3,
 		Source:                   "manual-web",
 		CreatedAt:                time.Now(),
 	}
@@ -384,8 +428,49 @@ func (s *Server) handleAutoCreateLevel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateTiers(w http.ResponseWriter, r *http.Request) {
-	// Implementation for updating tiers
-	// ...
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+
+	symbol := strings.ToUpper(r.FormValue("symbol"))
+	exchange := r.FormValue("exchange")
+	if exchange == "" {
+		exchange = "bybit"
+	}
+
+	tier1, _ := strconv.ParseFloat(r.FormValue("tier1"), 64)
+	tier2, _ := strconv.ParseFloat(r.FormValue("tier2"), 64)
+	tier3, _ := strconv.ParseFloat(r.FormValue("tier3"), 64)
+
+	if symbol == "" || tier1 <= 0 {
+		http.Error(w, "Symbol and Tier 1 are required", http.StatusBadRequest)
+		return
+	}
+
+	// Create/Update Tiers
+	tiers := &domain.SymbolTiers{
+		Exchange:  exchange,
+		Symbol:    symbol,
+		Tier1Pct:  tier1 / 100,
+		Tier2Pct:  tier2 / 100,
+		Tier3Pct:  tier3 / 100,
+		UpdatedAt: time.Now(),
+	}
+
+	if err := s.levelRepo.SaveSymbolTiers(r.Context(), tiers); err != nil {
+		s.logger.Error("Failed to save tiers", zap.Error(err))
+		http.Error(w, "Failed to save tiers", http.StatusInternalServerError)
+		return
+	}
+
+	// Also update levels cache so bot picks it up immediately
+	if err := s.service.UpdateCache(r.Context()); err != nil {
+		s.logger.Error("Failed to update cache", zap.Error(err))
+	}
+
+	// Return updated table
+	s.handleLevelsTable(w, r)
 }
 
 func (s *Server) handlePositionsTable(w http.ResponseWriter, r *http.Request) {

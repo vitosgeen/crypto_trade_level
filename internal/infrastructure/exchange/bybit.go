@@ -320,10 +320,10 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 
 	raw := result.Result.List[0]
 	size, _ := strconv.ParseFloat(raw.Size, 64)
-	entry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
-	curr, _ := strconv.ParseFloat(raw.MarkPrice, 64)
-	pnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
-	lev, _ := strconv.Atoi(raw.Leverage)
+	respEntry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
+	respMark, _ := strconv.ParseFloat(raw.MarkPrice, 64)
+	respPnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
+	respLev, _ := strconv.Atoi(raw.Leverage)
 
 	side := domain.SideLong
 	if raw.Side == "Sell" {
@@ -341,10 +341,12 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 		Symbol:        raw.Symbol,
 		Side:          side,
 		Size:          size,
-		EntryPrice:    entry,
-		CurrentPrice:  curr,
-		UnrealizedPnL: pnl,
-		Leverage:      lev,
+		EntryPrice:    respEntry,
+		MarkPrice:     respMark,
+		CurrentPrice:  respMark, // For backward compatibility
+		EvalPrice:     respMark, // Default to mark price until updated by ticks
+		UnrealizedPnL: respPnl,
+		Leverage:      respLev,
 		MarginType:    marginType,
 	}, nil
 }
@@ -397,7 +399,7 @@ func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, er
 			}
 
 			entry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
-			curr, _ := strconv.ParseFloat(raw.MarkPrice, 64)
+			mark, _ := strconv.ParseFloat(raw.MarkPrice, 64)
 			pnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
 			lev, _ := strconv.Atoi(raw.Leverage)
 
@@ -417,7 +419,9 @@ func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, er
 				Side:          side,
 				Size:          size,
 				EntryPrice:    entry,
-				CurrentPrice:  curr,
+				MarkPrice:     mark,
+				CurrentPrice:  mark,
+				EvalPrice:     mark,
 				UnrealizedPnL: pnl,
 				Leverage:      lev,
 				MarginType:    marginType,

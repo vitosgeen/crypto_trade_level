@@ -17,7 +17,9 @@ type Position struct {
 	Side          Side
 	Size          float64
 	EntryPrice    float64
-	CurrentPrice  float64
+	MarkPrice     float64
+	CurrentPrice  float64 // Legacy support, maps to EvalPrice or MarkPrice
+	EvalPrice     float64 // The price used for bot evaluation (Last/Mid)
 	RSI           float64
 	UnrealizedPnL float64
 	Leverage      int

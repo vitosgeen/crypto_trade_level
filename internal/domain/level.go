@@ -23,6 +23,9 @@ type Level struct {
 	IsAuto                   bool    // Created automatically by the system
 	AutoModeEnabled          bool    // Enable auto-recreation on failure
 	IgnoreSentimentFilter    bool    // Skip sentiment checks for entry
+	Tier1Pct                 float64 // Tier 1 percentage override
+	Tier2Pct                 float64 // Tier 2 percentage override
+	Tier3Pct                 float64 // Tier 3 percentage override
 	Source                   string
 	CreatedAt                time.Time
 }

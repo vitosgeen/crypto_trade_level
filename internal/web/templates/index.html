@@ -1504,19 +1504,35 @@
 
             // Tiers
             const sideText = cells[4].textContent.trim().toUpperCase();
-            const tierCell = cells[6];
+            const tierCell = cells[7]; // Exchange(0), Symbol(1), Mode(2), LvlPrice(3), Side(4), Price(5), RSI(6), Tiers(7)
             let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
 
-            // Parse from the div/span structure
-            // Structure:
-            // div (grid)
-            //   span (LONG)
-            //   div (flex) -> span (T1), span (T2), span (T3)
-            //   span (SHORT)
-            //   div (flex) -> span (T1), span (T2), span (T3)
+            // Structure in cell[7]:
+            // <div (grid)>
+            //   <div (perc-header)>...</div>  [Index 0]
+            //   <span>LONG</span>
+            //   <div (long-flex)>...</div>    [Index 1]
+            //   <span>SHORT</span>
+            //   <div (short-flex)>...</div>   [Index 2]
+            // </div>
+            const tierDivs = tierCell.querySelectorAll('div > div');
+            if (tierDivs.length >= 3) {
+                // New structure with percentages div at [0]
+                const longSpans = tierDivs[1].querySelectorAll('span');
+                if (longSpans.length >= 3) {
+                    longTier1 = parseFloat(longSpans[0].textContent);
+                    longTier2 = parseFloat(longSpans[1].textContent);
+                    longTier3 = parseFloat(longSpans[2].textContent);
+                }
 
-            const tierDivs = tierCell.querySelectorAll('div > div'); // The two flex divs
-            if (tierDivs.length >= 2) {
+                const shortSpans = tierDivs[2].querySelectorAll('span');
+                if (shortSpans.length >= 3) {
+                    shortTier1 = parseFloat(shortSpans[0].textContent);
+                    shortTier2 = parseFloat(shortSpans[1].textContent);
+                    shortTier3 = parseFloat(shortSpans[2].textContent);
+                }
+            } else if (tierDivs.length === 2) {
+                // Old structure
                 const longSpans = tierDivs[0].querySelectorAll('span');
                 if (longSpans.length >= 3) {
                     longTier1 = parseFloat(longSpans[0].textContent);
@@ -2257,6 +2273,12 @@
             </td>
             <td>
                 <div style="font-size: 0.85em; display: grid; grid-template-columns: auto 1fr; gap: 5px;">
+                    <div
+                        style="grid-column: 1 / -1; display: flex; justify-content: space-around; font-size: 0.8em; color: var(--text-muted); border-bottom: 1px dotted var(--border-color); margin-bottom: 2px;">
+                        <span>{{printf "%.2f%%" (mul .UsedTier1Pct 100)}}</span>
+                        <span>{{printf "%.2f%%" (mul .UsedTier2Pct 100)}}</span>
+                        <span>{{printf "%.2f%%" (mul .UsedTier3Pct 100)}}</span>
+                    </div>
                     <span class="{{if eq .ZoneSide " LONG"}}text-success{{else}}text-muted{{end}}"
                         style="font-weight: bold;">LONG</span>
                     <div style="display: flex; gap: 5px; opacity: {{if eq .ZoneSide " LONG"}}1{{else}}0.5{{end}};">
@@ -2332,7 +2354,7 @@
             <td>{{ .Symbol }}</td>
             <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }};">{{ .Side }}</td>
             <td>{{ if eq .Size 0.0 }}-{{ else }}{{ .Size }}{{ end }}</td>
-            <td>{{ printf "%.2f" .Price }}</td>
+            <td>{{ printf "%.6f" .Price }}</td>
             <td
                 style="color: {{ if gt .RealizedPnL 0.0 }}var(--success){{ else if lt .RealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
                 {{ if ne .RealizedPnL 0.0 }}{{ printf "%.4f" .RealizedPnL }}{{ else }}-{{ end }}
@@ -2351,8 +2373,9 @@
             <th>Symbol</th>
             <th>Side</th>
             <th>Size</th>
-            <th>Entry Price</th>
+            <th>Entry</th>
             <th>Mark Price</th>
+            <th>Eval Price</th>
             <th>RSI (1m)</th>
             <th>Unrealized PnL</th>
             <th>Lev</th>
@@ -2369,18 +2392,18 @@
                 bold;">{{ .Side }}</td>
             <td>{{ .Size }}</td>
             <td>{{ printf "%.6f" .EntryPrice }}</td>
-            <td>{{ printf "%.6f" .CurrentPrice }}</td>
+            <td class="text-muted">{{ printf "%.6f" .MarkPrice }}</td>
+            <td style="font-weight: bold; color: var(--accent-color);">{{ printf "%.6f" .EvalPrice }}</td>
             <td
                 style="font-family: monospace; font-weight: 700; color: {{if ge .RSI 70.0}}var(--danger){{else if le .RSI 30.0}}var(--success){{else}}var(--text-color){{end}}">
                 {{printf "%.2f" .RSI}}
             </td>
             <td
-                style="color: {{ if gt .UnrealizedPnL 0.0 }}var(--success){{ else }}var(--danger){{ end }}; font-weight: bold;">
+                style="color: {{ if gt .UnrealizedPnL 0.0 }}var(--success){{ else if lt .UnrealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
                 {{ printf "%.6f" .UnrealizedPnL }}</td>
-            <td>{{ .Leverage }}</td>
+            <td>{{ .Leverage }}x</td>
             <td style="color: {{ if eq .MarginType " isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
-                font-weight: bold;">
-                {{ .MarginType }}</td>
+                font-weight: bold;">{{ .MarginType }}</td>
             <td>
                 <button class="delete-btn" hx-delete="/positions/{{ .Symbol }}" hx-target="#positions-table"
                     hx-confirm="Are you sure you want to close this position?">Close</button>
