@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/vitos/crypto_trade_level/internal/domain"
 	"github.com/vitos/crypto_trade_level/internal/usecase"
 )
 
@@ -75,5 +76,40 @@ func TestMarketService_Indicators(t *testing.T) {
 	stats2, _ := service.GetMarketStats(ctx, symbol2)
 	if stats2.GLI != usecase.MaxGLI {
 		t.Errorf("Expected GLI Max Cap %f, got %f", usecase.MaxGLI, stats2.GLI)
+	}
+}
+
+func TestMarketService_RSI(t *testing.T) {
+	mockEx := &MockExchangeForService{}
+	service := usecase.NewMarketService(mockEx, nil)
+	ctx := context.Background()
+
+	symbol := "BTCUSDT"
+	// Set up mock candles: 15 candles with increasing prices
+	candles := make([]domain.Candle, 20)
+	for i := 0; i < 20; i++ {
+		candles[i] = domain.Candle{
+			Close: 50000 + float64(i)*10, // Increasing price
+		}
+	}
+	mockEx.Candles = candles
+
+	rsi, err := service.GetRSI(ctx, symbol, "1", 14)
+	if err != nil {
+		t.Fatalf("GetRSI failed: %v", err)
+	}
+
+	// Since price always increases, RSI should be 100
+	if rsi != 100 {
+		t.Errorf("Expected RSI 100 for increasing prices, got %f", rsi)
+	}
+
+	// Test flat prices
+	for i := 0; i < 20; i++ {
+		candles[i].Close = 50000
+	}
+	rsiFlat, _ := service.GetRSI(ctx, symbol, "1", 14)
+	if rsiFlat != 50 {
+		t.Errorf("Expected RSI 50 for flat prices, got %f", rsiFlat)
 	}
 }

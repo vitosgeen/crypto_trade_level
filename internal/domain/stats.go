@@ -33,4 +33,5 @@ type CoinData struct {
 	Near1hMin         bool
 	Near24hMax        bool
 	Near24hMin        bool
+	RSI               float64
 }

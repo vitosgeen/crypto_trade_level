@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"sort"
@@ -166,6 +167,7 @@ type MarketStats struct {
 	ConclusionScore30s float64         `json:"conclusion_score_30s"`
 	ConclusionScore10s float64         `json:"conclusion_score_10s"`
 	LastPrice          float64         `json:"last_price"`
+	RSI                float64         `json:"rsi"`
 	WSStatus           domain.WSStatus `json:"ws_status"`
 }
 
@@ -461,6 +463,9 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		}
 	}
 
+	// 7. RSI (1m)
+	rsi, _ := s.GetRSI(ctx, symbol, "1", 14)
+
 	return &MarketStats{
 		SpeedBuy:           speedBuy,
 		SpeedSell:          speedSell,
@@ -482,6 +487,7 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		ConclusionScore30s: conclusionScore30s,
 		ConclusionScore10s: conclusionScore10s,
 		LastPrice:          lastPrice,
+		RSI:                rsi,
 		WSStatus:           s.exchange.GetWSStatus(),
 	}, nil
 }
@@ -930,4 +936,90 @@ func (s *MarketService) GetTradeSentiment(ctx context.Context, symbol string) (f
 
 func (s *MarketService) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return s.exchange.GetCandles(ctx, symbol, interval, limit)
+}
+
+func (s *MarketService) GetRSI(ctx context.Context, symbol, interval string, period int) (float64, error) {
+	history, err := s.GetRSIHistory(ctx, symbol, interval, period, 1)
+	if err != nil {
+		return 0, err
+	}
+	if len(history) == 0 {
+		return 0, fmt.Errorf("no rsi data")
+	}
+	return history[len(history)-1], nil
+}
+
+func (s *MarketService) GetRSIHistory(ctx context.Context, symbol, interval string, period int, limit RSIHistoryLimit) ([]float64, error) {
+	// To get 'limit' RSI values, we need:
+	// 1 initial candle for first price change
+	// 'period' candles for first average
+	// 'limit-1' additional candles for subsequent averages
+	// Total: period + limit
+	needed := period + int(limit) + 1
+	candles, err := s.exchange.GetCandles(ctx, symbol, interval, needed)
+	if err != nil {
+		return nil, err
+	}
+	if len(candles) < period+1 {
+		return nil, fmt.Errorf("not enough candles for RSI (got %d, need %d)", len(candles), period+1)
+	}
+
+	return s.CalculateRSI(candles, period), nil
+}
+
+type RSIHistoryLimit int
+
+func (s *MarketService) CalculateRSI(candles []domain.Candle, period int) []float64 {
+	if len(candles) < period+1 {
+		return nil
+	}
+
+	n := len(candles)
+	rsiValues := make([]float64, 0, n-period)
+
+	var gains, losses float64
+	// First RSI calculation (SMA)
+	for i := 1; i <= period; i++ {
+		change := candles[i].Close - candles[i-1].Close
+		if change > 0 {
+			gains += change
+		} else {
+			losses += -change
+		}
+	}
+
+	avgGain := gains / float64(period)
+	avgLoss := losses / float64(period)
+
+	calcRSI := func(g, l float64) float64 {
+		if l == 0 {
+			if g == 0 {
+				return 50
+			}
+			return 100
+		}
+		rs := g / l
+		return 100.0 - (100.0 / (1.0 + rs))
+	}
+
+	rsiValues = append(rsiValues, calcRSI(avgGain, avgLoss))
+
+	// Wilder's Smoothing / Exponential Moving Average for subsequent values
+	for i := period + 1; i < n; i++ {
+		change := candles[i].Close - candles[i-1].Close
+		currentGain := 0.0
+		currentLoss := 0.0
+		if change > 0 {
+			currentGain = change
+		} else {
+			currentLoss = -change
+		}
+
+		avgGain = (avgGain*float64(period-1) + currentGain) / float64(period)
+		avgLoss = (avgLoss*float64(period-1) + currentLoss) / float64(period)
+
+		rsiValues = append(rsiValues, calcRSI(avgGain, avgLoss))
+	}
+
+	return rsiValues
 }

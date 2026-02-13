@@ -270,6 +270,7 @@ type MockExchangeForService struct {
 
 	TradeCallback func(symbol string, side string, size float64, price float64)
 	Position      *domain.Position
+	Candles       []domain.Candle
 }
 
 func (m *MockExchangeForService) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
@@ -302,7 +303,7 @@ func (m *MockExchangeForService) GetPositions(ctx context.Context) ([]*domain.Po
 	return []*domain.Position{}, nil
 }
 func (m *MockExchangeForService) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
-	return nil, nil
+	return m.Candles, nil
 }
 func (m *MockExchangeForService) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
 	return nil, nil

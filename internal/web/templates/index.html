@@ -437,6 +437,121 @@
     </nav>
 
     <div class="container">
+        <!-- RSI & Trend Signal Scanner -->
+        <div class="card full-width">
+            <h2>RSI & Trend Signal Scanner</h2>
+            <div style="overflow-x: auto;">
+                <table style="min-width: 600px;">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Symbol</th>
+                            <th>Interval</th>
+                            <th>RSI</th>
+                            <th>Signal</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rsi-signals-body">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 15px;">Waiting
+                                for signals...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- RSI Auto-Level Settings (Collapsible) -->
+        <div class="card full-width" style="padding: 0; margin-bottom: 20px; overflow: hidden;">
+            <details style="padding: 20px;">
+                <summary style="cursor: pointer; list-style: none; display: flex; align-items: center; gap: 15px;">
+                    <div
+                        style="width: 12px; height: 12px; background: var(--accent-color); border-radius: 50%; box-shadow: 0 0 10px var(--accent-color);">
+                    </div>
+                    <h2 style="margin: 0; border: none; flex: 1; font-size: 1.1rem; color: var(--text-color);">RSI
+                        Auto-Level Logic Settings</h2>
+                    <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: 500;">Click to configure RSI
+                        scan parameters</span>
+                </summary>
+                <div style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                    <form id="rsi-config-form">
+                        <div class="checkbox-wrapper" style="margin-bottom: 20px;">
+                            <input type="checkbox" id="rsi-enabled" name="enabled">
+                            <label for="rsi-enabled"
+                                style="margin:0; cursor:pointer; font-weight: 700; color: var(--accent-color);">Active
+                                RSI Monitor Running</label>
+                        </div>
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 25px;">
+                            <div class="flex-row">
+                                <div class="flex-1">
+                                    <label>Scan Interval (min)</label>
+                                    <input type="number" name="scan_interval_minutes" value="1"
+                                        style="margin-bottom: 0;">
+                                </div>
+                                <div class="flex-1">
+                                    <label>RSI Period</label>
+                                    <input type="number" name="period" value="14" style="margin-bottom: 0;">
+                                </div>
+                            </div>
+                            <div class="flex-row">
+                                <div class="flex-1">
+                                    <label>Oversold Threshold</label>
+                                    <input type="number" name="oversold" value="30" step="0.1">
+                                </div>
+                                <div class="flex-1">
+                                    <label>Overbought Threshold</label>
+                                    <input type="number" name="overbought" value="70" step="0.1">
+                                </div>
+                            </div>
+                            <div class="flex-row" style="margin-top: 10px;">
+                                <div class="flex-1" style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="checkbox" name="trend_break_enabled" id="trend_break_enabled"
+                                        style="width: auto; margin: 0;">
+                                    <label for="trend_break_enabled" style="margin: 0;">Enable RSI Trend Breaks</label>
+                                </div>
+                                <div class="flex-1">
+                                    <label>Trend Break Pivot Window</label>
+                                    <input type="number" name="trend_break_window" value="5" min="2" max="20">
+                                </div>
+                            </div>
+                            <div class="flex-1">
+                                <label>Target Timeframes (split by comma)</label>
+                                <input type="text" name="timeframes" value="1m,5m,15m" placeholder="1m,5m,15m"
+                                    style="margin-bottom: 0;">
+                            </div>
+                        </div>
+
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 25px; margin-top: 20px;">
+                            <div class="flex-row">
+                                <div class="flex-1">
+                                    <label>Size (USDT)</label>
+                                    <input type="number" name="size_usdt" value="100" style="margin-bottom: 0;">
+                                </div>
+                                <div class="flex-1">
+                                    <label>Leverage</label>
+                                    <input type="number" name="leverage" value="10" style="margin-bottom: 0;">
+                                </div>
+                            </div>
+                            <div class="flex-1">
+                                <label>Take Profit (%)</label>
+                                <input type="number" step="0.1" name="take_profit_pct" value="1.2"
+                                    style="margin-bottom: 0;">
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: flex-end; margin-top: 25px;">
+                            <button type="button" onclick="updateRSIConfig()"
+                                style="width: auto; min-width: 200px; background: linear-gradient(45deg, var(--secondary-color), #4e00b3); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
+                                Save & Apply Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </details>
+        </div>
         <!-- Left Column: Controls -->
         <div class="card">
             <h2>Add Level</h2>
@@ -539,7 +654,7 @@
                 </div>
 
                 <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                    <input type="checkbox" name="auto_mode_enabled" id="auto_level_mode_enabled" checked>
+                    <input type="checkbox" name="auto_level_mode_enabled" id="auto_level_mode_enabled" checked>
                     <label for="auto_level_mode_enabled" style="margin: 0;">Auto-Level Mode (Recreate on
                         Failure)</label>
                 </div>
@@ -556,13 +671,20 @@
                 </select>
 
                 <div class="checkbox-wrapper">
-                    <input type="checkbox" name="disable_speed_close" id="disable-speed">
-                    <label for="disable-speed" style="margin:0; cursor:pointer;">Disable Speed-Based Close</label>
+                    <input type="checkbox" name="ignore_sentiment_filter" id="ignore-sentiment">
+                    <label for="ignore-sentiment"
+                        style="margin:0; cursor:pointer; display: flex; align-items: center; gap: 5px;">
+                        Ignore Sentiment Filter
+                        <span
+                            style="font-size: 0.7rem; background: var(--text-muted); color: var(--bg-color); width: 14px; height: 14px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold;"
+                            title="If checked, the bot will enter tiers even if market sentiment suggests it's risky (e.g. going long when sentiment is bearish).">?</span>
+                    </label>
                 </div>
 
                 <button type="submit" style="margin-top: 10px;">Add Level</button>
             </form>
         </div>
+
 
         <!-- Right Column: Market Stats & Chart -->
         <div style="display: flex; flex-direction: column; gap: 20px;">
@@ -613,6 +735,7 @@
             </div>
 
         </div>
+
 
         <!-- Full Width: Active Levels -->
         <div class="card full-width">
@@ -757,6 +880,23 @@
                     <div class="gauge-value" id="obi-value" style="font-size: 0.8rem;">0.00</div>
                 </div>
 
+                <!-- Gauge 6: RSI -->
+                <div class="gauge-container">
+                    <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">RSI (1m)</h3>
+                    <div class="gauge" style="width: 80px; height: 40px;">
+                        <div class="gauge-bg"
+                            style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--danger) 0deg 54deg, var(--text-muted) 54deg 126deg, var(--success) 126deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="rsi-needle" style="height: 35px; width: 2px;"></div>
+                        <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                    </div>
+                    <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                        <span style="color: var(--danger);">OB</span>
+                        <span style="color: var(--success);">OS</span>
+                    </div>
+                    <div class="gauge-value" id="rsi-value" style="font-size: 0.8rem;">50.00</div>
+                </div>
+
                 <!-- Gauge 6: TSI -->
                 <div class="gauge-container">
                     <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">TSI</h3>
@@ -789,6 +929,23 @@
                         <span class="text-danger">Bear</span>
                     </div>
                     <div class="gauge-value" id="gli-value" style="font-size: 0.8rem;">0.00</div>
+                </div>
+
+                <!-- Gauge 8: RSI -->
+                <div class="gauge-container">
+                    <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">RSI (1m)</h3>
+                    <div class="gauge" style="width: 80px; height: 40px;">
+                        <div class="gauge-bg"
+                            style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--success) 0deg 54deg, var(--text-muted) 54deg 126deg, var(--danger) 126deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="rsi-gauge-needle" style="height: 35px; width: 2px;"></div>
+                        <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                    </div>
+                    <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                        <span class="text-success">OS</span>
+                        <span class="text-danger">OB</span>
+                    </div>
+                    <div class="gauge-value" id="rsi-gauge-value" style="font-size: 0.8rem;">0.00</div>
                 </div>
 
                 <!-- Conclusion Indicator -->
@@ -837,7 +994,7 @@
         let conclusionChart = null;
         let conclusionSeries = null;
         let conclusionSeries30s = null;
-        let conclusionSeries10s = null;
+        let volumeSeries = null;
         let priceChangeSeries = null;
         let selectedLevelId = null;
         let currentPriceLines = [];
@@ -902,7 +1059,7 @@
 
             try {
                 chart = LightweightCharts.createChart(chartContainer, {
-                    width: chartContainer.clientWidth,
+                    width: chartContainer.clientWidth || 800,
                     height: 500,
                     layout: {
                         background: { type: 'solid', color: '#151632' },
@@ -1647,7 +1804,21 @@
                 const gliValue = document.getElementById('gli-value');
                 if (gliValue) gliValue.textContent = stats.gli.toFixed(2);
 
-                // 8. Conclusion Calculation
+                // 8. RSI
+                if (typeof stats.rsi !== 'undefined' && stats.rsi !== null) {
+                    const rsiDeg = (stats.rsi * 1.8) - 90; // Map 0->100 to -90->90
+                    const rsiNeedle = document.getElementById('rsi-gauge-needle');
+                    if (rsiNeedle) rsiNeedle.style.transform = `rotate(${rsiDeg}deg)`;
+                    const rsiVal = document.getElementById('rsi-gauge-value');
+                    if (rsiVal) {
+                        rsiVal.textContent = stats.rsi.toFixed(2);
+                        if (stats.rsi < 30) rsiVal.style.color = 'var(--success)';
+                        else if (stats.rsi > 70) rsiVal.style.color = 'var(--danger)';
+                        else rsiVal.style.color = 'var(--text-color)';
+                    }
+                }
+
+                // 9. Conclusion Calculation
                 // Normalize all signals to -1 (Bear) to 1 (Bull)
 
                 // Weighted Average - Using backend calculated scores
@@ -1695,11 +1866,19 @@
                             value: finalScore10s
                         });
                     }
-                    if (priceChangeSeries) {
-                        priceChangeSeries.update({
-                            time: now,
-                            value: stats.price_change_10s
-                        });
+                }
+
+                // Update RSI Gauge
+                if (stats.rsi !== undefined) {
+                    const rsiNeedle = document.getElementById('rsi-needle');
+                    const rsiValue = document.getElementById('rsi-value');
+                    if (rsiNeedle) {
+                        const rsiDeg = (stats.rsi / 100 * 180) - 90;
+                        rsiNeedle.style.transform = `rotate(${rsiDeg}deg)`;
+                    }
+                    if (rsiValue) {
+                        rsiValue.textContent = stats.rsi.toFixed(2);
+                        rsiValue.style.color = stats.rsi >= 70 ? 'var(--danger)' : (stats.rsi <= 30 ? 'var(--success)' : 'var(--text-color)');
                     }
                 }
 
@@ -1809,6 +1988,213 @@
                 }
             }
         }
+
+        async function quickOpen(symbol, type) {
+            let side = 'LONG';
+            if (type.includes('Bearish') || type === 'OB') {
+                side = 'SHORT';
+            }
+
+            try {
+                const resp = await fetch(`/api/rsi/quick-open?symbol=${symbol}&side=${side}&reason=${type}`, {
+                    method: 'POST'
+                });
+                if (resp.ok) {
+                    showNotification(`Quick Level created for ${symbol} (${side})`, 'success');
+                    // Refresh levels table if HTMX is used elsewhere
+                    if (typeof htmx !== 'undefined') {
+                        htmx.trigger('#levels-table', 'refresh');
+                    }
+                } else {
+                    const error = await resp.text();
+                    showNotification(`Failed: ${error}`, 'error');
+                }
+            } catch (e) {
+                console.error("Quick open failed", e);
+                showNotification("Network error executing quick open", 'error');
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            const container = document.getElementById('notification-container') || createNotificationContainer();
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.style.cssText = `
+                background: ${type === 'success' ? 'rgba(0, 255, 157, 0.9)' : (type === 'error' ? 'rgba(255, 78, 107, 0.9)' : 'rgba(0, 123, 255, 0.9)')};
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                margin-bottom: 10px;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+                font-weight: 600;
+                transform: translateX(120%);
+                transition: transform 0.3s ease-out;
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255,255,255,0.2);
+            `;
+            notification.textContent = message;
+            container.appendChild(notification);
+
+            // Animate in
+            setTimeout(() => notification.style.transform = 'translateX(0)', 10);
+
+            // Animate out and remove
+            setTimeout(() => {
+                notification.style.transform = 'translateX(120%)';
+                setTimeout(() => notification.remove(), 300);
+            }, 5000);
+        }
+
+        function createNotificationContainer() {
+            const container = document.createElement('div');
+            container.id = 'notification-container';
+            container.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+            `;
+            document.body.appendChild(container);
+            return container;
+        }
+
+        async function loadRSIConfig() {
+            try {
+                const resp = await fetch('/api/rsi/config');
+                if (resp.ok) {
+                    const config = await resp.json();
+                    const form = document.getElementById('rsi-config-form');
+                    form.enabled.checked = config.enabled;
+                    form.scan_interval_minutes.value = config.scan_interval_minutes;
+                    form.period.value = config.period;
+                    form.oversold.value = config.oversold;
+                    form.overbought.value = config.overbought;
+                    form.timeframes.value = config.timeframes.join(',');
+                    form.size_usdt.value = config.size_usdt || 100;
+                    form.leverage.value = config.leverage || 10;
+                    form.take_profit_pct.value = (config.take_profit_pct * 100) || 1.2;
+                    form.trend_break_enabled.checked = config.trend_break_enabled || false;
+                    form.trend_break_window.value = config.trend_break_window || 5;
+                }
+            } catch (e) {
+                console.error("Failed to load RSI config", e);
+            }
+        }
+
+        async function updateRSIConfig() {
+            const form = document.getElementById('rsi-config-form');
+            const config = {
+                enabled: form.enabled.checked,
+                scan_interval_minutes: parseInt(form.scan_interval_minutes.value),
+                period: parseInt(form.period.value),
+                oversold: parseFloat(form.oversold.value),
+                overbought: parseFloat(form.overbought.value),
+                timeframes: form.timeframes.value.split(',').map(s => s.trim()),
+                size_usdt: parseFloat(form.size_usdt.value),
+                leverage: parseInt(form.leverage.value),
+                take_profit_pct: parseFloat(form.take_profit_pct.value) / 100,
+                trend_break_enabled: form.trend_break_enabled.checked,
+                trend_break_window: parseInt(form.trend_break_window.value)
+            };
+
+            try {
+                const resp = await fetch('/api/rsi/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                if (resp.ok) {
+                    alert("RSI Configuration updated successfully!");
+                } else {
+                    alert("Failed to update RSI configuration.");
+                }
+            } catch (e) {
+                console.error("Failed to update RSI config", e);
+            }
+        }
+
+        async function refreshRSISignals() {
+            try {
+                const resp = await fetch('/api/rsi/signals');
+                if (resp.ok) {
+                    const signals = await resp.json();
+                    const body = document.getElementById('rsi-signals-body');
+                    if (!body) return;
+
+                    if (!signals || signals.length === 0) {
+                        body.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 15px;">No signals detected yet.</td></tr>';
+                        return;
+                    }
+
+                    body.innerHTML = signals.slice().reverse().slice(0, 10).map(s => `
+                        <tr>
+                            <td class="text-muted">${new Date(s.timestamp).toLocaleTimeString()}</td>
+                            <td><strong style="color: var(--accent-color);">${s.symbol}</strong></td>
+                            <td>${s.interval}m</td>
+                            <td style="font-family: monospace; font-weight: 700; color: ${s.rsi >= 70 ? 'var(--danger)' : (s.rsi <= 30 ? 'var(--success)' : 'var(--text-color)')}">${s.rsi.toFixed(2)}</td>
+                            <td>
+                                <span class="badge" style="background: ${s.type.includes('Bull') || s.type === 'OS' ? 'rgba(0, 255, 157, 0.1)' : 'rgba(255, 78, 107, 0.1)'}; color: ${s.type.includes('Bull') || s.type === 'OS' ? '#00ffa7' : '#ff4e6b'}; border: 1px solid ${s.type.includes('Bull') || s.type === 'OS' ? '#00ffa7' : '#ff4e6b'}; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">
+                                    ${s.type}
+                                </span>
+                            </td>
+                            <td>
+                                <div style="display: flex; gap: 5px;">
+                                    <button class="cta-button" style="font-size: 0.75rem; padding: 4px 12px; background: var(--secondary-color);" onclick="openLevelFromSignal('${s.symbol}', '${s.type}')">Open Level</button>
+                                    <button class="cta-button" style="font-size: 0.75rem; padding: 4px 12px; background: var(--success);" onclick="quickOpen('${s.symbol}', '${s.type}')">Quick Open</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error("Failed to refresh RSI signals", e);
+            }
+        }
+
+        function openLevelFromSignal(symbol, type) {
+            const symbolInput = document.querySelector('input[name="symbol"]');
+            const sideSelect = document.querySelector('select[name="side"]');
+
+            if (symbolInput) {
+                symbolInput.value = symbol;
+                // Trigger events
+                symbolInput.dispatchEvent(new Event('input'));
+                symbolInput.dispatchEvent(new Event('change'));
+            }
+
+            if (sideSelect) {
+                if (type.includes('Bullish') || type === 'OS') {
+                    sideSelect.value = 'LONG';
+                } else if (type.includes('Bearish') || type === 'OB') {
+                    sideSelect.value = 'SHORT';
+                }
+            }
+
+            // Scroll to the Add Level card
+            const addLevelElements = document.querySelectorAll('.card h2');
+            for (const el of addLevelElements) {
+                if (el.textContent.includes('Add Level')) {
+                    const card = el.closest('.card');
+                    if (card) {
+                        card.scrollIntoView({ behavior: 'smooth' });
+                        card.style.outline = '2px solid var(--accent-color)';
+                        setTimeout(() => card.style.outline = 'none', 2000);
+                        break;
+                    }
+                }
+            }
+        }
+
+        setInterval(refreshRSISignals, 3000);
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            loadRSIConfig();
+            refreshRSISignals();
+        });
     </script>
 </body>
 
@@ -1823,7 +2209,8 @@
             <th>Mode</th>
             <th>Level Price</th>
             <th>Side</th>
-            <th>Current Price</th>
+            <th>Price</th>
+            <th>RSI (1m)</th>
             <th>Zone/Tiers</th>
             <th>Size</th>
             <th>Closes</th>
@@ -1864,6 +2251,10 @@
                 {{end}}
             </td>
             <td>{{ printf "%.6f" .CurrentPrice }}</td>
+            <td
+                style="font-family: monospace; font-weight: 700; color: {{if ge .RSI 70.0}}var(--danger){{else if le .RSI 30.0}}var(--success){{else}}var(--text-color){{end}}">
+                {{printf "%.2f" .RSI}}
+            </td>
             <td>
                 <div style="font-size: 0.85em; display: grid; grid-template-columns: auto 1fr; gap: 5px;">
                     <span class="{{if eq .ZoneSide " LONG"}}text-success{{else}}text-muted{{end}}"
@@ -1962,6 +2353,7 @@
             <th>Size</th>
             <th>Entry Price</th>
             <th>Mark Price</th>
+            <th>RSI (1m)</th>
             <th>Unrealized PnL</th>
             <th>Lev</th>
             <th>Margin</th>
@@ -1978,6 +2370,10 @@
             <td>{{ .Size }}</td>
             <td>{{ printf "%.6f" .EntryPrice }}</td>
             <td>{{ printf "%.6f" .CurrentPrice }}</td>
+            <td
+                style="font-family: monospace; font-weight: 700; color: {{if ge .RSI 70.0}}var(--danger){{else if le .RSI 30.0}}var(--success){{else}}var(--text-color){{end}}">
+                {{printf "%.2f" .RSI}}
+            </td>
             <td
                 style="color: {{ if gt .UnrealizedPnL 0.0 }}var(--success){{ else }}var(--danger){{ end }}; font-weight: bold;">
                 {{ printf "%.6f" .UnrealizedPnL }}</td>
@@ -2045,5 +2441,3 @@
     </tbody>
 </table>
 {{ end }}
-
-```

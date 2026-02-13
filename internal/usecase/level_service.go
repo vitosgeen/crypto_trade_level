@@ -248,17 +248,10 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 	tiers := s.tiersCache[symbol]
 	s.mu.Unlock()
 
-	// if !ok {
-	// 	return nil
-	// }
-
-	if len(levels) == 0 {
-		// Log rarely if no levels, just to be sure we are receiving ticks? No, too noisy.
+	if !ok {
+		// First tick for this symbol
 		return nil
 	}
-
-	// Only log if we have levels
-	// log.Printf("DEBUG: ProcessTick %s. Prev: %f, Curr: %f. Active Levels: %d", symbol, prevPrice, price, len(levels))
 
 	// Filter for this exchange
 	var relevantLevels []*domain.Level
@@ -266,6 +259,10 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		if l.Exchange == exchangeName {
 			relevantLevels = append(relevantLevels, l)
 		}
+	}
+
+	if len(relevantLevels) > 0 {
+		log.Printf("DEBUG: %s price %f (prev %f) - relevant levels: %d", symbol, price, prevPrice, len(relevantLevels))
 	}
 
 	if len(relevantLevels) == 0 {
@@ -496,9 +493,7 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		}
 	}
 
-	if !ok {
-		return nil
-	}
+	// log.Printf("DEBUG: %s price %f - relevant levels: %d", symbol, price, len(relevantLevels))
 
 	for _, level := range relevantLevels {
 		s.processLevel(ctx, level, tiers, pos, prevPrice, price, sentiment, sentimentThreshold)
@@ -552,13 +547,15 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 	if action != ActionNone {
 		// --- ENTRY FILTER ---
 		if action == ActionOpen || action == ActionAddToPosition {
-			if side == domain.SideLong && sentiment < -sentimentThreshold {
-				log.Printf("SENTIMENT: Skipping LONG on %s. Sentiment is Bearish (%f).", level.Symbol, sentiment)
-				return
-			}
-			if side == domain.SideShort && sentiment > sentimentThreshold {
-				log.Printf("SENTIMENT: Skipping SHORT on %s. Sentiment is Bullish (%f).", level.Symbol, sentiment)
-				return
+			if !level.IgnoreSentimentFilter {
+				if side == domain.SideLong && sentiment < -sentimentThreshold {
+					log.Printf("SENTIMENT: Skipping LONG on %s. Sentiment is Bearish (%f).", level.Symbol, sentiment)
+					return
+				}
+				if side == domain.SideShort && sentiment > sentimentThreshold {
+					log.Printf("SENTIMENT: Skipping SHORT on %s. Sentiment is Bullish (%f).", level.Symbol, sentiment)
+					return
+				}
 			}
 
 			// --- STATE SYNC / DOUBLE ENTRY PROTECTION ---

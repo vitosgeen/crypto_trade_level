@@ -21,6 +21,7 @@ type Server struct {
 	speedBotService   *usecase.SpeedBotService
 	fundingBotService *usecase.FundingBotService
 	levelBotWorker    *usecase.LevelBotWorker
+	rsiMonitorService *usecase.RSIMonitorService
 	logger            *zap.Logger
 }
 
@@ -33,6 +34,7 @@ func NewServer(
 	marketService *usecase.MarketService,
 	speedBotService *usecase.SpeedBotService,
 	fundingBotService *usecase.FundingBotService,
+	rsiMonitorService *usecase.RSIMonitorService,
 	logger *zap.Logger,
 ) *Server {
 	s := &Server{
@@ -45,6 +47,7 @@ func NewServer(
 		speedBotService:   speedBotService,
 		fundingBotService: fundingBotService,
 		levelBotWorker:    usecase.NewLevelBotWorker(service, logger),
+		rsiMonitorService: rsiMonitorService,
 		logger:            logger,
 	}
 	s.routes()
@@ -126,6 +129,12 @@ func (s *Server) routes() {
 	// Wallet
 	s.router.HandleFunc("GET /wallet", s.handleWalletPage)
 	s.router.HandleFunc("GET /api/wallet/history", s.handleWalletHistory)
+
+	// RSI Monitor API
+	s.router.HandleFunc("GET /api/rsi/config", s.handleGetRSIConfig)
+	s.router.HandleFunc("POST /api/rsi/config", s.handleUpdateRSIConfig)
+	s.router.HandleFunc("GET /api/rsi/signals", s.handleGetRSISignals)
+	s.router.HandleFunc("POST /api/rsi/quick-open", s.handleQuickOpenLevel)
 }
 
 func (s *Server) Start() error {

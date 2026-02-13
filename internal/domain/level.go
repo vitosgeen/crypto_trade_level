@@ -22,6 +22,7 @@ type Level struct {
 	TakeProfitMode           string  // "fixed" or "liquidity"
 	IsAuto                   bool    // Created automatically by the system
 	AutoModeEnabled          bool    // Enable auto-recreation on failure
+	IgnoreSentimentFilter    bool    // Skip sentiment checks for entry
 	Source                   string
 	CreatedAt                time.Time
 }
@@ -46,4 +47,19 @@ type LiquiditySnapshot struct {
 	Time   int64             `json:"time"`
 	Bids   []LiquidityBucket `json:"bids"`
 	Asks   []LiquidityBucket `json:"asks"`
+}
+
+// RSIMonitorConfig defines settings for automated RSI-based level creation.
+type RSIMonitorConfig struct {
+	Enabled             bool     `json:"enabled"`
+	ScanIntervalMinutes int      `json:"scan_interval_minutes"`
+	Timeframes          []string `json:"timeframes"`
+	Period              int      `json:"period"`
+	Overbought          float64  `json:"overbought"`
+	Oversold            float64  `json:"oversold"`
+	SizeUSDT            float64  `json:"size_usdt"`
+	Leverage            int      `json:"leverage"`
+	TakeProfitPct       float64  `json:"take_profit_pct"`
+	TrendBreakEnabled   bool     `json:"trend_break_enabled"`
+	TrendBreakWindow    int      `json:"trend_break_window"` // window size for pivot optimization
 }

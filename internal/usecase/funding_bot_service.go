@@ -1064,7 +1064,7 @@ func (b *FundingBot) TriggerTestEvent(ctx context.Context) error {
 
 func (b *FundingBot) logTradeTick(ctx context.Context, ticker domain.Ticker) {
 	// 1. Get RSI
-	rsi, err := b.getRSI(ctx)
+	rsi, err := b.marketService.GetRSI(ctx, b.config.Symbol, "1", 14)
 	if err != nil {
 		// Log warning but don't spam if API fails occasionally
 		// b.logger.Warn("Failed to calc RSI", zap.Error(err))
@@ -1127,43 +1127,4 @@ func (b *FundingBot) logTradeTick(ctx context.Context, ticker domain.Ticker) {
 		Asks:          orderBook.Asks,
 	})
 	b.mu.Unlock()
-}
-
-func (b *FundingBot) getRSI(ctx context.Context) (float64, error) {
-	// Fetch last 15 candles (1m)
-	candles, err := b.exchange.GetCandles(ctx, b.config.Symbol, "1", 20)
-	if err != nil {
-		return 0, err
-	}
-	if len(candles) < 15 {
-		return 0, fmt.Errorf("not enough candles for RSI")
-	}
-
-	// Use last 14 changes
-	startIdx := len(candles) - 15
-	subset := candles[startIdx:]
-
-	var gains, losses float64
-	for i := 1; i < len(subset); i++ {
-		change := subset[i].Close - subset[i-1].Close
-		if change > 0 {
-			gains += change
-		} else {
-			losses += -change
-		}
-	}
-
-	avgGain := gains / 14.0
-	avgLoss := losses / 14.0
-
-	if avgLoss == 0 {
-		if avgGain == 0 {
-			return 50, nil // Flat
-		}
-		return 100, nil
-	}
-
-	rs := avgGain / avgLoss
-	rsi := 100.0 - (100.0 / (1.0 + rs))
-	return rsi, nil
 }

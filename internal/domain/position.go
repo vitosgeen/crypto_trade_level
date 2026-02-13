@@ -18,6 +18,7 @@ type Position struct {
 	Size          float64
 	EntryPrice    float64
 	CurrentPrice  float64
+	RSI           float64
 	UnrealizedPnL float64
 	Leverage      int
 	MarginType    string

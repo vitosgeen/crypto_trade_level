@@ -44,6 +44,7 @@ func InitTemplates(dir string) error {
 type LevelView struct {
 	*domain.Level
 	CurrentPrice          float64
+	RSI                   float64
 	ZoneSide              domain.Side
 	LongTiers             []float64
 	ShortTiers            []float64
@@ -89,9 +90,13 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		// Get Runtime State
 		state := s.service.GetLevelState(l.ID)
 
+		// Get RSI (1m)
+		rsi, _ := s.marketService.GetRSI(r.Context(), l.Symbol, "1", 14)
+
 		views = append(views, LevelView{
 			Level:                 l,
 			CurrentPrice:          price,
+			RSI:                   rsi,
 			ZoneSide:              side,
 			LongTiers:             longTiers,
 			ShortTiers:            shortTiers,
@@ -145,9 +150,13 @@ func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 		// Get Runtime State
 		state := s.service.GetLevelState(l.ID)
 
+		// Get RSI (1m)
+		rsi, _ := s.marketService.GetRSI(r.Context(), l.Symbol, "1", 14)
+
 		views = append(views, LevelView{
 			Level:                 l,
 			CurrentPrice:          price,
+			RSI:                   rsi,
 			ZoneSide:              side,
 			LongTiers:             longTiers,
 			ShortTiers:            shortTiers,
@@ -205,6 +214,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	maxConsecutiveBaseCloses, _ := strconv.Atoi(r.FormValue("max_consecutive_base_closes"))
 	baseCloseCooldownMs, _ := strconv.ParseInt(r.FormValue("base_close_cooldown_ms"), 10, 64)
 	autoModeEnabled := r.FormValue("auto_mode_enabled") == "on"
+	ignoreSentimentFilter := r.FormValue("ignore_sentiment_filter") == "on"
 
 	side := domain.Side(r.FormValue("side"))
 	if side == "" {
@@ -249,6 +259,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		TakeProfitMode:           takeProfitMode,
 		IsAuto:                   false,
 		AutoModeEnabled:          autoModeEnabled, // Enabled if checkbox checked
+		IgnoreSentimentFilter:    ignoreSentimentFilter,
 		Source:                   "manual-web",
 		CreatedAt:                time.Now(),
 	}
@@ -275,6 +286,81 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 
 	// Return updated table
 	s.handleLevelsTable(w, r)
+}
+
+func (s *Server) handleQuickOpenLevel(w http.ResponseWriter, r *http.Request) {
+	symbol := strings.ToUpper(r.URL.Query().Get("symbol"))
+	sideStr := r.URL.Query().Get("side")
+	reason := r.URL.Query().Get("reason")
+
+	if symbol == "" || sideStr == "" {
+		http.Error(w, "Symbol and Side are required", http.StatusBadRequest)
+		return
+	}
+
+	side := domain.Side(sideStr)
+	// We use the RSIMonitorService's CreateLevel which uses the monitor config (size, tp, leverage)
+	// Note: We need to Export createLevel or wrap it.
+	// Actually, let's just use the service directly.
+	// WAIT, the rsiMonitorService.createLevel is unexported.
+	// I should add a public method or just implement the logic here using monitor config.
+
+	config := s.rsiMonitorService.GetConfig()
+
+	// Get current price
+	ticker, err := s.service.GetExchange().GetTickers(r.Context(), "linear")
+	var price float64
+	if err == nil {
+		for _, t := range ticker {
+			if t.Symbol == symbol {
+				price = t.LastPrice
+				break
+			}
+		}
+	}
+
+	if price == 0 {
+		// Try MarketService
+		stats, err := s.marketService.GetMarketStats(r.Context(), symbol)
+		if err == nil && stats != nil {
+			price = stats.LastPrice
+		}
+	}
+
+	if price == 0 {
+		http.Error(w, "Could not determine current price", http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate base size from size_usdt
+	baseSize := config.SizeUSDT / price
+
+	level := &domain.Level{
+		ID:             fmt.Sprintf("%d", time.Now().UnixNano()),
+		Exchange:       "bybit",
+		Symbol:         symbol,
+		LevelPrice:     price,
+		Side:           side,
+		BaseSize:       baseSize,
+		Leverage:       config.Leverage,
+		MarginType:     "cross",
+		CoolDownMs:     5000,
+		StopLossMode:   "exchange",
+		TakeProfitPct:  config.TakeProfitPct,
+		TakeProfitMode: "fixed",
+		IsAuto:         false,
+		Source:         fmt.Sprintf("scanner-%s", reason),
+		CreatedAt:      time.Now(),
+	}
+
+	if err := s.service.CreateLevel(r.Context(), level); err != nil {
+		s.logger.Error("Failed to quick create level", zap.Error(err))
+		http.Error(w, "Failed to save level", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Level created successfully"))
 }
 
 func (s *Server) handleDeleteLevel(w http.ResponseWriter, r *http.Request) {
@@ -308,6 +394,11 @@ func (s *Server) handlePositionsTable(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("Failed to get positions", zap.Error(err))
 		http.Error(w, "Failed to get positions", http.StatusInternalServerError)
 		return
+	}
+
+	for _, p := range positions {
+		rsi, _ := s.marketService.GetRSI(r.Context(), p.Symbol, "1", 14)
+		p.RSI = rsi
 	}
 
 	if err := templates.ExecuteTemplate(w, "positions_table", positions); err != nil {
@@ -764,4 +855,31 @@ func (s *Server) handleGetLogChartData(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(points)
+}
+
+func (s *Server) handleGetRSIConfig(w http.ResponseWriter, r *http.Request) {
+	config := s.rsiMonitorService.GetConfig()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(config)
+}
+
+func (s *Server) handleUpdateRSIConfig(w http.ResponseWriter, r *http.Request) {
+	var config domain.RSIMonitorConfig
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		s.logger.Error("Failed to decode RSI config", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Update the service
+	s.rsiMonitorService.UpdateConfig(config)
+	s.logger.Info("RSI Monitor Config updated", zap.Any("config", config))
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleGetRSISignals(w http.ResponseWriter, r *http.Request) {
+	signals := s.rsiMonitorService.GetSignals()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(signals)
 }
