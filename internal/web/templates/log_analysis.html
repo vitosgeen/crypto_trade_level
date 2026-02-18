@@ -292,8 +292,8 @@
                 </div>
                 <div>
                     <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Min
-                        Value Change ($)</label>
-                    <input type="number" id="monitorValue" value="500000" step="100000"
+                        Vol Change %</label>
+                    <input type="number" id="monitorVolPcnt" value="50.0" step="5"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
                 </div>
                 <div>
@@ -365,6 +365,7 @@
                         <option value="current">Current Price</option>
                         <option value="extremes" selected>Extremes (Standard)</option>
                         <option value="extremes_opposite">Extremes (Opposite)</option>
+                        <option value="biggest_order_book">Biggest Order Book</option>
                     </select>
                 </div>
             </div>
@@ -386,6 +387,12 @@
                             style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;">
                             <input type="checkbox" id="autoLevelToggle" style="width: 18px; height: 18px;">
                             <span style="color: var(--accent-color);">Auto Create Level</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;">
+                            <input type="checkbox" id="ignoreSentimentToggle" checked
+                                style="width: 18px; height: 18px;">
+                            <span style="color: var(--warning);">Ignore Sentiment</span>
                         </label>
                     </div>
                     <div id="lastCheckTime" style="font-size: 0.8rem; color: var(--text-muted);"></div>
@@ -808,7 +815,7 @@
         async function checkAlerts() {
             const timeframeIndex = parseInt(document.getElementById('monitorTimeframe').value);
             const minPcnt = parseFloat(document.getElementById('monitorPcnt').value);
-            const minValue = parseFloat(document.getElementById('monitorValue').value);
+            const minVolPcnt = parseFloat(document.getElementById('monitorVolPcnt').value);
             const minVol = parseFloat(document.getElementById('monitorVol').value) || 0;
             const autoLevelSize = parseFloat(document.getElementById('autoLevelSize').value) || 100;
             const autoLevelTP = parseFloat(document.getElementById('autoLevelTP').value) || 1.0;
@@ -818,6 +825,7 @@
             const autoLevelTier2 = parseFloat(document.getElementById('autoLevelTier2').value) || 0.3;
             const autoLevelTier3 = parseFloat(document.getElementById('autoLevelTier3').value) || 0.15;
             const minConsistent = parseInt(document.getElementById('monitorConsistent').value) || 0;
+            const ignoreSentiment = document.getElementById('ignoreSentimentToggle').checked;
 
             console.log("Auto Level Size: " + autoLevelSize);
             console.log("Auto Level TP: " + autoLevelTP);
@@ -849,8 +857,8 @@
             const now = Date.now();
             const cooldown = 5 * 60 * 1000; // 5 minutes
 
-            rows.forEach(row => {
-                if (row.cells.length < 2) return; // Skip no data row
+            for (const row of rows) {
+                if (row.cells.length < 2) continue; // Skip no data row
 
                 const symbol = row.cells[0].querySelector('.symbol').innerText;
                 const cell = row.cells[timeframeIndex];
@@ -858,13 +866,13 @@
                 // Check Volume Condition
                 const volCell = row.cells[2];
                 const vol24h = parseFloat(volCell.getAttribute('data-val')) || 0;
-                if (vol24h < minVol) return;
+                if (vol24h < minVol) continue;
 
                 // Check Consistency Condition
                 const consistentCount = row.querySelectorAll('.badge-consistent').length;
-                if (consistentCount < minConsistent) return;
+                if (consistentCount < minConsistent) continue;
 
-                if (!cell) return;
+                if (!cell) continue;
 
                 let pcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
                 const rawVal = cell.getAttribute('data-val-raw');
@@ -883,20 +891,17 @@
                     }
                 }
 
-                let pcntCondition = false;
-                if (pcntChange < 0) {
-                    pcntChange = pcntChange * -1;
-                }
-                pcntCondition = pcntChange >= minPcnt;
+                let pcntCondition = Math.abs(pcntChange) >= minPcnt;
+                let volPcntChange = parseFloat(cell.getAttribute('data-vol-pcnt')) || 0;
 
-                if (pcntCondition && Math.abs(valueChange) >= minValue) {
+                if (pcntCondition && Math.abs(volPcntChange) >= minVolPcnt) {
                     row.classList.add('anomaly-alert'); // Highlight on table regardless of sound history
 
                     const alertKey = `${symbol}-${timeframeIndex}`;
                     const lastAlert = alertedHistory.get(alertKey);
 
                     if (!lastAlert || (now - lastAlert > cooldown)) {
-                        const msg = `${symbol}: ${pcntChange.toFixed(2)}% ($${(valueChange / 1000).toFixed(1)}K)`;
+                        const msg = `${symbol}: ${Math.abs(pcntChange).toFixed(2)}% (Vol: ${Math.abs(volPcntChange).toFixed(1)}%)`;
                         anomalies.push(msg);
                         alertedHistory.set(alertKey, now);
 
@@ -934,6 +939,19 @@
                                     // change + : highest price
                                     targetPrice = maxPrice;
                                 }
+                            } else if (mode === 'biggest_order_book') {
+                                try {
+                                    const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}`);
+                                    if (resp.ok) {
+                                        const data = await resp.json();
+                                        targetPrice = data.price;
+                                        console.log(`Found biggest order book level for ${symbol}: ${targetPrice}`);
+                                    } else {
+                                        console.error(`Failed to fetch biggest order book for ${symbol}`);
+                                    }
+                                } catch (err) {
+                                    console.error(`Error fetching biggest order book for ${symbol}:`, err);
+                                }
                             }
 
                             if (targetPrice) {
@@ -968,7 +986,7 @@
                         }
                     }
                 }
-            });
+            }
 
             const logDiv = document.getElementById('alertLog');
             document.getElementById('lastCheckTime').innerText = "Last checked: " + new Date().toLocaleTimeString();
@@ -1002,32 +1020,32 @@
                         console.log("Triggering auto-creation for:", levelRequests);
                     }
                     levelRequests.forEach(req => {
-                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi, req.analysis);
+                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi, req.analysis, ignoreSentiment);
                     });
                 }
             }
         }
 
-        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, min, max, timeframe, rsi, analysisData) {
+        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, min, max, timeframe, rsi, analysisData, ignoreSentiment) {
             console.log(`Sending create request for ${symbol} @ ${price}`);
 
             // Calculate Base Size (Coin Quantity) from USDT Size
-            // User requested: Round up to nearest 10 (e.g. 713 -> 720)
+            // User requested: Round up to nearest 10 (e.g. 713 -> 720) for larger quantities
             const priceVal = parseFloat(price);
             const sizeUsd = parseFloat(size);
+            let coinQty = 0;
             if (priceVal > 0) {
                 const rawQty = sizeUsd / priceVal;
-                // Smarter rounding: Keep 4 decimals for small quantities, round whole for larger ones
                 if (rawQty < 1) {
                     coinQty = parseFloat(rawQty.toFixed(4));
                 } else if (rawQty < 100) {
                     coinQty = parseFloat(rawQty.toFixed(2));
                 } else {
-                    // For cheap coins, round up to nearest whole to keep it clean
-                    coinQty = Math.ceil(rawQty);
+                    // For cheap coins/larger quantities, round up to nearest 10 as requested
+                    coinQty = Math.ceil(rawQty / 10) * 10;
                 }
             }
-            console.log(`Calculated size: $${sizeUsd} / $${priceVal} = ${sizeUsd / priceVal} coins -> Precision: ${coinQty}`);
+            console.log(`Calculated size: $${sizeUsd} / $${priceVal} = ${sizeUsd / priceVal} coins -> Precision Qty: ${coinQty}`);
 
             const params = new URLSearchParams();
             params.append('symbol', symbol);
@@ -1049,6 +1067,9 @@
 
             // Add auto flag
             params.append('auto_mode_enabled', 'on');
+            if (ignoreSentiment) {
+                params.append('ignore_sentiment_filter', 'on');
+            }
             if (analysisData) {
                 params.append('analysis_json', JSON.stringify(analysisData));
             }
@@ -1113,7 +1134,7 @@
                 })
                 .catch(err => console.error("Auto-refresh failed", err));
         }, 10000); // 1 minute
-        function manualCreateLevel(event, symbol, currentPrice) {
+        async function manualCreateLevel(event, symbol, currentPrice) {
             event.stopPropagation();
 
             const timeframeIndex = parseInt(document.getElementById('monitorTimeframe').value);
@@ -1135,6 +1156,16 @@
                 } else if (realPcntChange > 0) {
                     price = cell.getAttribute('data-max-price') || currentPrice;
                 }
+            } else if (mode === 'biggest_order_book') {
+                try {
+                    const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        price = data.price;
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch biggest OB", err);
+                }
             }
 
             if (!confirm(`Create level for ${symbol} at $${price}? (Mode: ${mode})`)) return;
@@ -1146,6 +1177,7 @@
             const tier1 = document.getElementById('autoLevelTier1').value;
             const tier2 = document.getElementById('autoLevelTier2').value;
             const tier3 = document.getElementById('autoLevelTier3').value;
+            const ignoreSentiment = document.getElementById('ignoreSentimentToggle').checked;
 
             const minPrice = cell.getAttribute('data-min-price');
             const maxPrice = cell.getAttribute('data-max-price');
@@ -1166,7 +1198,7 @@
                 macd: row.cells[9].getAttribute('data-val') || 0
             };
 
-            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi, analysisData);
+            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi, analysisData, ignoreSentiment);
         }
 
         // Set initial time

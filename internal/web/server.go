@@ -69,6 +69,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /levels", s.handleLevelsTable)
 	s.router.HandleFunc("GET /api/levels", s.handleListLevelsJSON)
 	s.router.HandleFunc("POST /levels", s.handleAddLevel)
+	s.router.HandleFunc("DELETE /levels", s.handleDeleteAllLevels)
 	s.router.HandleFunc("DELETE /levels/{id}", s.handleDeleteLevel)
 	s.router.HandleFunc("POST /levels/{id}/increment-closes", s.handleIncrementCloses)
 	s.router.HandleFunc("POST /levels/{id}/auto", s.handleAutoCreateLevel)
@@ -78,6 +79,7 @@ func (s *Server) routes() {
 
 	// Positions
 	s.router.HandleFunc("GET /positions", s.handlePositionsTable)
+	s.router.HandleFunc("DELETE /positions", s.handleCloseAllPositions)
 	s.router.HandleFunc("DELETE /positions/{symbol}", s.handleClosePosition)
 	s.router.HandleFunc("GET /history", s.handleHistoryTable)
 	s.router.HandleFunc("GET /api/position-pnl-history", s.handlePositionPnLHistory)
@@ -88,6 +90,7 @@ func (s *Server) routes() {
 	// Liquidity
 	s.router.HandleFunc("GET /api/liquidity", s.handleLiquidity)
 	s.router.HandleFunc("GET /api/liquidity-history", s.handleLiquidityHistory)
+	s.router.HandleFunc("GET /api/orderbook/biggest", s.handleBiggestOrderBook)
 
 	// Status
 	s.router.HandleFunc("GET /status", s.handleStatus)

@@ -228,6 +228,8 @@
             const freeData = data.map(d => d.free);
             const equityData = data.map(d => d.equity || d.total); // Fallback to total if equity is 0/missing
             const uplData = data.map(d => d.unrealized_pnl);
+            const marginBalanceData = data.map(d => d.margin_balance || 0);
+            const initialMarginData = data.map(d => d.initial_margin || 0);
 
             const ctx = document.getElementById('walletChart').getContext('2d');
 
@@ -252,6 +254,17 @@
                             fill: false
                         },
                         {
+                            label: 'Margin Balance',
+                            data: marginBalanceData,
+                            borderColor: '#00d2ff', // Cyan
+                            backgroundColor: 'rgba(0, 210, 255, 0.05)',
+                            borderWidth: 2,
+                            tension: 0.2,
+                            yAxisID: 'y',
+                            fill: false,
+                            hidden: true // Hidden by default if it overlaps too much
+                        },
+                        {
                             label: 'Wallet Balance',
                             data: totalData,
                             borderColor: '#00ff88', // Accent Color (Green)
@@ -260,6 +273,26 @@
                             tension: 0.1,
                             yAxisID: 'y',
                             fill: true
+                        },
+                        {
+                            label: 'Available Balance',
+                            data: freeData,
+                            borderColor: '#ffffff', // White
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            tension: 0.1,
+                            yAxisID: 'y',
+                            fill: false
+                        },
+                        {
+                            label: 'Initial Margin',
+                            data: initialMarginData,
+                            borderColor: '#ff4d4d', // Red
+                            borderWidth: 1,
+                            borderDash: [2, 2],
+                            tension: 0.1,
+                            yAxisID: 'y',
+                            fill: false
                         },
                         {
                             label: 'Unrealized PnL',

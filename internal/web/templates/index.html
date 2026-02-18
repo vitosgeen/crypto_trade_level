@@ -139,6 +139,37 @@
             color: var(--accent-color);
         }
 
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .section-header h2 {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .btn-danger {
+            background-color: var(--danger);
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .btn-danger:hover {
+            opacity: 0.9;
+        }
+
         /* Forms */
         input,
         select {
@@ -840,7 +871,13 @@
 
         <!-- Full Width: Active Levels -->
         <div class="card full-width">
-            <h2>Active Levels</h2>
+            <div class="section-header">
+                <h2>Active Levels</h2>
+                <button class="btn-danger" hx-delete="/levels"
+                    hx-confirm="Are you sure you want to delete ALL active levels?" hx-target="#levels-table">
+                    Delete All
+                </button>
+            </div>
             <div id="levels-table" hx-get="/levels" hx-trigger="every 2s">
                 {{ template "levels_table" .Levels }}
             </div>
@@ -848,7 +885,13 @@
 
         <!-- Full Width: Active Positions -->
         <div class="card full-width">
-            <h2>Active Positions</h2>
+            <div class="section-header">
+                <h2>Active Positions</h2>
+                <button class="btn-danger" hx-delete="/positions"
+                    hx-confirm="Are you sure you want to close ALL active positions?" hx-target="#positions-table">
+                    Close All
+                </button>
+            </div>
             <div id="positions-table" hx-get="/positions" hx-trigger="load, every 5s">
                 <!-- Loaded via HTMX -->
             </div>
@@ -865,7 +908,7 @@
                 </div>
             </div>
             <div id="history-table" hx-get="/history?tab=local" hx-trigger="load, every 10s">
-                {{ template "history_table" .History }}
+                {{ template "history_table" . }}
             </div>
         </div>
 
@@ -1117,6 +1160,9 @@
         let pnlHistorySeries = null;
         let selectedLevelId = null;
         let currentPriceLines = [];
+        let historicalChart = null;
+        let historicalSeries = null;
+        let historicalRSISeries = null;
         let previewPriceLines = [];
         let liquidityData = [];
         let isShiftPressed = false;
@@ -2415,8 +2461,6 @@
             }
         }
 
-        let historicalChart = null;
-        let historicalSeries = null;
 
         function showHistoricalPnLChart(symbol, start, end) {
             console.log("Showing historical chart for", symbol, start, end);
@@ -2447,11 +2491,23 @@
                         timeVisible: true,
                         secondsVisible: true,
                     },
+                    rightPriceScale: {
+                        scaleMargins: {
+                            top: 0.1,
+                            bottom: 0.3,
+                        },
+                    },
                 });
-                historicalSeries = historicalChart.addLineSeries({
+
+                // PnL Histogram Series
+                historicalSeries = historicalChart.addHistogramSeries({
                     color: '#ff00ff',
-                    lineWidth: 2,
+                    priceFormat: {
+                        type: 'volume',
+                    },
+                    priceScaleId: 'right',
                 });
+
                 historicalSeries.createPriceLine({
                     price: 0,
                     color: '#e0e0e0',
@@ -2460,8 +2516,37 @@
                     axisLabelVisible: false,
                     title: '',
                 });
+
+                // RSI Series
+                historicalRSISeries = historicalChart.addLineSeries({
+                    color: '#9c27b0',
+                    lineWidth: 2,
+                    priceScaleId: 'rsi',
+                    scaleMargins: {
+                        top: 0.75,
+                        bottom: 0.05,
+                    },
+                });
+                historicalRSISeries.createPriceLine({
+                    price: 70,
+                    color: '#9c27b0',
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Dotted,
+                    axisLabelVisible: false,
+                    title: '',
+                });
+                historicalRSISeries.createPriceLine({
+                    price: 30,
+                    color: '#9c27b0',
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Dotted,
+                    axisLabelVisible: false,
+                    title: '',
+                });
+
             } else {
                 historicalSeries.setData([]);
+                if (historicalRSISeries) historicalRSISeries.setData([]);
             }
 
             fetch(`/api/position-pnl-history?symbol=${symbol}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
@@ -2470,18 +2555,29 @@
                     if (data && data.length > 0) {
                         const pnlData = data.map(h => ({
                             time: Math.floor(new Date(h.timestamp).getTime() / 1000),
-                            value: h.unrealized_pnl
+                            value: h.unrealized_pnl,
+                            color: h.unrealized_pnl >= 0 ? '#00ff88' : '#dc3545',
+                        })).sort((a, b) => a.time - b.time);
+
+                        const rsiData = data.map(h => ({
+                            time: Math.floor(new Date(h.timestamp).getTime() / 1000),
+                            value: h.rsi
                         })).sort((a, b) => a.time - b.time);
 
                         const uniquePnlData = [];
+                        const uniqueRsiData = [];
                         const seenTimes = new Set();
-                        for (const d of pnlData) {
+                        for (let i = 0; i < pnlData.length; i++) {
+                            const d = pnlData[i];
+                            const r = rsiData[i];
                             if (!seenTimes.has(d.time)) {
                                 seenTimes.add(d.time);
                                 uniquePnlData.push(d);
+                                uniqueRsiData.push(r);
                             }
                         }
                         historicalSeries.setData(uniquePnlData);
+                        if (historicalRSISeries) historicalRSISeries.setData(uniqueRsiData);
                         historicalChart.timeScale().fitContent();
                     } else {
                         console.warn("No historical PnL data found for this range.");
@@ -2768,6 +2864,14 @@
 
 
 {{ define "history_table" }}
+<div
+    style="padding: 10px 15px; border-bottom: 2px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.1); margin-bottom: 1px;">
+    <span style="font-weight: 600; color: var(--text-muted); font-size: 0.9rem;">Total Realized PnL:</span>
+    <span
+        style="font-size: 1.1rem; font-weight: bold; font-family: 'Inter', monospace; color: {{ if gt .TotalPnL 0.0 }}var(--success){{ else if lt .TotalPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }};">
+        {{ printf "$%.2f" .TotalPnL }}
+    </span>
+</div>
 <table>
     <thead>
         <tr>
@@ -2786,13 +2890,13 @@
         </tr>
     </thead>
     <tbody>
-        {{ if . }}
-        {{ range . }}
+        {{ if .History }}
+        {{ range .History }}
         <tr>
             <td class="text-muted">{{ .ClosedAt.Format "15:04:05" }}</td>
             <td><strong>{{ .Symbol }}</strong></td>
             <td><span class="badge badge-blue">{{ .Source }}</span></td>
-            <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
+            <td style="color: {{ if eq .Side " SHORT" }}var(--danger){{ else }}var(--success){{ end }}; font-weight:
                 bold;">{{ .Side }}</td>
             <td>{{ .Size }}</td>
             <td>{{ printf "%.6f" .EntryPrice }}</td>
@@ -2828,7 +2932,7 @@
         {{ end }}
         {{ else }}
         <tr>
-            <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 20px;">No history available
+            <td colspan="12" style="text-align: center; color: var(--text-muted); padding: 20px;">No history available
             </td>
         </tr>
         {{ end }}

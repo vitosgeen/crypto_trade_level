@@ -28,6 +28,10 @@ func (m *MockLevelRepo) DeleteLevel(ctx context.Context, id string) error {
 	m.DeletedIDs = append(m.DeletedIDs, id)
 	return nil
 }
+func (m *MockLevelRepo) DeleteAllLevels(ctx context.Context) error {
+	m.Levels = nil
+	return nil
+}
 func (m *MockLevelRepo) GetSymbolTiers(ctx context.Context, exchange, symbol string) (*domain.SymbolTiers, error) {
 	return m.Tiers, nil
 }
@@ -117,6 +121,12 @@ func (m *MockTradeRepo) ListPositionPnLHistory(ctx context.Context, symbol strin
 }
 func (m *MockTradeRepo) ListPositionPnLHistoryRange(ctx context.Context, symbol string, start, end time.Time) ([]*domain.PositionPnLHistory, error) {
 	return nil, nil
+}
+func (m *MockTradeRepo) GetTotalRealizedPnL(ctx context.Context) (float64, error) {
+	return 0, nil
+}
+func (m *MockTradeRepo) GetTotalExchangeRealizedPnL(ctx context.Context) (float64, error) {
+	return 0, nil
 }
 
 type MockExchange struct {

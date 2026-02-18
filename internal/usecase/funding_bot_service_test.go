@@ -105,6 +105,12 @@ func (m *MockTradeRepo) ListPositionPnLHistory(ctx context.Context, symbol strin
 func (m *MockTradeRepo) ListPositionPnLHistoryRange(ctx context.Context, symbol string, start, end time.Time) ([]*domain.PositionPnLHistory, error) {
 	return nil, nil
 }
+func (m *MockTradeRepo) GetTotalRealizedPnL(ctx context.Context) (float64, error) {
+	return 0, nil
+}
+func (m *MockTradeRepo) GetTotalExchangeRealizedPnL(ctx context.Context) (float64, error) {
+	return 0, nil
+}
 
 // Stubs for other interface methods
 func (m *MockFundingExchange) ConnectWS() error                                          { return nil }

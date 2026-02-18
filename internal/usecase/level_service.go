@@ -706,6 +706,30 @@ func (s *LevelService) ClosePosition(ctx context.Context, symbol string) error {
 	return err
 }
 
+// CloseAllPositions closes all active positions on the exchange
+func (s *LevelService) CloseAllPositions(ctx context.Context) error {
+	positions, err := s.exchange.GetPositions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, p := range positions {
+		if p.Size > 0 {
+			if err := s.ClosePosition(ctx, p.Symbol); err != nil {
+				log.Printf("Failed to close position for %s: %v", p.Symbol, err)
+			}
+		}
+	}
+	return nil
+}
+
+// DeleteAllLevels removes all levels and updates cache
+func (s *LevelService) DeleteAllLevels(ctx context.Context) error {
+	if err := s.levelRepo.DeleteAllLevels(ctx); err != nil {
+		return err
+	}
+	return s.UpdateCache(ctx)
+}
+
 // finalizePosition handles the common logic for closing a position, calculating PnL, and saving history.
 func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, levelID string, price float64) (float64, error) {
 	// 0. Invalidate Cache IMMEDIATELY to prevent race conditions from other ticks
@@ -1365,6 +1389,7 @@ func (s *LevelService) RecordActivePositionsPnL(ctx context.Context) {
 			continue
 		}
 
+		rsi, _ := s.market.GetRSI(ctx, pos.Symbol, "1", 14)
 		history := &domain.PositionPnLHistory{
 			Symbol:        pos.Symbol,
 			Side:          pos.Side,
@@ -1372,6 +1397,7 @@ func (s *LevelService) RecordActivePositionsPnL(ctx context.Context) {
 			EntryPrice:    pos.EntryPrice,
 			MarkPrice:     pos.MarkPrice,
 			UnrealizedPnL: pos.UnrealizedPnL,
+			RSI:           rsi,
 			Timestamp:     time.Now(),
 		}
 

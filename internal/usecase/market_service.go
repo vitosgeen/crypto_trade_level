@@ -1111,3 +1111,47 @@ func (s *MarketService) CalculateEMA(values []float64, period int) []float64 {
 	}
 	return ema
 }
+
+func (s *MarketService) GetBiggestOrderBookPrice(ctx context.Context, symbol string, currentPrice float64) (float64, error) {
+	clusters, err := s.GetLiquidityClusters(ctx, symbol)
+	if err != nil {
+		return 0, err
+	}
+
+	var bestPrice float64
+	var maxVol float64
+
+	for _, c := range clusters {
+		// Distance in percentage
+		dist := math.Abs(c.Price-currentPrice) / currentPrice
+
+		// Filter: Near but not too close
+		// Near: 2%
+		// Too close: 0.15% (to avoid immediate entry/noise)
+		if dist >= 0.0015 && dist <= 0.02 {
+			if c.Volume > maxVol {
+				maxVol = c.Volume
+				bestPrice = c.Price
+			}
+		}
+	}
+
+	if bestPrice == 0 {
+		// Fallback: try a wider range if nothing found in 2%
+		for _, c := range clusters {
+			dist := math.Abs(c.Price-currentPrice) / currentPrice
+			if dist >= 0.0015 && dist <= 0.05 {
+				if c.Volume > maxVol {
+					maxVol = c.Volume
+					bestPrice = c.Price
+				}
+			}
+		}
+	}
+
+	if bestPrice == 0 {
+		return 0, fmt.Errorf("no suitable order book level found for %s", symbol)
+	}
+
+	return bestPrice, nil
+}

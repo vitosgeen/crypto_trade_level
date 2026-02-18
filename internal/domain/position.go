@@ -75,6 +75,7 @@ type PositionPnLHistory struct {
 	EntryPrice    float64   `json:"entry_price"`
 	MarkPrice     float64   `json:"mark_price"`
 	UnrealizedPnL float64   `json:"unrealized_pnl"`
+	RSI           float64   `json:"rsi"`
 	Timestamp     time.Time `json:"timestamp"`
 }
 

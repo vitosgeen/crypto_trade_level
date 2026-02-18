@@ -132,11 +132,14 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("Failed to fetch exchange history", zap.Error(err))
 	}
 
+	totalPnL, _ := s.tradeRepo.GetTotalRealizedPnL(r.Context())
+
 	data := map[string]interface{}{
 		"Levels":          views,
 		"History":         history,
 		"ExchangeHistory": exchangeHistory,
 		"AllSymbols":      allSymbols,
+		"TotalPnL":        totalPnL,
 	}
 
 	if err := templates.ExecuteTemplate(w, "index.html", data); err != nil {
@@ -534,6 +537,24 @@ func (s *Server) handleClosePosition(w http.ResponseWriter, r *http.Request) {
 	s.handlePositionsTable(w, r)
 }
 
+func (s *Server) handleCloseAllPositions(w http.ResponseWriter, r *http.Request) {
+	if err := s.service.CloseAllPositions(r.Context()); err != nil {
+		s.logger.Error("Failed to close all positions", zap.Error(err))
+		http.Error(w, "Failed to close all positions", http.StatusInternalServerError)
+		return
+	}
+	s.handlePositionsTable(w, r)
+}
+
+func (s *Server) handleDeleteAllLevels(w http.ResponseWriter, r *http.Request) {
+	if err := s.service.DeleteAllLevels(r.Context()); err != nil {
+		s.logger.Error("Failed to delete all levels", zap.Error(err))
+		http.Error(w, "Failed to delete all levels", http.StatusInternalServerError)
+		return
+	}
+	s.handleLevelsTable(w, r)
+}
+
 func (s *Server) handleTradesTable(w http.ResponseWriter, r *http.Request) {
 	trades, _ := s.tradeRepo.ListTrades(r.Context(), 50)
 	if err := templates.ExecuteTemplate(w, "trades_table", trades); err != nil {
@@ -553,20 +574,28 @@ func (s *Server) handleHistoryTable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var history []*domain.PositionHistory
+	var totalPnL float64
 	var err error
 	if tab == "exchange" {
 		history, err = s.service.GetExchangeHistory(r.Context(), 50)
 		if err != nil {
 			s.logger.Error("Failed to fetch exchange history", zap.Error(err))
 		}
+		totalPnL, _ = s.tradeRepo.GetTotalExchangeRealizedPnL(r.Context())
 	} else {
 		history, err = s.tradeRepo.ListPositionHistory(r.Context(), 50)
 		if err != nil {
 			s.logger.Error("Failed to fetch local history", zap.Error(err))
 		}
+		totalPnL, _ = s.tradeRepo.GetTotalRealizedPnL(r.Context())
 	}
 
-	if err := templates.ExecuteTemplate(w, "history_table", history); err != nil {
+	data := map[string]interface{}{
+		"History":  history,
+		"TotalPnL": totalPnL,
+	}
+
+	if err := templates.ExecuteTemplate(w, "history_table", data); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
 	}
 }
@@ -621,6 +650,42 @@ func (s *Server) handleLiquidity(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(clusters)
+}
+
+func (s *Server) handleBiggestOrderBook(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	currentPriceStr := r.URL.Query().Get("price")
+	var currentPrice float64
+	if currentPriceStr != "" {
+		currentPrice, _ = strconv.ParseFloat(currentPriceStr, 64)
+	}
+
+	if currentPrice == 0 {
+		currentPrice = s.service.GetLatestPrice(symbol)
+	}
+
+	if currentPrice == 0 {
+		http.Error(w, "Could not determine current price", http.StatusInternalServerError)
+		return
+	}
+
+	price, err := s.marketService.GetBiggestOrderBookPrice(r.Context(), symbol, currentPrice)
+	if err != nil {
+		s.logger.Error("Failed to get biggest order book price", zap.String("symbol", symbol), zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"symbol": symbol,
+		"price":  price,
+	})
 }
 
 func (s *Server) handleLiquidityHistory(w http.ResponseWriter, r *http.Request) {

@@ -72,6 +72,7 @@ type LevelRepository interface {
 	ListLevels(ctx context.Context) ([]*Level, error)
 	GetLevelsBySymbol(ctx context.Context, symbol string) ([]*Level, error)
 	DeleteLevel(ctx context.Context, id string) error
+	DeleteAllLevels(ctx context.Context) error
 	CountActiveLevels(ctx context.Context, symbol string) (int, error)
 
 	SaveSymbolTiers(ctx context.Context, tiers *SymbolTiers) error
@@ -100,6 +101,8 @@ type TradeRepository interface {
 	SavePositionPnLHistory(ctx context.Context, history *PositionPnLHistory) error
 	ListPositionPnLHistory(ctx context.Context, symbol string, limit int) ([]*PositionPnLHistory, error)
 	ListPositionPnLHistoryRange(ctx context.Context, symbol string, start, end time.Time) ([]*PositionPnLHistory, error)
+	GetTotalRealizedPnL(ctx context.Context) (float64, error)
+	GetTotalExchangeRealizedPnL(ctx context.Context) (float64, error)
 }
 
 type WalletRepository interface {

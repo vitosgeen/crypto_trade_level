@@ -24,6 +24,8 @@ import (
 const (
 	BybitBaseURL = "https://api.bybit.com"
 	BybitWSURL   = "wss://stream.bybit.com/v5/public/linear"
+	// BybitTakerFeeRate is the standard taker fee rate (0.055%)
+	BybitTakerFeeRate = 0.00055
 )
 
 type BybitAdapter struct {
@@ -345,7 +347,7 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 		MarkPrice:     respMark,
 		CurrentPrice:  respMark, // For backward compatibility
 		EvalPrice:     respMark, // Default to mark price until updated by ticks
-		UnrealizedPnL: respPnl,
+		UnrealizedPnL: respPnl - (size * respEntry * BybitTakerFeeRate) - (size * respMark * BybitTakerFeeRate),
 		Leverage:      respLev,
 		MarginType:    marginType,
 	}, nil
@@ -422,7 +424,7 @@ func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, er
 				MarkPrice:     mark,
 				CurrentPrice:  mark,
 				EvalPrice:     mark,
-				UnrealizedPnL: pnl,
+				UnrealizedPnL: pnl - (size * entry * BybitTakerFeeRate) - (size * mark * BybitTakerFeeRate),
 				Leverage:      lev,
 				MarginType:    marginType,
 			})
@@ -682,11 +684,14 @@ func (b *BybitAdapter) GetWalletBalance(ctx context.Context) ([]*domain.WalletBa
 		RetMsg  string `json:"retMsg"`
 		Result  struct {
 			List []struct {
-				AccountType        string `json:"accountType"`
-				TotalEquity        string `json:"totalEquity"`
-				TotalWalletBalance string `json:"totalWalletBalance"`
-				TotalAvailable     string `json:"totalAvailableBalance"`
-				Coin               []struct {
+				AccountType            string `json:"accountType"`
+				TotalEquity            string `json:"totalEquity"`
+				TotalWalletBalance     string `json:"totalWalletBalance"`
+				TotalAvailable         string `json:"totalAvailableBalance"`
+				TotalMarginBalance     string `json:"totalMarginBalance"`
+				TotalInitialMargin     string `json:"totalInitialMargin"`
+				TotalMaintenanceMargin string `json:"totalMaintenanceMargin"`
+				Coin                   []struct {
 					Coin          string `json:"coin"`
 					WalletBal     string `json:"walletBalance"`
 					Available     string `json:"availableToWithdraw"`
@@ -712,15 +717,21 @@ func (b *BybitAdapter) GetWalletBalance(ctx context.Context) ([]*domain.WalletBa
 			totalEq, _ := strconv.ParseFloat(account.TotalEquity, 64)
 			totalWal, _ := strconv.ParseFloat(account.TotalWalletBalance, 64)
 			totalAvail, _ := strconv.ParseFloat(account.TotalAvailable, 64)
+			totalMargin, _ := strconv.ParseFloat(account.TotalMarginBalance, 64)
+			totalIM, _ := strconv.ParseFloat(account.TotalInitialMargin, 64)
+			totalMM, _ := strconv.ParseFloat(account.TotalMaintenanceMargin, 64)
 
 			if totalEq > 0 || totalWal > 0 {
 				balances = append(balances, &domain.WalletBalance{
-					Coin:          "TOTAL_USD", // Synthetic coin for total account value
-					Total:         totalWal,
-					Free:          totalAvail,
-					UnrealizedPnL: totalEq - totalWal, // Approximate Upl as diff
-					Equity:        totalEq,
-					Timestamp:     time.Now(),
+					Coin:              "TOTAL_USD", // Synthetic coin for total account value
+					Total:             totalWal,
+					Free:              totalAvail,
+					UnrealizedPnL:     totalEq - totalWal, // Approximate Upl as diff
+					Equity:            totalEq,
+					MarginBalance:     totalMargin,
+					InitialMargin:     totalIM,
+					MaintenanceMargin: totalMM,
+					Timestamp:         time.Now(),
 				})
 			}
 
