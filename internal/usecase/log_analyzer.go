@@ -44,6 +44,9 @@ type AnalysisResult struct {
 	Change1h     TimeframeChange
 	Change4h     TimeframeChange
 	Change24h    TimeframeChange
+	RSI          float64
+	MACD         float64
+	MACDHist     float64
 }
 
 type LogAnalyzerService struct {
@@ -83,10 +86,13 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 
 	// Map symbol -> list of (Time, OI)
 	type Point struct {
-		Time   time.Time
-		OI     float64
-		Price  float64
-		Volume float64
+		Time     time.Time
+		OI       float64
+		Price    float64
+		Volume   float64
+		RSI      float64
+		MACD     float64
+		MACDHist float64
 	}
 	history := make(map[string][]Point)
 
@@ -100,10 +106,13 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 
 		for _, coin := range entry.Data {
 			history[coin.Symbol] = append(history[coin.Symbol], Point{
-				Time:   entry.Time,
-				OI:     coin.OpenInterest,
-				Price:  coin.LastPrice,
-				Volume: coin.Volume24h,
+				Time:     entry.Time,
+				OI:       coin.OpenInterest,
+				Price:    coin.LastPrice,
+				Volume:   coin.Volume24h,
+				RSI:      coin.RSI,
+				MACD:     coin.MACD,
+				MACDHist: coin.MACDHist,
 			})
 		}
 	}
@@ -265,6 +274,9 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 				Change1h:     calcChange(1 * time.Hour),
 				Change4h:     calcChange(4 * time.Hour),
 				Change24h:    calcChange(24 * time.Hour),
+				RSI:          current.RSI,
+				MACD:         current.MACD,
+				MACDHist:     current.MACDHist,
 			})
 		}
 	}

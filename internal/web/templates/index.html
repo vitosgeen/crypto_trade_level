@@ -412,6 +412,58 @@
             padding-top: 0 !important;
             min-width: 250px;
         }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 4px;
+            border-radius: 20px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 6px 16px;
+            border-radius: 16px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-color);
+        }
+
+        .tab-btn.active {
+            background: var(--accent-color);
+            color: #000;
+            box-shadow: 0 2px 8px rgba(0, 255, 136, 0.3);
+        }
+
+        .history-card {
+            overflow: visible;
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+        }
+
+        .history-header h2 {
+            margin-bottom: 0;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
     </style>
 </head>
 
@@ -753,19 +805,17 @@
             </div>
         </div>
 
-        <!-- Full Width: Positions History -->
-        <div class="card full-width">
-            <h2>Positions History</h2>
-            <div id="history-table" hx-get="/history" hx-trigger="load, every 10s">
-                {{ template "history_table" .History }}
+        <!-- Full Width: Positions History with Tabs -->
+        <div class="card full-width history-card">
+            <div class="history-header">
+                <h2>Positions History</h2>
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="switchHistoryTab(this, 'local')">Local</button>
+                    <button class="tab-btn" onclick="switchHistoryTab(this, 'exchange')">From Exchanger</button>
+                </div>
             </div>
-        </div>
-
-        <!-- Full Width: Exchange History -->
-        <div class="card full-width">
-            <h2>Exchange Verified History</h2>
-            <div id="exchange-history-table">
-                {{ template "history_table" .ExchangeHistory }}
+            <div id="history-table" hx-get="/history?tab=local" hx-trigger="load, every 10s">
+                {{ template "history_table" .History }}
             </div>
         </div>
 
@@ -895,6 +945,23 @@
                         <span style="color: var(--success);">OS</span>
                     </div>
                     <div class="gauge-value" id="rsi-value" style="font-size: 0.8rem;">50.00</div>
+                </div>
+
+                <!-- Gauge 7: MACD -->
+                <div class="gauge-container">
+                    <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">MACD (1m)</h3>
+                    <div class="gauge" style="width: 80px; height: 40px;">
+                        <div class="gauge-bg"
+                            style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--danger) 0deg 90deg, var(--success) 90deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="macd-needle" style="height: 35px; width: 2px;"></div>
+                        <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                    </div>
+                    <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                        <span style="color: var(--danger);">Bear</span>
+                        <span style="color: var(--success);">Bull</span>
+                    </div>
+                    <div class="gauge-value" id="macd-value" style="font-size: 0.75rem;">0.00/0.00</div>
                 </div>
 
                 <!-- Gauge 6: TSI -->
@@ -1379,6 +1446,16 @@
             addPreviewLine(shortTier3, 'S-T3', 'rgba(220, 53, 69, 0.5)');
         }
 
+        function switchHistoryTab(btn, tab) {
+            const table = document.getElementById('history-table');
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            table.setAttribute('hx-get', `/history?tab=${tab}`);
+            htmx.process(table); // Re-process for hx-get change
+            htmx.trigger(table, 'load'); // Immediate refresh
+        }
+
         function changeLevel() {
             const selector = document.getElementById('level-selector');
             selectedLevelId = selector.value;
@@ -1823,14 +1900,34 @@
                 // 8. RSI
                 if (typeof stats.rsi !== 'undefined' && stats.rsi !== null) {
                     const rsiDeg = (stats.rsi * 1.8) - 90; // Map 0->100 to -90->90
-                    const rsiNeedle = document.getElementById('rsi-gauge-needle');
+                    const rsiNeedle = document.getElementById('rsi-gauge-needle'); // Fix ID
                     if (rsiNeedle) rsiNeedle.style.transform = `rotate(${rsiDeg}deg)`;
-                    const rsiVal = document.getElementById('rsi-gauge-value');
+                    const rsiVal = document.getElementById('rsi-gauge-value'); // Fix ID
                     if (rsiVal) {
                         rsiVal.textContent = stats.rsi.toFixed(2);
                         if (stats.rsi < 30) rsiVal.style.color = 'var(--success)';
                         else if (stats.rsi > 70) rsiVal.style.color = 'var(--danger)';
                         else rsiVal.style.color = 'var(--text-color)';
+                    }
+                }
+
+                // 8b. MACD
+                if (typeof stats.macd !== 'undefined' && stats.macd !== null) {
+                    const macdNeedle = document.getElementById('macd-needle');
+                    const macdVal = document.getElementById('macd-value');
+                    if (macdNeedle) {
+                        // Map MACD Hist to -90 to 90
+                        // Since MACD Hist values are small, let's amplify them for the gauge
+                        let hist = stats.macd_hist || 0;
+                        let ratio = hist * 10; // Simple amplification
+                        if (ratio > 1) ratio = 1;
+                        if (ratio < -1) ratio = -1;
+                        const macdDeg = ratio * 90;
+                        macdNeedle.style.transform = `rotate(${macdDeg}deg)`;
+                    }
+                    if (macdVal) {
+                        macdVal.textContent = `${stats.macd.toFixed(4)}/${stats.macd_hist.toFixed(4)}`;
+                        macdVal.style.color = stats.macd_hist >= 0 ? 'var(--success)' : 'var(--danger)';
                     }
                 }
 
@@ -2357,7 +2454,7 @@
             <td>{{ printf "%.6f" .Price }}</td>
             <td
                 style="color: {{ if gt .RealizedPnL 0.0 }}var(--success){{ else if lt .RealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
-                {{ if ne .RealizedPnL 0.0 }}{{ printf "%.4f" .RealizedPnL }}{{ else }}-{{ end }}
+                {{ if ne .RealizedPnL 0.0 }}{{ printf "%.6f" .RealizedPnL }}{{ else }}-{{ end }}
             </td>
         </tr>
         {{ end }}
@@ -2449,7 +2546,7 @@
             <td>{{ printf "%.6f" .ExitPrice }}</td>
             <td
                 style="color: {{ if gt .RealizedPnL 0.0 }}var(--success){{ else if lt .RealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
-                {{ printf "%.4f" .RealizedPnL }}
+                {{ printf "%.6f" .RealizedPnL }}
             </td>
             <td>{{ .Leverage }}x</td>
             <td>{{ .MarginType }}</td>

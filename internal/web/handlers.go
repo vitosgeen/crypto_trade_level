@@ -327,6 +327,12 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save level", http.StatusInternalServerError)
 		return
 	}
+	s.logger.Info("Level created",
+		zap.String("symbol", level.Symbol),
+		zap.Float64("price", level.LevelPrice),
+		zap.String("source", level.Source),
+		zap.String("side", string(level.Side)),
+	)
 
 	// Return updated table
 	s.handleLevelsTable(w, r)
@@ -534,7 +540,15 @@ func (s *Server) handleTradesTable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHistoryTable(w http.ResponseWriter, r *http.Request) {
-	history, _ := s.tradeRepo.ListPositionHistory(r.Context(), 50)
+	tab := r.URL.Query().Get("tab")
+	var history []*domain.PositionHistory
+
+	if tab == "exchange" {
+		history, _ = s.service.GetExchangeHistory(r.Context(), 50)
+	} else {
+		history, _ = s.tradeRepo.ListPositionHistory(r.Context(), 50)
+	}
+
 	if err := templates.ExecuteTemplate(w, "history_table", history); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
 	}

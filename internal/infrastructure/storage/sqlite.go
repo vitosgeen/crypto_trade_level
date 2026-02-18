@@ -90,6 +90,20 @@ func (s *SQLiteStore) initSchema() error {
 			margin_type TEXT NOT NULL,
 			closed_at DATETIME NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS exchange_position_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			exchange TEXT NOT NULL,
+			symbol TEXT NOT NULL,
+			side TEXT NOT NULL,
+			size REAL NOT NULL,
+			entry_price REAL NOT NULL,
+			exit_price REAL NOT NULL,
+			realized_pnl REAL NOT NULL,
+			leverage INTEGER NOT NULL,
+			margin_type TEXT NOT NULL,
+			closed_at DATETIME NOT NULL
+		);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_exchange_history_unique ON exchange_position_history(exchange, symbol, closed_at, entry_price, exit_price);`,
 		`CREATE TABLE IF NOT EXISTS liquidity_snapshots (
 			symbol TEXT NOT NULL,
 			time INTEGER NOT NULL,
@@ -244,16 +258,53 @@ func (s *SQLiteStore) ListTrades(ctx context.Context, limit int) ([]*domain.Orde
 	return trades, nil
 }
 
-func (s *SQLiteStore) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+func (s *SQLiteStore) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) (int64, error) {
 	query := `INSERT INTO position_history (exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, closed_at)
 			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := s.db.ExecContext(ctx, query,
+	res, err := s.db.ExecContext(ctx, query,
 		history.Exchange, history.Symbol, history.Side, history.Size, history.EntryPrice, history.ExitPrice, history.RealizedPnL, history.Leverage, history.MarginType, history.ClosedAt)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (s *SQLiteStore) UpdatePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+	query := `UPDATE position_history SET entry_price = ?, exit_price = ?, realized_pnl = ?, closed_at = ? WHERE id = ?`
+	_, err := s.db.ExecContext(ctx, query, history.EntryPrice, history.ExitPrice, history.RealizedPnL, history.ClosedAt, history.ID)
 	return err
 }
 
 func (s *SQLiteStore) ListPositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
 	query := `SELECT id, exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, closed_at FROM position_history ORDER BY id DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []*domain.PositionHistory
+	for rows.Next() {
+		var h domain.PositionHistory
+		if err := rows.Scan(&h.ID, &h.Exchange, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.ExitPrice, &h.RealizedPnL, &h.Leverage, &h.MarginType, &h.ClosedAt); err != nil {
+			return nil, err
+		}
+		history = append(history, &h)
+	}
+	return history, nil
+}
+
+func (s *SQLiteStore) SaveExchangePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+	query := `INSERT INTO exchange_position_history (exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, closed_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			  ON CONFLICT(exchange, symbol, closed_at, entry_price, exit_price) DO NOTHING`
+	_, err := s.db.ExecContext(ctx, query,
+		history.Exchange, history.Symbol, history.Side, history.Size, history.EntryPrice, history.ExitPrice, history.RealizedPnL, history.Leverage, history.MarginType, history.ClosedAt)
+	return err
+}
+
+func (s *SQLiteStore) ListExchangePositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
+	query := `SELECT id, exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, closed_at FROM exchange_position_history ORDER BY closed_at DESC LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err

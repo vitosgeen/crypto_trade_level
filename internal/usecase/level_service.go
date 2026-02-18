@@ -455,7 +455,11 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 			}
 
 			if shouldClose {
-				if _, err := s.finalizePosition(ctx, symbol, "Sentiment Exit", "sentiment-exit", price); err != nil {
+				targetID := "sentiment-exit"
+				if activeLevel != nil {
+					targetID = activeLevel.ID
+				}
+				if _, err := s.finalizePosition(ctx, symbol, "Sentiment Exit", targetID, price); err != nil {
 					log.Printf("Failed to finalize position on sentiment: %v", err)
 				}
 				return nil
@@ -686,7 +690,8 @@ func (s *LevelService) CheckSafety(ctx context.Context) {
 		}
 
 		if shouldClose {
-			if _, err := s.finalizePosition(ctx, symbol, "Safety Exit", "safety-exit", price); err != nil {
+			targetID := relevantLevel.ID
+			if _, err := s.finalizePosition(ctx, symbol, "Safety Exit", targetID, price); err != nil {
 				log.Printf("SAFETY: Failed to finalize position for %s: %v", symbol, err)
 			} else {
 				log.Printf("SAFETY: Closed position for %s", symbol)
@@ -749,15 +754,13 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 	var side domain.Side = "UNKNOWN"
 	var size float64
 	var entryPrice float64
-	var leverage int
-	var marginType string
 
 	if pos != nil && pos.Size > 0 {
 		side = pos.Side
 		size = pos.Size
 		entryPrice = pos.EntryPrice
-		leverage = pos.Leverage
-		marginType = pos.MarginType
+		leverage := pos.Leverage
+		marginType := pos.MarginType
 
 		if side == domain.SideLong {
 			realizedPnL = (price - entryPrice) * size
@@ -768,7 +771,7 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 		log.Printf("FINALIZE: Symbol: %s, Side: %s, Size: %f, Entry: %f, Exit: %f, Calculated Realized PnL: %f",
 			symbol, side, size, entryPrice, price, realizedPnL)
 
-		// Save Position History
+		// Save Position History (Initial estimation)
 		history := &domain.PositionHistory{
 			Exchange:    pos.Exchange,
 			Symbol:      pos.Symbol,
@@ -781,8 +784,34 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 			MarginType:  marginType,
 			ClosedAt:    time.Now(),
 		}
-		if err := s.tradeRepo.SavePositionHistory(ctx, history); err != nil {
+
+		historyID, err := s.tradeRepo.SavePositionHistory(ctx, history)
+		if err != nil {
 			log.Printf("Failed to save position history: %v", err)
+		} else {
+			// SYNC: Start a goroutine to fetch actual exchange data and update this record
+			go func(hID int64, sym string, sde domain.Side) {
+				time.Sleep(2 * time.Second) // Wait for exchange to record PnL
+				// Use a fresh context for background sync
+				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				actualHistory, err := s.exchange.GetClosedPnL(bgCtx, sym, 5)
+				if err == nil {
+					for _, ah := range actualHistory {
+						// Match by side and recent time
+						if ah.Side == sde && time.Since(ah.ClosedAt) < 30*time.Second {
+							ah.ID = hID // Set the ID for update
+							if err := s.tradeRepo.UpdatePositionHistory(bgCtx, ah); err != nil {
+								log.Printf("SYNC: Failed to update position history %d: %v", hID, err)
+							} else {
+								log.Printf("SYNC: Updated history %d with real exchange data (PnL: %f)", hID, ah.RealizedPnL)
+							}
+							break
+						}
+					}
+				}
+			}(historyID, symbol, side)
 		}
 	}
 
@@ -880,6 +909,18 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 				}
 			}
 		})
+	}
+
+	// 8. Close level if profit was achieved
+	if realizedPnL > 0 && levelID != "" && levelID != "unknown" &&
+		levelID != "sentiment-exit" && levelID != "safety-exit" && levelID != "manual-close" {
+		log.Printf("FINALIZE: Level %s achieved profit (%f). Deleting level.", levelID, realizedPnL)
+		if err := s.levelRepo.DeleteLevel(ctx, levelID); err != nil {
+			log.Printf("FINALIZE: Failed to delete level %s after profit: %v", levelID, err)
+		} else {
+			// Update cache to reflect deletion immediately
+			s.UpdateCache(ctx)
+		}
 	}
 
 	return realizedPnL, nil
@@ -1285,7 +1326,23 @@ func (s *LevelService) IncrementBaseCloses(ctx context.Context, levelID string) 
 	return nil
 }
 
-// GetExchangeHistory fetches the closed PnL history directly from the exchange.
+// GetExchangeHistory fetches the closed PnL history from the exchange, saves new entries to DB, and returns consolidated history.
 func (s *LevelService) GetExchangeHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
-	return s.exchange.GetClosedPnL(ctx, "", limit)
+	// 1. Fetch from exchange (get a bit more than limit to ensure we sync enough)
+	exchangeHistory, err := s.exchange.GetClosedPnL(ctx, "", 50)
+	if err == nil {
+		// 2. Save new entries to DB
+		for _, h := range exchangeHistory {
+			if err := s.tradeRepo.SaveExchangePositionHistory(ctx, h); err != nil {
+				// We don't want to fail the whole request if one save fails (e.g. unique constraint)
+				// But our SaveExchangePositionHistory uses ON CONFLICT DO NOTHING, so it should be fine.
+				log.Printf("Warning: Failed to save exchange history item: %v", err)
+			}
+		}
+	} else {
+		log.Printf("Error: Failed to fetch exchange history: %v", err)
+	}
+
+	// 3. Return from DB
+	return s.tradeRepo.ListExchangePositionHistory(ctx, limit)
 }

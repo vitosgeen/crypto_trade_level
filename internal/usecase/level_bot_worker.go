@@ -158,8 +158,8 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 		return allCoins[i].OpenInterestValue > allCoins[j].OpenInterestValue
 	})
 
-	// Take top coins to calculate range (limit to 60 for performance)
-	limit := 60
+	// Take top coins to calculate range (increased limit to 200 for better market coverage)
+	limit := 200
 	if len(allCoins) < limit {
 		limit = len(allCoins)
 	}
@@ -183,11 +183,30 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 			defer func() { <-semaphore }()
 
 			symbol := allCoins[idx].Symbol
-			// Range 10m: 10 x 1m candles
-			candles10m, _ := w.service.GetExchange().GetCandles(ctx, symbol, "1", 10)
-			if len(candles10m) > 0 {
-				minL, maxH := candles10m[0].Low, candles10m[0].High
-				for _, c := range candles10m {
+			// 4. RSI & MACD (1m)
+			// We fetch 100 candles once and use them for both RSI and MACD
+			candles1m, err := w.service.GetExchange().GetCandles(ctx, symbol, "1", 100)
+			if err == nil && len(candles1m) >= 34 {
+				// Calculate RSI
+				rsi := w.service.market.CalculateRSI(candles1m, 14)
+				if len(rsi) > 0 {
+					allCoins[idx].RSI = rsi[len(rsi)-1]
+				}
+
+				// Calculate MACD
+				macd, signal, hist := w.service.market.CalculateMACD(candles1m, 12, 26, 9)
+				if len(macd) > 0 {
+					allCoins[idx].MACD = macd[len(macd)-1]
+					allCoins[idx].MACDSignal = signal[len(signal)-1]
+					allCoins[idx].MACDHist = hist[len(hist)-1]
+				}
+			}
+
+			// Range 10m: use the candles we already fetched (candles1m)
+			if len(candles1m) >= 10 {
+				last10 := candles1m[len(candles1m)-10:]
+				minL, maxH := last10[0].Low, last10[0].High
+				for _, c := range last10 {
 					if c.Low < minL {
 						minL = c.Low
 					}
@@ -200,7 +219,7 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 					allCoins[idx].Max10m = maxH
 					allCoins[idx].Min10m = minL
 					// Trend: Current vs Start of range
-					startPrice := candles10m[0].Open
+					startPrice := last10[0].Open
 					if allCoins[idx].LastPrice > startPrice {
 						allCoins[idx].Trend10m = "up"
 					} else if allCoins[idx].LastPrice < startPrice {
@@ -209,11 +228,11 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 				}
 			}
 
-			// Range 1h: 60 x 1m candles (safer than 1h candle if it just started)
-			candles1h, _ := w.service.GetExchange().GetCandles(ctx, symbol, "1", 60)
-			if len(candles1h) > 0 {
-				minL, maxH := candles1h[0].Low, candles1h[0].High
-				for _, c := range candles1h {
+			// Range 1h: use the candles we already fetched (candles1m)
+			if len(candles1m) >= 60 {
+				last60 := candles1m[len(candles1m)-60:]
+				minL, maxH := last60[0].Low, last60[0].High
+				for _, c := range last60 {
 					if c.Low < minL {
 						minL = c.Low
 					}
@@ -226,13 +245,16 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 					allCoins[idx].Max1h = maxH
 					allCoins[idx].Min1h = minL
 					// Trend: Current vs Start of range
-					startPrice := candles1h[0].Open
+					startPrice := last60[0].Open
 					if allCoins[idx].LastPrice > startPrice {
 						allCoins[idx].Trend1h = "up"
 					} else if allCoins[idx].LastPrice < startPrice {
 						allCoins[idx].Trend1h = "down"
 					}
 				}
+			} else {
+				// Fallback if not enough 1m candles for 1h range directly from this fetch
+				// but we fetched 100, so 60 should be there.
 			}
 
 			// Range 4h: 4 x 60m candles (last 4 hours)

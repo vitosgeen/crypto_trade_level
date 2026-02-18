@@ -168,6 +168,9 @@ type MarketStats struct {
 	ConclusionScore10s float64         `json:"conclusion_score_10s"`
 	LastPrice          float64         `json:"last_price"`
 	RSI                float64         `json:"rsi"`
+	MACD               float64         `json:"macd"`
+	MACDSignal         float64         `json:"macd_signal"`
+	MACDHist           float64         `json:"macd_hist"`
 	WSStatus           domain.WSStatus `json:"ws_status"`
 }
 
@@ -466,6 +469,9 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 	// 7. RSI (1m)
 	rsi, _ := s.GetRSI(ctx, symbol, "1", 14)
 
+	// 8. MACD (1m)
+	macd, signal, hist, _ := s.GetMACD(ctx, symbol, "1", 12, 26, 9)
+
 	return &MarketStats{
 		SpeedBuy:           speedBuy,
 		SpeedSell:          speedSell,
@@ -488,6 +494,9 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		ConclusionScore10s: conclusionScore10s,
 		LastPrice:          lastPrice,
 		RSI:                rsi,
+		MACD:               macd,
+		MACDSignal:         signal,
+		MACDHist:           hist,
 		WSStatus:           s.exchange.GetWSStatus(),
 	}, nil
 }
@@ -1022,4 +1031,83 @@ func (s *MarketService) CalculateRSI(candles []domain.Candle, period int) []floa
 	}
 
 	return rsiValues
+}
+
+func (s *MarketService) GetMACD(ctx context.Context, symbol, interval string, fastPeriod, slowPeriod, signalPeriod int) (macd, signal, hist float64, err error) {
+	// Needed candles: slowPeriod (for first EMA) + signalPeriod (for signal line) + some warmup
+	needed := slowPeriod + signalPeriod + 50
+	candles, err := s.exchange.GetCandles(ctx, symbol, interval, needed)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if len(candles) < slowPeriod {
+		return 0, 0, 0, fmt.Errorf("not enough candles for MACD (got %d, need %d)", len(candles), slowPeriod)
+	}
+
+	macdValues, signalValues, histValues := s.CalculateMACD(candles, fastPeriod, slowPeriod, signalPeriod)
+	if len(macdValues) == 0 {
+		return 0, 0, 0, fmt.Errorf("not enough data for MACD calculation")
+	}
+
+	return macdValues[len(macdValues)-1], signalValues[len(signalValues)-1], histValues[len(histValues)-1], nil
+}
+
+func (s *MarketService) CalculateMACD(candles []domain.Candle, fastPeriod, slowPeriod, signalPeriod int) (macd, signal, hist []float64) {
+	if len(candles) < slowPeriod {
+		return nil, nil, nil
+	}
+
+	prices := make([]float64, len(candles))
+	for i, c := range candles {
+		prices[i] = c.Close
+	}
+
+	fastEMA := s.CalculateEMA(prices, fastPeriod)
+	slowEMA := s.CalculateEMA(prices, slowPeriod)
+
+	// Since slowEMA starts at index slowPeriod-1, and fastEMA starts at fastPeriod-1,
+	// we need to align them. Both will have a value at index i >= slowPeriod-1.
+
+	macdLine := make([]float64, 0)
+	for i := slowPeriod - 1; i < len(prices); i++ {
+		macdLine = append(macdLine, fastEMA[i]-slowEMA[i])
+	}
+
+	if len(macdLine) < signalPeriod {
+		return macdLine, nil, nil
+	}
+
+	signalLine := s.CalculateEMA(macdLine, signalPeriod)
+
+	// Align MACD and Signal
+	startIdx := signalPeriod - 1
+	macdRet := macdLine[startIdx:]
+	signalRet := signalLine[startIdx:]
+	histRet := make([]float64, len(macdRet))
+
+	for i := 0; i < len(macdRet); i++ {
+		histRet[i] = macdRet[i] - signalRet[i]
+	}
+
+	return macdRet, signalRet, histRet
+}
+
+func (s *MarketService) CalculateEMA(values []float64, period int) []float64 {
+	if len(values) < period {
+		return nil
+	}
+	ema := make([]float64, len(values))
+	k := 2.0 / float64(period+1)
+
+	// SMA for first value
+	var sum float64
+	for i := 0; i < period; i++ {
+		sum += values[i]
+	}
+	ema[period-1] = sum / float64(period)
+
+	for i := period; i < len(values); i++ {
+		ema[i] = values[i]*k + ema[i-1]*(1-k)
+	}
+	return ema
 }

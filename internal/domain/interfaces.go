@@ -83,8 +83,13 @@ type TradeRepository interface {
 	SaveTrade(ctx context.Context, order *Order) error
 	ListTrades(ctx context.Context, limit int) ([]*Order, error)
 
-	SavePositionHistory(ctx context.Context, history *PositionHistory) error
+	SavePositionHistory(ctx context.Context, history *PositionHistory) (int64, error)
+	UpdatePositionHistory(ctx context.Context, history *PositionHistory) error
 	ListPositionHistory(ctx context.Context, limit int) ([]*PositionHistory, error)
+
+	SaveExchangePositionHistory(ctx context.Context, history *PositionHistory) error
+	ListExchangePositionHistory(ctx context.Context, limit int) ([]*PositionHistory, error)
+
 	SaveTradeSessionLog(ctx context.Context, log *TradeSessionLog) error
 	ListTradeSessionLogs(ctx context.Context, symbol string, limit int) ([]*TradeSessionLog, error)
 	GetTradeSessionLog(ctx context.Context, id string) (*TradeSessionLog, error)

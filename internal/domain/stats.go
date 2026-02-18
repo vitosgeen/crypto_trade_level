@@ -34,4 +34,7 @@ type CoinData struct {
 	Near24hMax        bool
 	Near24hMin        bool
 	RSI               float64
+	MACD              float64
+	MACDSignal        float64
+	MACDHist          float64
 }

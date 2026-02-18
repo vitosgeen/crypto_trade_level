@@ -310,6 +310,9 @@
                         <option value="0" selected>0 (Never mind)</option>
                         <option value="1">1 C</option>
                         <option value="2">2 C or more</option>
+                        <option value="3">3 C or more</option>
+                        <option value="4">4 C or more</option>
+                        <option value="5">5 C or more</option>
                     </select>
                 </div>
                 <div>
@@ -465,6 +468,8 @@
                             <th onclick="sortTable(5)">1h Change <span id="sort5"></span></th>
                             <th onclick="sortTable(6)">4h Change <span id="sort6"></span></th>
                             <th onclick="sortTable(7)">24h Change <span id="sort7"></span></th>
+                            <th onclick="sortTable(8)">RSI (1m) <span id="sort8"></span></th>
+                            <th onclick="sortTable(9)">MACD (1m) <span id="sort9"></span></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -507,7 +512,7 @@
     </div>
 
     <script>
-        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1];
+        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
         let currentSortColumn = 1;
 
         // Chart Instances
@@ -665,7 +670,7 @@
         // Let's just update headers dynamically.
 
         function updateSortIcons(activeIndex, direction) {
-            for (let i = 0; i <= 7; i++) {
+            for (let i = 0; i <= 9; i++) {
                 const span = document.getElementById(`sort${i}`);
                 if (!span) continue;
                 if (i === activeIndex) {
@@ -906,32 +911,42 @@
                             const mode = document.getElementById('autoPriceMode').value;
                             const realPcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
 
+                            const minPrice = cell.getAttribute('data-min-price');
+                            const maxPrice = cell.getAttribute('data-max-price');
+                            const timeframeName = document.getElementById('monitorTimeframe').options[document.getElementById('monitorTimeframe').selectedIndex].text;
+                            const rsi = row.cells[8].getAttribute('data-val') || 0;
+
                             if (mode === 'current') {
                                 targetPrice = currentPrice;
                             } else if (mode === 'extremes') {
                                 if (realPcntChange < 0) {
                                     // change - : highest price
-                                    targetPrice = cell.getAttribute('data-max-price');
+                                    targetPrice = maxPrice;
                                 } else {
                                     // change + : lowest price
-                                    targetPrice = cell.getAttribute('data-min-price');
+                                    targetPrice = minPrice;
                                 }
                             } else if (mode === 'extremes_opposite') {
                                 if (realPcntChange < 0) {
                                     // change - : lowest price
-                                    targetPrice = cell.getAttribute('data-min-price');
+                                    targetPrice = minPrice;
                                 } else {
                                     // change + : highest price
-                                    targetPrice = cell.getAttribute('data-max-price');
+                                    targetPrice = maxPrice;
                                 }
                             }
 
                             if (targetPrice) {
                                 levelRequests.push({
                                     symbol: symbol,
-                                    price: targetPrice
+                                    price: targetPrice,
+                                    min: minPrice,
+                                    max: maxPrice,
+                                    timeframe: timeframeName,
+                                    rsi: rsi
                                 });
-                            } else {
+                            }
+                            else {
                                 console.warn(`Could not determine target price for ${symbol} with mode ${mode}`);
                             }
                         } else {
@@ -973,13 +988,13 @@
                         console.log("Triggering auto-creation for:", levelRequests);
                     }
                     levelRequests.forEach(req => {
-                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3);
+                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi);
                     });
                 }
             }
         }
 
-        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3) {
+        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, min, max, timeframe, rsi) {
             console.log(`Sending create request for ${symbol} @ ${price}`);
 
             // Calculate Base Size (Coin Quantity) from USDT Size
@@ -1033,7 +1048,7 @@
                     const logDiv = document.getElementById('alertLog');
                     const entry = document.createElement('div');
                     entry.style.color = 'var(--accent-color)';
-                    entry.innerText = `>>> Auto-created level for ${symbol} @ $${price}`;
+                    entry.innerText = `>>> Auto-created level for ${symbol} @ $${price} | RSI: ${parseFloat(rsi).toFixed(1)} | Range [${timeframe}]: Min $${min} - Max $${max}`;
                     logDiv.appendChild(entry);
                     logDiv.scrollTop = logDiv.scrollHeight;
                 } else {
@@ -1115,7 +1130,12 @@
             const tier2 = document.getElementById('autoLevelTier2').value;
             const tier3 = document.getElementById('autoLevelTier3').value;
 
-            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3);
+            const minPrice = cell.getAttribute('data-min-price');
+            const maxPrice = cell.getAttribute('data-max-price');
+            const timeframeName = document.getElementById('monitorTimeframe').options[document.getElementById('monitorTimeframe').selectedIndex].text;
+            const rsi = row.cells[8].getAttribute('data-val') || 0;
+
+            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi);
         }
 
         // Set initial time

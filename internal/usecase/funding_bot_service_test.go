@@ -72,10 +72,19 @@ func (m *MockTradeRepo) SaveTrade(ctx context.Context, order *domain.Order) erro
 func (m *MockTradeRepo) ListTrades(ctx context.Context, limit int) ([]*domain.Order, error) {
 	return nil, nil
 }
-func (m *MockTradeRepo) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+func (m *MockTradeRepo) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) (int64, error) {
+	return 1, nil
+}
+func (m *MockTradeRepo) UpdatePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
 	return nil
 }
 func (m *MockTradeRepo) ListPositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
+	return nil, nil
+}
+func (m *MockTradeRepo) SaveExchangePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+	return nil
+}
+func (m *MockTradeRepo) ListExchangePositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
 	return nil, nil
 }
 func (m *MockTradeRepo) SaveTradeSessionLog(ctx context.Context, log *domain.TradeSessionLog) error {
