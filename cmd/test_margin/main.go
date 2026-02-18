@@ -28,7 +28,7 @@ func main() {
 	fmt.Println("Testing margin mode setting...")
 
 	// This will call setMarginMode internally
-	err := client.MarketBuy(context.Background(), "BTCUSDT", 0.001, 10, "isolated", 0.0)
+	err := client.MarketBuy(context.Background(), "BTCUSDT", 0.001, 10, "isolated", 0.0, 0.0)
 	if err != nil {
 		log.Printf("Error: %v", err)
 	} else {

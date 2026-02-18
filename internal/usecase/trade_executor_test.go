@@ -14,7 +14,7 @@ func TestTradeExecutor_Execute(t *testing.T) {
 	ctx := context.Background()
 
 	// Test Long
-	err := executor.Execute(ctx, "BTCUSDT", domain.SideLong, 0.1, 10, "isolated", 0.0)
+	err := executor.Execute(ctx, "BTCUSDT", domain.SideLong, 0.1, 10, "isolated", 0.0, 0.0)
 	if err != nil {
 		t.Errorf("Execute Long failed: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestTradeExecutor_Execute(t *testing.T) {
 	}
 
 	// Test Short
-	err = executor.Execute(ctx, "BTCUSDT", domain.SideShort, 0.1, 10, "isolated", 0.0)
+	err = executor.Execute(ctx, "BTCUSDT", domain.SideShort, 0.1, 10, "isolated", 0.0, 0.0)
 	if err != nil {
 		t.Errorf("Execute Short failed: %v", err)
 	}

@@ -27,7 +27,7 @@ func (m *MockExchange) GetCurrentPrice(ctx context.Context, symbol string) (floa
 	return m.Price, nil
 }
 
-func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	m.BuyCalled = true
 	if m.Position == nil {
 		m.Position = &domain.Position{
@@ -43,7 +43,7 @@ func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float6
 	return nil
 }
 
-func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	m.SellCalled = true
 	if m.Position == nil {
 		m.Position = &domain.Position{

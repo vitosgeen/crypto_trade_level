@@ -8,8 +8,8 @@ import (
 // Exchange defines the interface for interacting with a crypto exchange.
 type Exchange interface {
 	GetCurrentPrice(ctx context.Context, symbol string) (float64, error)
-	MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error
-	MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error
+	MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error
+	MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error
 	ClosePosition(ctx context.Context, symbol string) error
 	GetPosition(ctx context.Context, symbol string) (*Position, error)
 	GetPositions(ctx context.Context) ([]*Position, error)

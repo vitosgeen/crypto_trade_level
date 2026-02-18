@@ -29,6 +29,7 @@ type LevelState struct {
 	RangeHigh             float64   // Highest price observed during active period
 	RangeLow              float64   // Lowest price observed during active period
 	OpenedAt              time.Time // When the position was first opened tracking started
+	CleanupInProgress     bool      // Prevents multiple cleanup routines for the same level close
 }
 
 type SublevelEngine struct {
@@ -74,6 +75,7 @@ func (e *SublevelEngine) ResetState(levelID string) {
 		s.Tier3Triggered = false
 		s.ActiveSide = ""
 		s.OpenedAt = time.Time{}
+		s.CleanupInProgress = false
 		// ConsecutiveWins is preserved
 		// ConsecutiveBaseCloses is preserved
 		// DisabledUntil is preserved

@@ -47,6 +47,7 @@ type AnalysisResult struct {
 	RSI          float64
 	MACD         float64
 	MACDHist     float64
+	ShadowPcnt   float64
 }
 
 type LogAnalyzerService struct {
@@ -86,13 +87,14 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 
 	// Map symbol -> list of (Time, OI)
 	type Point struct {
-		Time     time.Time
-		OI       float64
-		Price    float64
-		Volume   float64
-		RSI      float64
-		MACD     float64
-		MACDHist float64
+		Time       time.Time
+		OI         float64
+		Price      float64
+		Volume     float64
+		RSI        float64
+		MACD       float64
+		MACDHist   float64
+		ShadowPcnt float64
 	}
 	history := make(map[string][]Point)
 
@@ -106,13 +108,14 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 
 		for _, coin := range entry.Data {
 			history[coin.Symbol] = append(history[coin.Symbol], Point{
-				Time:     entry.Time,
-				OI:       coin.OpenInterest,
-				Price:    coin.LastPrice,
-				Volume:   coin.Volume24h,
-				RSI:      coin.RSI,
-				MACD:     coin.MACD,
-				MACDHist: coin.MACDHist,
+				Time:       entry.Time,
+				OI:         coin.OpenInterest,
+				Price:      coin.LastPrice,
+				Volume:     coin.Volume24h,
+				RSI:        coin.RSI,
+				MACD:       coin.MACD,
+				MACDHist:   coin.MACDHist,
+				ShadowPcnt: coin.ShadowPcnt,
 			})
 		}
 	}
@@ -277,6 +280,7 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 				RSI:          current.RSI,
 				MACD:         current.MACD,
 				MACDHist:     current.MACDHist,
+				ShadowPcnt:   current.ShadowPcnt,
 			})
 		}
 	}

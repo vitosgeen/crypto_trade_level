@@ -232,7 +232,7 @@ func (b *SpeedBot) evaluate(ctx context.Context) error {
 			zap.Float64("size", b.config.PositionSize))
 
 		return b.exchange.MarketBuy(ctx, b.config.Symbol, b.config.PositionSize,
-			b.config.Leverage, b.config.MarginType, 0)
+			b.config.Leverage, b.config.MarginType, 0, 0)
 	}
 
 	if shortSignal {
@@ -241,7 +241,7 @@ func (b *SpeedBot) evaluate(ctx context.Context) error {
 			zap.Float64("size", b.config.PositionSize))
 
 		return b.exchange.MarketSell(ctx, b.config.Symbol, b.config.PositionSize,
-			b.config.Leverage, b.config.MarginType, 0)
+			b.config.Leverage, b.config.MarginType, 0, 0)
 	}
 
 	return nil

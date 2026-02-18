@@ -37,4 +37,5 @@ type CoinData struct {
 	MACD              float64
 	MACDSignal        float64
 	MACDHist          float64
+	ShadowPcnt        float64 // Average wick percentage (total shadows / total range)
 }

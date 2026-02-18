@@ -181,6 +181,11 @@
         <span class="change-flat">-</span>
         {{end}}
     </td>
+    <!-- Shadow % -->
+    <td data-val="{{.ShadowPcnt}}" title="Average Wick Percentage (Shadow / Range)"
+        style="font-family: monospace; color: var(--text-muted);">
+        {{if gt .ShadowPcnt 0.0}}{{printf "%.1f" .ShadowPcnt}}%{{else}}-{{end}}
+    </td>
     <!-- RSI -->
     <td data-val="{{.RSI}}"
         style="font-family: monospace; font-weight: 600; color: {{if ge .RSI 70.0}}var(--danger){{else if le .RSI 30.0}}var(--success){{else}}var(--text-color){{end}}">

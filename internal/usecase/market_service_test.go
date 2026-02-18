@@ -21,10 +21,10 @@ func (m *MockExchange) GetOrderBook(ctx context.Context, symbol string, category
 func (m *MockExchange) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
 	return 0, nil
 }
-func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	return nil
 }
-func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	return nil
 }
 func (m *MockExchange) ClosePosition(ctx context.Context, symbol string) error { return nil }

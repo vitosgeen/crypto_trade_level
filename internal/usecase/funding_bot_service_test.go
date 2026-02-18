@@ -132,10 +132,10 @@ func (m *MockFundingExchange) GetInstruments(ctx context.Context, category strin
 func (m *MockFundingExchange) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
 	return nil, nil
 }
-func (m *MockFundingExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockFundingExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	return nil
 }
-func (m *MockFundingExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockFundingExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	return nil
 }
 func (m *MockFundingExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {

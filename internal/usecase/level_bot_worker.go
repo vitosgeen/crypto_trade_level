@@ -200,6 +200,28 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 					allCoins[idx].MACDSignal = signal[len(signal)-1]
 					allCoins[idx].MACDHist = hist[len(hist)-1]
 				}
+
+				// Calculate Average Shadow % (Wickiness) over last 60 candles
+				count := 0
+				totalShadowPcnt := 0.0
+				limitShadow := 60
+				if len(candles1m) < limitShadow {
+					limitShadow = len(candles1m)
+				}
+				// Use most recent candles
+				for j := len(candles1m) - limitShadow; j < len(candles1m); j++ {
+					c := candles1m[j]
+					rng := c.High - c.Low
+					if rng > 0 {
+						body := math.Abs(c.Open - c.Close)
+						shadows := rng - body
+						totalShadowPcnt += (shadows / rng) * 100
+						count++
+					}
+				}
+				if count > 0 {
+					allCoins[idx].ShadowPcnt = totalShadowPcnt / float64(count)
+				}
 			}
 
 			// Range 10m: use the candles we already fetched (candles1m)

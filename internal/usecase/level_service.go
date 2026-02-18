@@ -486,10 +486,18 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 		// We add a 10s buffer to avoid race conditions with just-opened positions where API might lag.
 		if pos != nil && pos.Size == 0 {
 			if time.Since(state.LastTriggerTime) > 10*time.Second {
-				log.Printf("STATE SYNC: Position for %s (Level %s) is closed (Size 0). Resetting state.", level.Symbol, level.ID)
-				s.engine.ResetState(level.ID)
-				// Refresh state variable after reset
-				state = s.engine.GetState(level.ID)
+				// Prevent spawning multiple routines
+				if !state.CleanupInProgress {
+					log.Printf("STATE SYNC: Position for %s (Level %s) is closed (Size 0). Starting async cleanup.", level.Symbol, level.ID)
+
+					// Mark cleanup in progress
+					s.engine.UpdateState(level.ID, func(s *LevelState) {
+						s.CleanupInProgress = true
+					})
+
+					// Launch async cleanup
+					go s.handleExternalCloseAsync(ctx, level)
+				}
 			}
 		}
 	}
@@ -594,8 +602,16 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 		if level.StopLossAtBase && level.StopLossMode == "exchange" {
 			stopLoss = level.LevelPrice
 		}
+		takeProfit := 0.0
+		if level.TakeProfitMode == "exchange" && level.TakeProfitPct > 0 {
+			if side == domain.SideLong {
+				takeProfit = currPrice * (1 + level.TakeProfitPct)
+			} else {
+				takeProfit = currPrice * (1 - level.TakeProfitPct)
+			}
+		}
 
-		err := s.executor.Execute(ctx, level.Symbol, side, size, level.Leverage, level.MarginType, stopLoss)
+		err := s.executor.Execute(ctx, level.Symbol, side, size, level.Leverage, level.MarginType, stopLoss, takeProfit)
 		if err != nil {
 			log.Printf("Failed to execute trade: %v", err)
 			return
@@ -1426,4 +1442,73 @@ func (s *LevelService) GetExchangeHistory(ctx context.Context, limit int) ([]*do
 
 	// 3. Return from DB
 	return s.tradeRepo.ListExchangePositionHistory(ctx, limit)
+}
+
+func (s *LevelService) handleExternalCloseAsync(ctx context.Context, level *domain.Level) {
+	// Retry loop to catch PnL record which might lag
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	timeout := time.After(45 * time.Second) // Try for 45 seconds
+
+	for {
+		select {
+		case <-timeout:
+			log.Printf("Async Cleanup Timeout for %s (Level %s). Providing state reset.", level.Symbol, level.ID)
+			s.engine.UpdateState(level.ID, func(s *LevelState) {
+				s.CleanupInProgress = false
+			})
+			s.engine.ResetState(level.ID)
+			return
+		case <-ticker.C:
+			// Try to record
+			if s.recordExternalClose(context.Background(), level) {
+				// Success! Level is deleted inside recordExternalClose.
+				// We don't need to reset state as level is gone.
+				return
+			}
+		}
+	}
+}
+
+func (s *LevelService) recordExternalClose(ctx context.Context, level *domain.Level) bool {
+	// Try to fetch the very latest closed PnL item
+	history, err := s.exchange.GetClosedPnL(ctx, level.Symbol, 1)
+	if err != nil {
+		// log.Printf("Failed to fetch closed PnL for %s during sync: %v", level.Symbol, err)
+		return false
+	}
+	if len(history) == 0 {
+		return false // No history found
+	}
+
+	latest := history[0]
+	// Check recency: if closed more than 2 minutes ago, assume it's old news.
+	if time.Since(latest.ClosedAt) > 2*time.Minute {
+		// Found history but it's old. This means the new close hasn't appeared yet.
+		return false
+	}
+
+	// Enrich with Level Info since Exchange doesn't know it
+	latest.LevelID = level.ID
+	latest.Source = "Exchange Trigger" // e.g. TP/SL on exchange
+	latest.AnalysisJSON = level.AnalysisJSON
+
+	// Save to Local History
+	if _, err := s.tradeRepo.SavePositionHistory(ctx, latest); err != nil {
+		// Log but don't fail, it might be a duplicate
+		// log.Printf("Failed to save external history for %s: %v", level.Symbol, err)
+	} else {
+		log.Printf("Captured external close for %s (Level %s): PnL %f", level.Symbol, level.ID, latest.RealizedPnL)
+
+		// DELETE LEVEL (External Close = Used)
+		if err := s.levelRepo.DeleteLevel(ctx, level.ID); err != nil {
+			log.Printf("Sync: Failed to delete level %s after external close: %v", level.ID, err)
+		} else {
+			log.Printf("AUTO-DELETE: Deleted level %s after external close", level.ID)
+			s.UpdateCache(ctx)
+		}
+		return true // SUCCESS
+	}
+	return true // Saved or duplicate, accept as success
 }

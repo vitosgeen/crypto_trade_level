@@ -35,7 +35,6 @@ type BybitAdapter struct {
 	wsURL          string
 	client         *http.Client
 	wsConn         *websocket.Conn
-	wsDone         chan struct{}
 	pingTicker     *time.Ticker
 	pingDone       chan struct{}
 	callbacks      []func(symbol string, price float64)
@@ -59,7 +58,6 @@ func NewBybitAdapter(apiKey, apiSecret, baseURL, wsURL string) *BybitAdapter {
 		baseURL:   baseURL,
 		wsURL:     wsURL,
 		client:    &http.Client{Timeout: 10 * time.Second},
-		wsDone:    make(chan struct{}),
 	}
 }
 
@@ -156,7 +154,7 @@ func (b *BybitAdapter) GetCurrentPrice(ctx context.Context, symbol string) (floa
 	return strconv.ParseFloat(result.Result.List[0].LastPrice, 64)
 }
 
-func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	// 1. Set Margin Mode (isolated/cross)
 	b.setMarginMode(ctx, symbol, marginType)
 
@@ -169,13 +167,18 @@ func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side strin
 		"symbol":      symbol,
 		"side":        side,
 		"orderType":   "Market",
-		"qty":         fmt.Sprintf("%f", size),
+		"qty":         strconv.FormatFloat(size, 'f', -1, 64),
 		"timeInForce": "GTC",
 	}
 
 	// Add Stop Loss if provided
 	if stopLoss > 0 {
-		payload["stopLoss"] = fmt.Sprintf("%f", stopLoss)
+		payload["stopLoss"] = strconv.FormatFloat(stopLoss, 'f', -1, 64)
+	}
+
+	// Add Take Profit if provided
+	if takeProfit > 0 {
+		payload["takeProfit"] = strconv.FormatFloat(takeProfit, 'f', -1, 64)
 	}
 
 	resp, err := b.sendRequest(ctx, "POST", "/v5/order/create", payload)
@@ -235,12 +238,12 @@ func (b *BybitAdapter) setMarginMode(ctx context.Context, symbol string, marginM
 	}
 }
 
-func (b *BybitAdapter) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
-	return b.placeOrder(ctx, symbol, "Buy", size, leverage, marginType, stopLoss)
+func (b *BybitAdapter) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
+	return b.placeOrder(ctx, symbol, "Buy", size, leverage, marginType, stopLoss, takeProfit)
 }
 
-func (b *BybitAdapter) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
-	return b.placeOrder(ctx, symbol, "Sell", size, leverage, marginType, stopLoss)
+func (b *BybitAdapter) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
+	return b.placeOrder(ctx, symbol, "Sell", size, leverage, marginType, stopLoss, takeProfit)
 }
 
 func (b *BybitAdapter) ClosePosition(ctx context.Context, symbol string) error {
@@ -263,7 +266,7 @@ func (b *BybitAdapter) ClosePosition(ctx context.Context, symbol string) error {
 		"symbol":     symbol,
 		"side":       closeSide,
 		"orderType":  "Market",
-		"qty":        fmt.Sprintf("%f", pos.Size),
+		"qty":        strconv.FormatFloat(pos.Size, 'f', -1, 64),
 		"reduceOnly": true,
 	}
 
@@ -468,13 +471,13 @@ func (b *BybitAdapter) PlaceOrder(ctx context.Context, order *domain.Order) (*do
 		"symbol":      order.Symbol,
 		"side":        side,
 		"orderType":   order.Type,
-		"qty":         fmt.Sprintf("%f", order.Size),
+		"qty":         strconv.FormatFloat(order.Size, 'f', -1, 64),
 		"timeInForce": tif,
 	}
 
 	// Add price for limit orders
 	if order.Type == "Limit" {
-		payload["price"] = fmt.Sprintf("%f", order.Price)
+		payload["price"] = strconv.FormatFloat(order.Price, 'f', -1, 64)
 	}
 
 	// Add reduce only flag if set
@@ -484,17 +487,17 @@ func (b *BybitAdapter) PlaceOrder(ctx context.Context, order *domain.Order) (*do
 
 	// Add Stop Loss if set
 	if order.StopLoss > 0 {
-		payload["stopLoss"] = fmt.Sprintf("%f", order.StopLoss)
+		payload["stopLoss"] = strconv.FormatFloat(order.StopLoss, 'f', -1, 64)
 	}
 
 	// Add Take Profit if set
 	if order.TakeProfit > 0 {
-		payload["takeProfit"] = fmt.Sprintf("%f", order.TakeProfit)
+		payload["takeProfit"] = strconv.FormatFloat(order.TakeProfit, 'f', -1, 64)
 	}
 
 	// Add Trigger Price if set
 	if order.TriggerPrice > 0 {
-		payload["triggerPrice"] = fmt.Sprintf("%f", order.TriggerPrice)
+		payload["triggerPrice"] = strconv.FormatFloat(order.TriggerPrice, 'f', -1, 64)
 	}
 
 	resp, err := b.sendRequest(ctx, "POST", "/v5/order/create", payload)
@@ -649,7 +652,8 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 		return err
 	}
 	b.wsConn = c
-	b.pingDone = make(chan struct{})
+	done := make(chan struct{})
+	b.pingDone = done
 	b.lastMessageTime = time.Now() // Reset on connect
 
 	// Save symbols for resubscribe
@@ -666,8 +670,8 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 		}
 	}
 
-	go b.readLoop()
-	go b.startPingLoop()
+	go b.readLoop(done)
+	go b.startPingLoop(done)
 
 	return b.subscribe(b.subscribedSymbols, "ConnectWS")
 }
@@ -839,7 +843,7 @@ func (b *BybitAdapter) subscribe(symbols []string, caller string) error {
 	return nil
 }
 
-func (b *BybitAdapter) startPingLoop() {
+func (b *BybitAdapter) startPingLoop(done chan struct{}) {
 	b.pingTicker = time.NewTicker(20 * time.Second)
 	defer b.pingTicker.Stop()
 
@@ -858,33 +862,43 @@ func (b *BybitAdapter) startPingLoop() {
 				log.Println("WS: Sent ping")
 			}
 			b.mu.Unlock()
-		case <-b.pingDone:
+		case <-done:
 			log.Println("WS: Ping loop stopped")
 			return
 		}
 	}
 }
 
-func (b *BybitAdapter) readLoop() {
+func (b *BybitAdapter) readLoop(done chan struct{}) {
 	defer func() {
 		// Stop ping loop
-		if b.pingDone != nil {
-			close(b.pingDone)
-		}
+		close(done)
 		if b.pingTicker != nil {
 			b.pingTicker.Stop()
 		}
 		// Close connection
-		b.wsConn.Close()
+		if b.wsConn != nil {
+			b.wsConn.Close()
+		}
 		b.mu.Lock()
 		b.wsConn = nil
 		b.mu.Unlock()
 	}()
 
 	for {
+		// Check if done
+		select {
+		case <-done:
+			return
+		default:
+		}
+
+		if b.wsConn == nil {
+			return
+		}
+
 		_, message, err := b.wsConn.ReadMessage()
 		if err != nil {
-			close(b.wsDone)
 			return
 		}
 

@@ -366,6 +366,7 @@
                         <option value="extremes" selected>Extremes (Standard)</option>
                         <option value="extremes_opposite">Extremes (Opposite)</option>
                         <option value="biggest_order_book">Biggest Order Book</option>
+                        <option value="local_high_low">Local High / Local Low</option>
                     </select>
                 </div>
             </div>
@@ -387,6 +388,11 @@
                             style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;">
                             <input type="checkbox" id="autoLevelToggle" style="width: 18px; height: 18px;">
                             <span style="color: var(--accent-color);">Auto Create Level</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;">
+                            <input type="checkbox" id="tpByExchangeToggle" style="width: 18px; height: 18px;">
+                            <span style="color: var(--accent-color);">TP by Exch</span>
                         </label>
                         <label
                             style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;">
@@ -475,8 +481,9 @@
                             <th onclick="sortTable(5)">1h Change <span id="sort5"></span></th>
                             <th onclick="sortTable(6)">4h Change <span id="sort6"></span></th>
                             <th onclick="sortTable(7)">24h Change <span id="sort7"></span></th>
-                            <th onclick="sortTable(8)">RSI (1m) <span id="sort8"></span></th>
-                            <th onclick="sortTable(9)">MACD (1m) <span id="sort9"></span></th>
+                            <th onclick="sortTable(8)">Shadow 1h % <span id="sort8"></span></th>
+                            <th onclick="sortTable(9)">RSI (1m) <span id="sort9"></span></th>
+                            <th onclick="sortTable(10)">MACD (1m) <span id="sort10"></span></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -519,7 +526,7 @@
     </div>
 
     <script>
-        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
         let currentSortColumn = 1;
 
         // Chart Instances
@@ -826,6 +833,7 @@
             const autoLevelTier3 = parseFloat(document.getElementById('autoLevelTier3').value) || 0.15;
             const minConsistent = parseInt(document.getElementById('monitorConsistent').value) || 0;
             const ignoreSentiment = document.getElementById('ignoreSentimentToggle').checked;
+            const tpByExchange = document.getElementById('tpByExchangeToggle').checked;
 
             console.log("Auto Level Size: " + autoLevelSize);
             console.log("Auto Level TP: " + autoLevelTP);
@@ -952,6 +960,14 @@
                                 } catch (err) {
                                     console.error(`Error fetching biggest order book for ${symbol}:`, err);
                                 }
+                            } else if (mode === 'local_high_low') {
+                                if (realPcntChange < 0) {
+                                    // Price Down -> Target Low
+                                    targetPrice = minPrice;
+                                } else {
+                                    // Price Up -> Target High
+                                    targetPrice = maxPrice;
+                                }
                             }
 
                             if (targetPrice) {
@@ -1020,13 +1036,13 @@
                         console.log("Triggering auto-creation for:", levelRequests);
                     }
                     levelRequests.forEach(req => {
-                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi, req.analysis, ignoreSentiment);
+                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi, req.analysis, ignoreSentiment, tpByExchange);
                     });
                 }
             }
         }
 
-        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, min, max, timeframe, rsi, analysisData, ignoreSentiment) {
+        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, min, max, timeframe, rsi, analysisData, ignoreSentiment, tpByExchange) {
             console.log(`Sending create request for ${symbol} @ ${price}`);
 
             // Calculate Base Size (Coin Quantity) from USDT Size
@@ -1069,6 +1085,9 @@
             params.append('auto_mode_enabled', 'on');
             if (ignoreSentiment) {
                 params.append('ignore_sentiment_filter', 'on');
+            }
+            if (tpByExchange) {
+                params.append('take_profit_mode', 'exchange');
             }
             if (analysisData) {
                 params.append('analysis_json', JSON.stringify(analysisData));
@@ -1166,6 +1185,12 @@
                 } catch (err) {
                     console.error("Failed to fetch biggest OB", err);
                 }
+            } else if (mode === 'local_high_low') {
+                if (realPcntChange < 0) {
+                    price = cell.getAttribute('data-min-price') || currentPrice;
+                } else {
+                    price = cell.getAttribute('data-max-price') || currentPrice;
+                }
             }
 
             if (!confirm(`Create level for ${symbol} at $${price}? (Mode: ${mode})`)) return;
@@ -1178,6 +1203,7 @@
             const tier2 = document.getElementById('autoLevelTier2').value;
             const tier3 = document.getElementById('autoLevelTier3').value;
             const ignoreSentiment = document.getElementById('ignoreSentimentToggle').checked;
+            const tpByExchange = document.getElementById('tpByExchangeToggle').checked;
 
             const minPrice = cell.getAttribute('data-min-price');
             const maxPrice = cell.getAttribute('data-max-price');
@@ -1198,7 +1224,7 @@
                 macd: row.cells[9].getAttribute('data-val') || 0
             };
 
-            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi, analysisData, ignoreSentiment);
+            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi, analysisData, ignoreSentiment, tpByExchange);
         }
 
         // Set initial time
