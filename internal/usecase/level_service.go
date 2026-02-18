@@ -771,18 +771,44 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 		log.Printf("FINALIZE: Symbol: %s, Side: %s, Size: %f, Entry: %f, Exit: %f, Calculated Realized PnL: %f",
 			symbol, side, size, entryPrice, price, realizedPnL)
 
+		// Find analysis data for history
+		var analysisJSON string
+		var source string
+		s.mu.RLock()
+		if levels, ok := s.levelsCache[symbol]; ok {
+			for _, l := range levels {
+				if l.ID == levelID {
+					analysisJSON = l.AnalysisJSON
+					source = l.Source
+					break
+				}
+			}
+		}
+		s.mu.RUnlock()
+
+		// Fetch OpenedAt from engine state
+		state := s.engine.GetState(levelID)
+		openedAt := state.OpenedAt
+		if openedAt.IsZero() {
+			openedAt = time.Now().Add(-1 * time.Minute) // Fallback
+		}
+
 		// Save Position History (Initial estimation)
 		history := &domain.PositionHistory{
-			Exchange:    pos.Exchange,
-			Symbol:      pos.Symbol,
-			Side:        side,
-			Size:        size,
-			EntryPrice:  entryPrice,
-			ExitPrice:   price,
-			RealizedPnL: realizedPnL,
-			Leverage:    leverage,
-			MarginType:  marginType,
-			ClosedAt:    time.Now(),
+			Exchange:     pos.Exchange,
+			Symbol:       pos.Symbol,
+			Side:         side,
+			Size:         size,
+			EntryPrice:   entryPrice,
+			ExitPrice:    price,
+			RealizedPnL:  realizedPnL,
+			Leverage:     leverage,
+			MarginType:   marginType,
+			LevelID:      levelID,
+			AnalysisJSON: analysisJSON,
+			Source:       source,
+			OpenedAt:     openedAt,
+			ClosedAt:     time.Now(),
 		}
 
 		historyID, err := s.tradeRepo.SavePositionHistory(ctx, history)
@@ -1324,6 +1350,35 @@ func (s *LevelService) IncrementBaseCloses(ctx context.Context, levelID string) 
 	}
 
 	return nil
+}
+
+// RecordActivePositionsPnL fetches all active positions and records their unrealized PnL to history.
+func (s *LevelService) RecordActivePositionsPnL(ctx context.Context) {
+	positions, err := s.exchange.GetPositions(ctx)
+	if err != nil {
+		log.Printf("ERROR: Failed to fetch positions for PnL history: %v", err)
+		return
+	}
+
+	for _, pos := range positions {
+		if pos.Size == 0 {
+			continue
+		}
+
+		history := &domain.PositionPnLHistory{
+			Symbol:        pos.Symbol,
+			Side:          pos.Side,
+			Size:          pos.Size,
+			EntryPrice:    pos.EntryPrice,
+			MarkPrice:     pos.MarkPrice,
+			UnrealizedPnL: pos.UnrealizedPnL,
+			Timestamp:     time.Now(),
+		}
+
+		if err := s.tradeRepo.SavePositionPnLHistory(ctx, history); err != nil {
+			log.Printf("ERROR: Failed to save position PnL history for %s: %v", pos.Symbol, err)
+		}
+	}
 }
 
 // GetExchangeHistory fetches the closed PnL history from the exchange, saves new entries to DB, and returns consolidated history.

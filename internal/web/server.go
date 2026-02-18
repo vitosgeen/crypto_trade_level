@@ -80,6 +80,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /positions", s.handlePositionsTable)
 	s.router.HandleFunc("DELETE /positions/{symbol}", s.handleClosePosition)
 	s.router.HandleFunc("GET /history", s.handleHistoryTable)
+	s.router.HandleFunc("GET /api/position-pnl-history", s.handlePositionPnLHistory)
 
 	// Trades
 	s.router.HandleFunc("GET /trades", s.handleTradesTable)

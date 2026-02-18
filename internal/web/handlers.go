@@ -256,6 +256,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	baseCloseCooldownMs, _ := strconv.ParseInt(r.FormValue("base_close_cooldown_ms"), 10, 64)
 	autoModeEnabled := r.FormValue("auto_mode_enabled") == "on"
 	ignoreSentimentFilter := r.FormValue("ignore_sentiment_filter") == "on"
+	analysisJSON := r.FormValue("analysis_json")
 
 	side := domain.Side(r.FormValue("side"))
 	if side == "" {
@@ -305,6 +306,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		Tier2Pct:                 tier2,
 		Tier3Pct:                 tier3,
 		Source:                   "manual-web",
+		AnalysisJSON:             analysisJSON,
 		CreatedAt:                time.Now(),
 	}
 
@@ -541,12 +543,27 @@ func (s *Server) handleTradesTable(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHistoryTable(w http.ResponseWriter, r *http.Request) {
 	tab := r.URL.Query().Get("tab")
-	var history []*domain.PositionHistory
 
+	if tab == "pnl" {
+		history, _ := s.tradeRepo.ListPositionPnLHistory(r.Context(), "", 50)
+		if err := templates.ExecuteTemplate(w, "pnl_history_table", history); err != nil {
+			s.logger.Error("Template error", zap.Error(err))
+		}
+		return
+	}
+
+	var history []*domain.PositionHistory
+	var err error
 	if tab == "exchange" {
-		history, _ = s.service.GetExchangeHistory(r.Context(), 50)
+		history, err = s.service.GetExchangeHistory(r.Context(), 50)
+		if err != nil {
+			s.logger.Error("Failed to fetch exchange history", zap.Error(err))
+		}
 	} else {
-		history, _ = s.tradeRepo.ListPositionHistory(r.Context(), 50)
+		history, err = s.tradeRepo.ListPositionHistory(r.Context(), 50)
+		if err != nil {
+			s.logger.Error("Failed to fetch local history", zap.Error(err))
+		}
 	}
 
 	if err := templates.ExecuteTemplate(w, "history_table", history); err != nil {
@@ -613,6 +630,39 @@ func (s *Server) handleLiquidityHistory(w http.ResponseWriter, r *http.Request) 
 	}
 
 	history := s.marketService.GetLiquidityHistory(symbol)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
+}
+
+func (s *Server) handlePositionPnLHistory(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+	limitStr := r.URL.Query().Get("limit")
+
+	var history []*domain.PositionPnLHistory
+	var err error
+
+	if startStr != "" && endStr != "" {
+		start, _ := time.Parse(time.RFC3339, startStr)
+		end, _ := time.Parse(time.RFC3339, endStr)
+		history, err = s.tradeRepo.ListPositionPnLHistoryRange(r.Context(), symbol, start, end)
+	} else {
+		limit := 100
+		if limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+				limit = l
+			}
+		}
+		history, err = s.tradeRepo.ListPositionPnLHistory(r.Context(), symbol, limit)
+	}
+
+	if err != nil {
+		s.logger.Error("Failed to fetch PnL history", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(history)

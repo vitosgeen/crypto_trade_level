@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/vitos/crypto_trade_level/internal/domain"
 	"github.com/vitos/crypto_trade_level/internal/usecase"
@@ -104,6 +105,17 @@ func (m *MockTradeRepo) ListTradeSessionLogs(ctx context.Context, symbol string,
 	return nil, nil
 }
 func (m *MockTradeRepo) GetTradeSessionLog(ctx context.Context, id string) (*domain.TradeSessionLog, error) {
+	return nil, nil
+}
+
+func (m *MockTradeRepo) SavePositionPnLHistory(ctx context.Context, history *domain.PositionPnLHistory) error {
+	return nil
+}
+
+func (m *MockTradeRepo) ListPositionPnLHistory(ctx context.Context, symbol string, limit int) ([]*domain.PositionPnLHistory, error) {
+	return nil, nil
+}
+func (m *MockTradeRepo) ListPositionPnLHistoryRange(ctx context.Context, symbol string, start, end time.Time) ([]*domain.PositionPnLHistory, error) {
 	return nil, nil
 }
 

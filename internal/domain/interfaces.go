@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Exchange defines the interface for interacting with a crypto exchange.
 type Exchange interface {
@@ -93,6 +96,10 @@ type TradeRepository interface {
 	SaveTradeSessionLog(ctx context.Context, log *TradeSessionLog) error
 	ListTradeSessionLogs(ctx context.Context, symbol string, limit int) ([]*TradeSessionLog, error)
 	GetTradeSessionLog(ctx context.Context, id string) (*TradeSessionLog, error)
+
+	SavePositionPnLHistory(ctx context.Context, history *PositionPnLHistory) error
+	ListPositionPnLHistory(ctx context.Context, symbol string, limit int) ([]*PositionPnLHistory, error)
+	ListPositionPnLHistoryRange(ctx context.Context, symbol string, start, end time.Time) ([]*PositionPnLHistory, error)
 }
 
 type WalletRepository interface {

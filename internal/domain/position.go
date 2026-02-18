@@ -50,17 +50,32 @@ type Order struct {
 
 // PositionHistory represents a closed position.
 type PositionHistory struct {
-	ID          int64
-	Exchange    string
-	Symbol      string
-	Side        Side
-	Size        float64
-	EntryPrice  float64
-	ExitPrice   float64
-	RealizedPnL float64
-	Leverage    int
-	MarginType  string
-	ClosedAt    time.Time
+	ID           int64
+	Exchange     string
+	Symbol       string
+	Side         Side
+	Size         float64
+	EntryPrice   float64
+	ExitPrice    float64
+	RealizedPnL  float64
+	Leverage     int
+	MarginType   string
+	LevelID      string
+	AnalysisJSON string
+	Source       string
+	OpenedAt     time.Time
+	ClosedAt     time.Time
+}
+
+type PositionPnLHistory struct {
+	ID            int64     `json:"id"`
+	Symbol        string    `json:"symbol"`
+	Side          Side      `json:"side"`
+	Size          float64   `json:"size"`
+	EntryPrice    float64   `json:"entry_price"`
+	MarkPrice     float64   `json:"mark_price"`
+	UnrealizedPnL float64   `json:"unrealized_pnl"`
+	Timestamp     time.Time `json:"timestamp"`
 }
 
 type TickData struct {

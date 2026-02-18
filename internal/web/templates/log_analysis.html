@@ -943,7 +943,21 @@
                                     min: minPrice,
                                     max: maxPrice,
                                     timeframe: timeframeName,
-                                    rsi: rsi
+                                    rsi: rsi,
+                                    analysis: {
+                                        symbol: symbol,
+                                        price: currentPrice,
+                                        oi: parseFloat(row.cells[1].getAttribute('data-val')),
+                                        vol24h: vol24h,
+                                        pcnt_change: realPcntChange,
+                                        value_change: valueChange,
+                                        timeframe: timeframeName,
+                                        min_price: minPrice,
+                                        max_price: maxPrice,
+                                        rsi: rsi,
+                                        macd: row.cells[9].getAttribute('data-val') || 0,
+                                        macd_hist: row.cells[9].getAttribute('data-val') || 0 //macd_hist column uses same data-val for simplicity in template
+                                    }
                                 });
                             }
                             else {
@@ -988,13 +1002,13 @@
                         console.log("Triggering auto-creation for:", levelRequests);
                     }
                     levelRequests.forEach(req => {
-                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi);
+                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi, req.analysis);
                     });
                 }
             }
         }
 
-        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, min, max, timeframe, rsi) {
+        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, min, max, timeframe, rsi, analysisData) {
             console.log(`Sending create request for ${symbol} @ ${price}`);
 
             // Calculate Base Size (Coin Quantity) from USDT Size
@@ -1035,6 +1049,9 @@
 
             // Add auto flag
             params.append('auto_mode_enabled', 'on');
+            if (analysisData) {
+                params.append('analysis_json', JSON.stringify(analysisData));
+            }
 
             fetch('/levels', {
                 method: 'POST',
@@ -1135,7 +1152,21 @@
             const timeframeName = document.getElementById('monitorTimeframe').options[document.getElementById('monitorTimeframe').selectedIndex].text;
             const rsi = row.cells[8].getAttribute('data-val') || 0;
 
-            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi);
+            const analysisData = {
+                symbol: symbol,
+                price: currentPrice,
+                oi: parseFloat(row.cells[1].getAttribute('data-val')),
+                vol24h: parseFloat(row.cells[2].getAttribute('data-val')),
+                pcnt_change: realPcntChange,
+                value_change: parseFloat(cell.getAttribute('data-val-raw')),
+                timeframe: timeframeName,
+                min_price: minPrice,
+                max_price: maxPrice,
+                rsi: rsi,
+                macd: row.cells[9].getAttribute('data-val') || 0
+            };
+
+            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi, analysisData);
         }
 
         // Set initial time

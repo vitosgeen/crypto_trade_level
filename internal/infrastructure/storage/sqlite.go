@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/vitos/crypto_trade_level/internal/domain"
@@ -54,6 +55,7 @@ func (s *SQLiteStore) initSchema() error {
 			tier2_pct REAL NOT NULL DEFAULT 0,
 			tier3_pct REAL NOT NULL DEFAULT 0,
 			source TEXT,
+			analysis_json TEXT,
 			created_at DATETIME NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_levels_exchange_symbol ON levels(exchange, symbol);`,
@@ -88,6 +90,10 @@ func (s *SQLiteStore) initSchema() error {
 			realized_pnl REAL NOT NULL,
 			leverage INTEGER NOT NULL,
 			margin_type TEXT NOT NULL,
+			level_id TEXT,
+			analysis_json TEXT,
+			source TEXT,
+			opened_at DATETIME,
 			closed_at DATETIME NOT NULL
 		);`,
 		`CREATE TABLE IF NOT EXISTS exchange_position_history (
@@ -101,6 +107,10 @@ func (s *SQLiteStore) initSchema() error {
 			realized_pnl REAL NOT NULL,
 			leverage INTEGER NOT NULL,
 			margin_type TEXT NOT NULL,
+			level_id TEXT,
+			analysis_json TEXT,
+			source TEXT,
+			opened_at DATETIME,
 			closed_at DATETIME NOT NULL
 		);`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_exchange_history_unique ON exchange_position_history(exchange, symbol, closed_at, entry_price, exit_price);`,
@@ -118,6 +128,17 @@ func (s *SQLiteStore) initSchema() error {
 			end_time INTEGER NOT NULL,
 			ticks_json TEXT NOT NULL
 		);`,
+		`CREATE TABLE IF NOT EXISTS position_pnl_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			symbol TEXT NOT NULL,
+			side TEXT NOT NULL,
+			size REAL NOT NULL,
+			entry_price REAL NOT NULL,
+			mark_price REAL NOT NULL,
+			unrealized_pnl REAL NOT NULL,
+			timestamp DATETIME NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_position_pnl_symbol_time ON position_pnl_history(symbol, timestamp DESC);`,
 		`CREATE TABLE IF NOT EXISTS wallet_balances (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			coin TEXT NOT NULL,
@@ -150,9 +171,17 @@ func (s *SQLiteStore) initSchema() error {
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN tier2_pct REAL NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN tier3_pct REAL NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN side TEXT NOT NULL DEFAULT 'BOTH'`)
+	_, _ = s.db.Exec(`ALTER TABLE levels ADD COLUMN analysis_json TEXT`)
 	_, _ = s.db.Exec(`ALTER TABLE trades ADD COLUMN realized_pnl REAL NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE wallet_balances ADD COLUMN unrealized_pnl REAL NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE wallet_balances ADD COLUMN equity REAL NOT NULL DEFAULT 0`)
+	_, _ = s.db.Exec(`ALTER TABLE position_history ADD COLUMN level_id TEXT`)
+	_, _ = s.db.Exec(`ALTER TABLE position_history ADD COLUMN analysis_json TEXT`)
+	_, _ = s.db.Exec(`ALTER TABLE exchange_position_history ADD COLUMN level_id TEXT`)
+	_, _ = s.db.Exec(`ALTER TABLE exchange_position_history ADD COLUMN analysis_json TEXT`)
+	_, _ = s.db.Exec(`ALTER TABLE exchange_position_history ADD COLUMN source TEXT`)
+	_, _ = s.db.Exec(`ALTER TABLE position_history ADD COLUMN opened_at DATETIME`)
+	_, _ = s.db.Exec(`ALTER TABLE exchange_position_history ADD COLUMN opened_at DATETIME`)
 
 	return nil
 }
@@ -160,20 +189,20 @@ func (s *SQLiteStore) initSchema() error {
 // LevelRepository Implementation
 
 func (s *SQLiteStore) SaveLevel(ctx context.Context, level *domain.Level) error {
-	query := `INSERT INTO levels (id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, source, created_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO levels (id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, source, analysis_json, created_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, query,
 		level.ID, level.Exchange, level.Symbol, level.LevelPrice, level.Side, level.BaseSize,
-		level.Leverage, level.MarginType, level.CoolDownMs, level.StopLossAtBase, level.StopLossMode, level.DisableSpeedClose, level.MaxConsecutiveBaseCloses, level.BaseCloseCooldownMs, level.TakeProfitPct, level.TakeProfitMode, level.IsAuto, level.AutoModeEnabled, level.IgnoreSentimentFilter, level.Tier1Pct, level.Tier2Pct, level.Tier3Pct, level.Source, level.CreatedAt)
+		level.Leverage, level.MarginType, level.CoolDownMs, level.StopLossAtBase, level.StopLossMode, level.DisableSpeedClose, level.MaxConsecutiveBaseCloses, level.BaseCloseCooldownMs, level.TakeProfitPct, level.TakeProfitMode, level.IsAuto, level.AutoModeEnabled, level.IgnoreSentimentFilter, level.Tier1Pct, level.Tier2Pct, level.Tier3Pct, level.Source, level.AnalysisJSON, level.CreatedAt)
 	return err
 }
 
 func (s *SQLiteStore) GetLevel(ctx context.Context, id string) (*domain.Level, error) {
-	query := `SELECT id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, source, created_at FROM levels WHERE id = ?`
+	query := `SELECT id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, source, analysis_json, created_at FROM levels WHERE id = ?`
 	row := s.db.QueryRowContext(ctx, query, id)
 
 	var l domain.Level
-	err := row.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.Side, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs, &l.TakeProfitPct, &l.TakeProfitMode, &l.IsAuto, &l.AutoModeEnabled, &l.IgnoreSentimentFilter, &l.Tier1Pct, &l.Tier2Pct, &l.Tier3Pct, &l.Source, &l.CreatedAt)
+	err := row.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.Side, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs, &l.TakeProfitPct, &l.TakeProfitMode, &l.IsAuto, &l.AutoModeEnabled, &l.IgnoreSentimentFilter, &l.Tier1Pct, &l.Tier2Pct, &l.Tier3Pct, &l.Source, &l.AnalysisJSON, &l.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +210,7 @@ func (s *SQLiteStore) GetLevel(ctx context.Context, id string) (*domain.Level, e
 }
 
 func (s *SQLiteStore) ListLevels(ctx context.Context) ([]*domain.Level, error) {
-	query := `SELECT id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, source, created_at FROM levels`
+	query := `SELECT id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, source, analysis_json, created_at FROM levels`
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
@@ -191,7 +220,7 @@ func (s *SQLiteStore) ListLevels(ctx context.Context) ([]*domain.Level, error) {
 	var levels []*domain.Level
 	for rows.Next() {
 		var l domain.Level
-		if err := rows.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.Side, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs, &l.TakeProfitPct, &l.TakeProfitMode, &l.IsAuto, &l.AutoModeEnabled, &l.IgnoreSentimentFilter, &l.Tier1Pct, &l.Tier2Pct, &l.Tier3Pct, &l.Source, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.Side, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs, &l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs, &l.TakeProfitPct, &l.TakeProfitMode, &l.IsAuto, &l.AutoModeEnabled, &l.IgnoreSentimentFilter, &l.Tier1Pct, &l.Tier2Pct, &l.Tier3Pct, &l.Source, &l.AnalysisJSON, &l.CreatedAt); err != nil {
 			return nil, err
 		}
 		levels = append(levels, &l)
@@ -240,7 +269,7 @@ func (s *SQLiteStore) SaveTrade(ctx context.Context, order *domain.Order) error 
 }
 
 func (s *SQLiteStore) ListTrades(ctx context.Context, limit int) ([]*domain.Order, error) {
-	query := `SELECT exchange, symbol, level_id, side, size, price, realized_pnl, created_at FROM trades ORDER BY id DESC LIMIT ?`
+	query := `SELECT exchange, symbol, COALESCE(level_id, ''), side, size, price, realized_pnl, created_at FROM trades ORDER BY id DESC LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err
@@ -259,10 +288,10 @@ func (s *SQLiteStore) ListTrades(ctx context.Context, limit int) ([]*domain.Orde
 }
 
 func (s *SQLiteStore) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) (int64, error) {
-	query := `INSERT INTO position_history (exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, closed_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO position_history (exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, level_id, analysis_json, source, opened_at, closed_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := s.db.ExecContext(ctx, query,
-		history.Exchange, history.Symbol, history.Side, history.Size, history.EntryPrice, history.ExitPrice, history.RealizedPnL, history.Leverage, history.MarginType, history.ClosedAt)
+		history.Exchange, history.Symbol, history.Side, history.Size, history.EntryPrice, history.ExitPrice, history.RealizedPnL, history.Leverage, history.MarginType, history.LevelID, history.AnalysisJSON, history.Source, history.OpenedAt, history.ClosedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -276,7 +305,7 @@ func (s *SQLiteStore) UpdatePositionHistory(ctx context.Context, history *domain
 }
 
 func (s *SQLiteStore) ListPositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
-	query := `SELECT id, exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, closed_at FROM position_history ORDER BY id DESC LIMIT ?`
+	query := `SELECT id, exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, COALESCE(level_id, ''), COALESCE(analysis_json, ''), COALESCE(source, ''), opened_at, closed_at FROM position_history ORDER BY id DESC LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err
@@ -286,8 +315,18 @@ func (s *SQLiteStore) ListPositionHistory(ctx context.Context, limit int) ([]*do
 	var history []*domain.PositionHistory
 	for rows.Next() {
 		var h domain.PositionHistory
-		if err := rows.Scan(&h.ID, &h.Exchange, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.ExitPrice, &h.RealizedPnL, &h.Leverage, &h.MarginType, &h.ClosedAt); err != nil {
+		var openedAt, closedAt sql.NullTime
+		if err := rows.Scan(
+			&h.ID, &h.Exchange, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.ExitPrice, &h.RealizedPnL, &h.Leverage, &h.MarginType,
+			&h.LevelID, &h.AnalysisJSON, &h.Source, &openedAt, &closedAt,
+		); err != nil {
 			return nil, err
+		}
+		if openedAt.Valid {
+			h.OpenedAt = openedAt.Time
+		}
+		if closedAt.Valid {
+			h.ClosedAt = closedAt.Time
 		}
 		history = append(history, &h)
 	}
@@ -295,16 +334,16 @@ func (s *SQLiteStore) ListPositionHistory(ctx context.Context, limit int) ([]*do
 }
 
 func (s *SQLiteStore) SaveExchangePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
-	query := `INSERT INTO exchange_position_history (exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, closed_at)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO exchange_position_history (exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, level_id, analysis_json, source, opened_at, closed_at)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(exchange, symbol, closed_at, entry_price, exit_price) DO NOTHING`
 	_, err := s.db.ExecContext(ctx, query,
-		history.Exchange, history.Symbol, history.Side, history.Size, history.EntryPrice, history.ExitPrice, history.RealizedPnL, history.Leverage, history.MarginType, history.ClosedAt)
+		history.Exchange, history.Symbol, history.Side, history.Size, history.EntryPrice, history.ExitPrice, history.RealizedPnL, history.Leverage, history.MarginType, history.LevelID, history.AnalysisJSON, history.Source, history.OpenedAt, history.ClosedAt)
 	return err
 }
 
 func (s *SQLiteStore) ListExchangePositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
-	query := `SELECT id, exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, closed_at FROM exchange_position_history ORDER BY closed_at DESC LIMIT ?`
+	query := `SELECT id, exchange, symbol, side, size, entry_price, exit_price, realized_pnl, leverage, margin_type, COALESCE(level_id, ''), COALESCE(analysis_json, ''), COALESCE(source, ''), opened_at, closed_at FROM exchange_position_history ORDER BY closed_at DESC LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err
@@ -314,15 +353,25 @@ func (s *SQLiteStore) ListExchangePositionHistory(ctx context.Context, limit int
 	var history []*domain.PositionHistory
 	for rows.Next() {
 		var h domain.PositionHistory
-		if err := rows.Scan(&h.ID, &h.Exchange, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.ExitPrice, &h.RealizedPnL, &h.Leverage, &h.MarginType, &h.ClosedAt); err != nil {
+		var openedAt, closedAt sql.NullTime
+		if err := rows.Scan(
+			&h.ID, &h.Exchange, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.ExitPrice, &h.RealizedPnL, &h.Leverage, &h.MarginType,
+			&h.LevelID, &h.AnalysisJSON, &h.Source, &openedAt, &closedAt,
+		); err != nil {
 			return nil, err
+		}
+		if openedAt.Valid {
+			h.OpenedAt = openedAt.Time
+		}
+		if closedAt.Valid {
+			h.ClosedAt = closedAt.Time
 		}
 		history = append(history, &h)
 	}
 	return history, nil
 }
 func (s *SQLiteStore) GetLevelsBySymbol(ctx context.Context, symbol string) ([]*domain.Level, error) {
-	query := `SELECT id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, source, created_at FROM levels WHERE symbol = ?`
+	query := `SELECT id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, COALESCE(source, ''), COALESCE(analysis_json, ''), created_at FROM levels WHERE symbol = ?`
 	rows, err := s.db.QueryContext(ctx, query, symbol)
 	if err != nil {
 		return nil, err
@@ -335,7 +384,7 @@ func (s *SQLiteStore) GetLevelsBySymbol(ctx context.Context, symbol string) ([]*
 		if err := rows.Scan(
 			&l.ID, &l.Exchange, &l.Symbol, &l.LevelPrice, &l.Side, &l.BaseSize, &l.Leverage, &l.MarginType, &l.CoolDownMs,
 			&l.StopLossAtBase, &l.StopLossMode, &l.DisableSpeedClose, &l.MaxConsecutiveBaseCloses, &l.BaseCloseCooldownMs,
-			&l.TakeProfitPct, &l.TakeProfitMode, &l.IsAuto, &l.AutoModeEnabled, &l.IgnoreSentimentFilter, &l.Tier1Pct, &l.Tier2Pct, &l.Tier3Pct, &l.Source, &l.CreatedAt,
+			&l.TakeProfitPct, &l.TakeProfitMode, &l.IsAuto, &l.AutoModeEnabled, &l.IgnoreSentimentFilter, &l.Tier1Pct, &l.Tier2Pct, &l.Tier3Pct, &l.Source, &l.AnalysisJSON, &l.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -445,6 +494,61 @@ func (s *SQLiteStore) GetTradeSessionLog(ctx context.Context, id string) (*domai
 	}
 
 	return &l, nil
+}
+
+func (s *SQLiteStore) SavePositionPnLHistory(ctx context.Context, history *domain.PositionPnLHistory) error {
+	query := `INSERT INTO position_pnl_history (symbol, side, size, entry_price, mark_price, unrealized_pnl, timestamp)
+			  VALUES (?, ?, ?, ?, ?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, query,
+		history.Symbol, history.Side, history.Size, history.EntryPrice, history.MarkPrice, history.UnrealizedPnL, history.Timestamp)
+	return err
+}
+
+func (s *SQLiteStore) ListPositionPnLHistory(ctx context.Context, symbol string, limit int) ([]*domain.PositionPnLHistory, error) {
+	query := `SELECT id, symbol, side, size, entry_price, mark_price, unrealized_pnl, timestamp FROM position_pnl_history`
+	var args []interface{}
+	if symbol != "" {
+		query += ` WHERE symbol = ?`
+		args = append(args, symbol)
+	}
+	query += ` ORDER BY timestamp DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []*domain.PositionPnLHistory
+	for rows.Next() {
+		var h domain.PositionPnLHistory
+		if err := rows.Scan(&h.ID, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.MarkPrice, &h.UnrealizedPnL, &h.Timestamp); err != nil {
+			return nil, err
+		}
+		history = append(history, &h)
+	}
+	return history, nil
+}
+
+func (s *SQLiteStore) ListPositionPnLHistoryRange(ctx context.Context, symbol string, start, end time.Time) ([]*domain.PositionPnLHistory, error) {
+	query := `SELECT id, symbol, side, size, entry_price, mark_price, unrealized_pnl, timestamp FROM position_pnl_history
+			  WHERE symbol = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC`
+	rows, err := s.db.QueryContext(ctx, query, symbol, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []*domain.PositionPnLHistory
+	for rows.Next() {
+		var h domain.PositionPnLHistory
+		if err := rows.Scan(&h.ID, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.MarkPrice, &h.UnrealizedPnL, &h.Timestamp); err != nil {
+			return nil, err
+		}
+		history = append(history, &h)
+	}
+	return history, nil
 }
 
 // WalletRepository Implementation

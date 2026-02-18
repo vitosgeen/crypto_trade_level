@@ -464,6 +464,50 @@
             border-bottom: none;
             padding-bottom: 0;
         }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background-color: var(--card-bg);
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            width: 80%;
+            max-width: 1000px;
+            border-radius: 12px;
+            position: relative;
+        }
+
+        .close-modal {
+            position: absolute;
+            right: 20px;
+            top: 15px;
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .close-modal:hover {
+            color: var(--text-color);
+        }
+
+        #historicalPnLChart {
+            width: 100%;
+            height: 400px;
+            margin-top: 20px;
+        }
     </style>
 </head>
 
@@ -784,6 +828,11 @@
                     <span><span style="color: rgba(255, 68, 68, 0.5); font-weight: bold;">━</span> Conclusion
                         (10s)</span>
                 </div>
+                <div id="pnlHistoryChart" style="width: 100%; height: 200px; margin-top: 20px;"></div>
+                <div
+                    style="margin-top: 5px; font-size: 0.75rem; color: var(--text-muted); text-align: center; display: flex; justify-content: center; gap: 15px;">
+                    <span><span style="color: #ff00ff; font-weight: bold;">━</span> Unrealized PnL ($)</span>
+                </div>
             </div>
 
         </div>
@@ -812,6 +861,7 @@
                 <div class="tabs">
                     <button class="tab-btn active" onclick="switchHistoryTab(this, 'local')">Local</button>
                     <button class="tab-btn" onclick="switchHistoryTab(this, 'exchange')">From Exchanger</button>
+                    <button class="tab-btn" onclick="switchHistoryTab(this, 'pnl')">Unrealized PnL</button>
                 </div>
             </div>
             <div id="history-table" hx-get="/history?tab=local" hx-trigger="load, every 10s">
@@ -1063,6 +1113,8 @@
         let conclusionSeries30s = null;
         let volumeSeries = null;
         let priceChangeSeries = null;
+        let pnlHistoryChart = null;
+        let pnlHistorySeries = null;
         let selectedLevelId = null;
         let currentPriceLines = [];
         let previewPriceLines = [];
@@ -1242,6 +1294,44 @@
                         lineWidth: 2,
                     });
                     conclusionSeries.createPriceLine({
+                        price: 0,
+                        color: '#e0e0e0',
+                        lineWidth: 1,
+                        lineStyle: LightweightCharts.LineStyle.Dashed,
+                        axisLabelVisible: false,
+                        title: '',
+                    });
+                }
+
+                // PnL History Chart
+                const pnlContainer = document.getElementById('pnlHistoryChart');
+                if (pnlContainer) {
+                    pnlHistoryChart = LightweightCharts.createChart(pnlContainer, {
+                        width: pnlContainer.clientWidth,
+                        height: 200,
+                        layout: {
+                            background: { type: 'solid', color: '#151632' },
+                            textColor: '#e0e0e0',
+                        },
+                        grid: {
+                            vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                            horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                        },
+                        rightPriceScale: {
+                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                            visible: true,
+                        },
+                        timeScale: {
+                            timeVisible: true,
+                            secondsVisible: true,
+                        },
+                    });
+
+                    pnlHistorySeries = pnlHistoryChart.addLineSeries({
+                        color: '#ff00ff',
+                        lineWidth: 2,
+                    });
+                    pnlHistorySeries.createPriceLine({
                         price: 0,
                         color: '#e0e0e0',
                         lineWidth: 1,
@@ -2030,6 +2120,31 @@
                 // There isn't a live candle data stream here for the main chart, so we don't need to update
                 // the volume series in this loop. It's updated when `updateChart()` is called.
 
+                // Update PnL History Chart
+                if (pnlHistorySeries) {
+                    const pnlResp = await fetch(`/api/position-pnl-history?symbol=${symbol}&limit=300`);
+                    if (pnlResp.ok) {
+                        const pnlHistory = await pnlResp.json();
+                        if (pnlHistory && pnlHistory.length > 0) {
+                            const pnlData = pnlHistory.map(h => ({
+                                time: Math.floor(new Date(h.timestamp).getTime() / 1000),
+                                value: h.unrealized_pnl
+                            })).sort((a, b) => a.time - b.time);
+
+                            // Filter out duplicate timestamps which Lightweight Charts doesn't like
+                            const uniquePnlData = [];
+                            const seenTimes = new Set();
+                            for (const d of pnlData) {
+                                if (!seenTimes.has(d.time)) {
+                                    seenTimes.add(d.time);
+                                    uniquePnlData.push(d);
+                                }
+                            }
+                            pnlHistorySeries.setData(uniquePnlData);
+                        }
+                    }
+                }
+
             } catch (e) {
                 console.error("Failed to fetch market stats", e);
             }
@@ -2287,7 +2402,6 @@
             }
 
             // Scroll to the Add Level card
-            const addLevelElements = document.querySelectorAll('.card h2');
             for (const el of addLevelElements) {
                 if (el.textContent.includes('Add Level')) {
                     const card = el.closest('.card');
@@ -2301,6 +2415,130 @@
             }
         }
 
+        let historicalChart = null;
+        let historicalSeries = null;
+
+        function showHistoricalPnLChart(symbol, start, end) {
+            console.log("Showing historical chart for", symbol, start, end);
+            const modal = document.getElementById('pnlModal');
+            const title = document.getElementById('modalTitle');
+            const details = document.getElementById('modalDetails');
+            const container = document.getElementById('historicalPnLChart');
+
+            if (!modal || !container) return;
+
+            modal.style.display = 'block';
+            title.textContent = `Historical PnL: ${symbol}`;
+            details.textContent = `From ${new Date(start).toLocaleString()} to ${new Date(end).toLocaleString()}`;
+
+            if (!historicalChart) {
+                historicalChart = LightweightCharts.createChart(container, {
+                    width: container.clientWidth,
+                    height: 400,
+                    layout: {
+                        background: { type: 'solid', color: '#151632' },
+                        textColor: '#e0e0e0',
+                    },
+                    grid: {
+                        vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                        horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                    },
+                    timeScale: {
+                        timeVisible: true,
+                        secondsVisible: true,
+                    },
+                });
+                historicalSeries = historicalChart.addLineSeries({
+                    color: '#ff00ff',
+                    lineWidth: 2,
+                });
+                historicalSeries.createPriceLine({
+                    price: 0,
+                    color: '#e0e0e0',
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    axisLabelVisible: false,
+                    title: '',
+                });
+            } else {
+                historicalSeries.setData([]);
+            }
+
+            fetch(`/api/position-pnl-history?symbol=${symbol}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+                .then(resp => resp.json())
+                .then(data => {
+                    if (data && data.length > 0) {
+                        const pnlData = data.map(h => ({
+                            time: Math.floor(new Date(h.timestamp).getTime() / 1000),
+                            value: h.unrealized_pnl
+                        })).sort((a, b) => a.time - b.time);
+
+                        const uniquePnlData = [];
+                        const seenTimes = new Set();
+                        for (const d of pnlData) {
+                            if (!seenTimes.has(d.time)) {
+                                seenTimes.add(d.time);
+                                uniquePnlData.push(d);
+                            }
+                        }
+                        historicalSeries.setData(uniquePnlData);
+                        historicalChart.timeScale().fitContent();
+                    } else {
+                        console.warn("No historical PnL data found for this range.");
+                    }
+                })
+                .catch(err => console.error("Failed to fetch historical PnL", err));
+        }
+
+        function closePnlModal() {
+            const modal = document.getElementById('pnlModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        window.onclick = function (event) {
+            const modal = document.getElementById('pnlModal');
+            if (event.target == modal) {
+                closePnlModal();
+            }
+        }
+
+        function showAnalysis(jsonStr) {
+            try {
+                const data = JSON.parse(jsonStr);
+                let content = '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem;">';
+                for (const [key, value] of Object.entries(data)) {
+                    let val = value;
+                    if (typeof value === 'number') val = value.toFixed(4);
+                    content += `<div><strong style="color: var(--accent-color);">${key}:</strong></div><div>${val}</div>`;
+                }
+                content += '</div>';
+
+                // Create a temporary modal or alert
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    background: var(--card-bg); padding: 25px; border-radius: 12px;
+                    border: 2px solid var(--accent-color); z-index: 10001; 
+                    box-shadow: 0 0 30px rgba(0,0,0,0.8); max-width: 400px; width: 90%;
+                `;
+                modal.innerHTML = `
+                    <h3 style="margin-top:0; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; color: var(--accent-color);">Market Snapshot at Entry</h3>
+                    ${content}
+                    <button class="cta-button" style="width:100%; margin-top:20px;" onclick="this.parentElement.remove()">Close</button>
+                `;
+
+                const backdrop = document.createElement('div');
+                backdrop.style.cssText = 'position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:10000;';
+                backdrop.onclick = () => { modal.remove(); backdrop.remove(); };
+
+                document.body.appendChild(backdrop);
+                document.body.appendChild(modal);
+            } catch (e) {
+                console.error("Failed to parse analysis JSON", e);
+                alert("Could not load analysis data");
+            }
+        }
+
         setInterval(refreshRSISignals, 3000);
 
         // Initialize on load
@@ -2309,6 +2547,17 @@
             refreshRSISignals();
         });
     </script>
+    <!-- Historical PnL Modal -->
+    <div id="pnlModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closePnlModal()">&times;</span>
+            <h3 id="modalTitle">Historical PnL Chart</h3>
+            <div id="historicalPnLChart"></div>
+            <div style="margin-top: 10px; font-size: 0.8rem; color: var(--text-muted); text-align: center;">
+                <span id="modalDetails"></span>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
@@ -2524,6 +2773,7 @@
         <tr>
             <th>Time</th>
             <th>Symbol</th>
+            <th>Source</th>
             <th>Side</th>
             <th>Size</th>
             <th>Entry</th>
@@ -2531,6 +2781,8 @@
             <th>PnL</th>
             <th>Lev</th>
             <th>Margin</th>
+            <th>Chart</th>
+            <th>Snapshot</th>
         </tr>
     </thead>
     <tbody>
@@ -2539,6 +2791,7 @@
         <tr>
             <td class="text-muted">{{ .ClosedAt.Format "15:04:05" }}</td>
             <td><strong>{{ .Symbol }}</strong></td>
+            <td><span class="badge badge-blue">{{ .Source }}</span></td>
             <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
                 bold;">{{ .Side }}</td>
             <td>{{ .Size }}</td>
@@ -2550,12 +2803,73 @@
             </td>
             <td>{{ .Leverage }}x</td>
             <td>{{ .MarginType }}</td>
+            <td>
+                {{ if not .OpenedAt.IsZero }}
+                <button class="cta-button"
+                    style="font-size: 0.7rem; padding: 2px 6px; background: var(--secondary-color);"
+                    onclick="showHistoricalPnLChart('{{ .Symbol }}', '{{ .OpenedAt.Format " 2006-01-02T15:04:05Z"
+                    }}', '{{ .ClosedAt.Format "2006-01-02T15:04:05Z" }}' )">
+                    📊 Chart
+                </button>
+                {{ else }}
+                <span class="text-muted">-</span>
+                {{ end }}
+            </td>
+            <td>
+                {{ if .AnalysisJSON }}
+                <button class="cta-button"
+                    style="font-size: 0.7rem; padding: 2px 6px; background: var(--secondary-color);"
+                    onclick="showAnalysis('{{ .AnalysisJSON }}')">📜 View</button>
+                {{ else }}
+                <span class="text-muted">-</span>
+                {{ end }}
+            </td>
         </tr>
         {{ end }}
         {{ else }}
         <tr>
-            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 20px;">No history available
+            <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 20px;">No history available
             </td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>
+{{ end }}
+
+{{ define "pnl_history_table" }}
+<table>
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Size</th>
+            <th>Entry Price</th>
+            <th>Mark Price</th>
+            <th>Unrealized PnL</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{ if . }}
+        {{ range . }}
+        <tr>
+            <td class="text-muted">{{ .Timestamp.Format "15:04:05" }}</td>
+            <td><strong>{{ .Symbol }}</strong></td>
+            <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
+                bold;">{{ .Side }}</td>
+            <td>{{ printf "%.4f" .Size }}</td>
+            <td>{{ printf "%.6f" .EntryPrice }}</td>
+            <td>{{ printf "%.6f" .MarkPrice }}</td>
+            <td
+                style="color: {{ if gt .UnrealizedPnL 0.0 }}var(--success){{ else if lt .UnrealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
+                {{ printf "%.6f" .UnrealizedPnL }}
+            </td>
+        </tr>
+        {{ end }}
+        {{ else }}
+        <tr>
+            <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">No PnL history
+                available</td>
         </tr>
         {{ end }}
     </tbody>

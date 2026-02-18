@@ -27,6 +27,7 @@ type Level struct {
 	Tier2Pct                 float64 // Tier 2 percentage override
 	Tier3Pct                 float64 // Tier 3 percentage override
 	Source                   string
+	AnalysisJSON             string // JSON snapshot of analysis conditions
 	CreatedAt                time.Time
 }
 

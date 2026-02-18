@@ -180,6 +180,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				svc.CheckSafety(context.Background())
+				svc.RecordActivePositionsPnL(context.Background())
 			case <-stop:
 				return
 			}
