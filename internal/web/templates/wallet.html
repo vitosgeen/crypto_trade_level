@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet Monitor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0a0b1e;
+            --text-color: #e0e0e0;
+            --text-muted: #a0a0a0;
+            --accent-color: #00ff88;
+            --accent-hover: #00cc6a;
+            --secondary-color: #7000ff;
+            --card-bg: #151632;
+            --nav-bg: rgba(10, 11, 30, 0.95);
+            --border-color: rgba(255, 255, 255, 0.05);
+            --input-bg: #0f1025;
+            --success: #28a745;
+            --danger: #dc3545;
+            --warning: #ffc107;
+            --info: #007bff;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding-top: 80px;
+        }
+
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            padding: 1rem 2rem;
+            background: var(--nav-bg);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            text-decoration: none;
+            letter-spacing: 1px;
+        }
+
+        .nav-links a {
+            color: var(--text-color);
+            text-decoration: none;
+            margin-left: 2rem;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover,
+        .nav-links a.active {
+            color: var(--accent-color);
+        }
+
+        .cta-button {
+            background: linear-gradient(45deg, var(--accent-color), var(--secondary-color));
+            color: #000;
+            padding: 0.5rem 1.2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 136, 0.3);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 24px;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            color: var(--text-color);
+            font-size: 1.8rem;
+            margin: 0;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 4px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+        }
+
+        .filters {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        select {
+            background: var(--input-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 6px;
+            outline: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <a href="/" class="logo">CRYPTOBOT</a>
+        <div class="nav-links">
+            <a href="/level-bot">Level Bot</a>
+            <a href="/speed-bot">Speed Bot</a>
+            <a href="/funding-bot">Funding Bot</a>
+            <a href="/wallet" class="active">Wallet</a>
+            <a href="/dashboard">Dashboard</a>
+        </div>
+        <a href="/dashboard" class="cta-button">Launch App</a>
+    </nav>
+
+    <div class="container">
+        <div class="card">
+            <div class="header-content">
+                <div>
+                    <h1>👛 Wallet Monitor</h1>
+                    <div class="subtitle">Track your wallet balance over time</div>
+                </div>
+            </div>
+
+            <div class="filters">
+                <label for="coinSelect">Coin:</label>
+                <select id="coinSelect" onchange="loadData()">
+                    <option value="TOTAL_USD" selected>TOTAL (USD)</option>
+                    <option value="USDT">USDT</option>
+                    <option value="BTC">BTC</option>
+                    <option value="ETH">ETH</option>
+                    <!-- Add more if needed -->
+                </select>
+
+                <label for="limitSelect">Data Points:</label>
+                <select id="limitSelect" onchange="loadData()">
+                    <option value="100">100</option>
+                    <option value="288">24 Hours (5m)</option>
+                    <option value="1000">1000</option>
+                </select>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="walletChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let chartInstance = null;
+
+        document.addEventListener('DOMContentLoaded', loadData);
+
+        function loadData() {
+            const coin = document.getElementById('coinSelect').value;
+            const limit = document.getElementById('limitSelect').value;
+
+            fetch(`/api/wallet/history?coin=${coin}&limit=${limit}`)
+                .then(response => response.json())
+                .then(data => {
+                    renderChart(data);
+                })
+                .catch(error => console.error('Error fetching wallet data:', error));
+        }
+
+        function renderChart(data) {
+            if (!data) return;
+
+            // Data comes in desc order (newest first), reverse for chart
+            data.reverse();
+
+            const start = data.length > 0 ? new Date(data[0].timestamp).toLocaleString() : '';
+            const end = data.length > 0 ? new Date(data[data.length - 1].timestamp).toLocaleString() : '';
+
+            const labels = data.map(d => new Date(d.timestamp).toLocaleString());
+            const totalData = data.map(d => d.total);
+            const freeData = data.map(d => d.free);
+            const equityData = data.map(d => d.equity || d.total); // Fallback to total if equity is 0/missing
+            const uplData = data.map(d => d.unrealized_pnl);
+            const marginBalanceData = data.map(d => d.margin_balance || 0);
+            const initialMarginData = data.map(d => d.initial_margin || 0);
+
+            const ctx = document.getElementById('walletChart').getContext('2d');
+
+            if (chartInstance) {
+                chartInstance.destroy();
+            }
+
+            // Create Chart
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Total Equity',
+                            data: equityData,
+                            borderColor: '#7000ff', // Secondary Color (Purple)
+                            backgroundColor: 'rgba(112, 0, 255, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.2,
+                            yAxisID: 'y',
+                            fill: false
+                        },
+                        {
+                            label: 'Margin Balance',
+                            data: marginBalanceData,
+                            borderColor: '#00d2ff', // Cyan
+                            backgroundColor: 'rgba(0, 210, 255, 0.05)',
+                            borderWidth: 2,
+                            tension: 0.2,
+                            yAxisID: 'y',
+                            fill: false,
+                            hidden: true // Hidden by default if it overlaps too much
+                        },
+                        {
+                            label: 'Wallet Balance',
+                            data: totalData,
+                            borderColor: '#00ff88', // Accent Color (Green)
+                            backgroundColor: 'rgba(0, 255, 136, 0.05)',
+                            borderWidth: 2,
+                            tension: 0.1,
+                            yAxisID: 'y',
+                            fill: true
+                        },
+                        {
+                            label: 'Available Balance',
+                            data: freeData,
+                            borderColor: '#ffffff', // White
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            tension: 0.1,
+                            yAxisID: 'y',
+                            fill: false
+                        },
+                        {
+                            label: 'Initial Margin',
+                            data: initialMarginData,
+                            borderColor: '#ff4d4d', // Red
+                            borderWidth: 1,
+                            borderDash: [2, 2],
+                            tension: 0.1,
+                            yAxisID: 'y',
+                            fill: false
+                        },
+                        {
+                            label: 'Unrealized PnL',
+                            data: uplData,
+                            borderColor: '#ffc107', // Warning Color (Yellow)
+                            borderWidth: 1,
+                            borderDash: [5, 5],
+                            tension: 0.1,
+                            yAxisID: 'y1',
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        x: {
+                            display: false,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)'
+                            }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)'
+                            },
+                            ticks: {
+                                color: '#e0e0e0'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Balance (USDT/Coin)',
+                                color: '#a0a0a0'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            grid: {
+                                drawOnChartArea: false,
+                            },
+                            ticks: {
+                                color: '#ffc107'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Unrealized PnL',
+                                color: '#ffc107'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: '#e0e0e0'
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

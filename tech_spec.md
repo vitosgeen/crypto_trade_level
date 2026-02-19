@@ -73,6 +73,7 @@ The bot implements a **Counter-Trend** strategy:
 - **Logging**: Zap
 
 ## 5. Future Improvements
+- **RSI Auto-Creation**: Automatically creating levels based on RSI oversold/overbought conditions and RSI trend breaks. See [RSI Auto Level Spec](docs/rsi_auto_level_spec.md).
 - **Risk Management**: Max position size limits, daily loss limits.
 - **Dynamic Tiers**: Adjusting tier percentages based on volatility (ATR).
 - **Backtesting**: Simulator implementation for the `Exchange` interface.

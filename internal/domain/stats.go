@@ -33,4 +33,9 @@ type CoinData struct {
 	Near1hMin         bool
 	Near24hMax        bool
 	Near24hMin        bool
+	RSI               float64
+	MACD              float64
+	MACDSignal        float64
+	MACDHist          float64
+	ShadowPcnt        float64 // Average wick percentage (total shadows / total range)
 }

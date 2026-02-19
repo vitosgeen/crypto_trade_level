@@ -426,6 +426,8 @@
                         <th onclick="sortTable(0)">Symbol / Price ▼</th>
                         <th onclick="sortTable(1)">Vol / OI ▼</th>
                         <th onclick="sortTable(2)">Funding Rate ▼</th>
+                        <th onclick="sortTable(7)">RSI (1m) ▼</th>
+                        <th onclick="sortTable(8)">MACD (1m) ▼</th>
                         <th onclick="sortTable(3)">10m Range ▼</th>
                         <th onclick="sortTable(4)">1h Range ▼</th>
                         <th onclick="sortTable(5)">4h Range ▼</th>
@@ -437,7 +439,8 @@
                     {{range .Instruments}}
                     <tr data-oi="{{.OpenInterestValue}}" data-volume="{{.Volume24h}}" data-range10m="{{.Range10m}}"
                         data-range1h="{{.Range1h}}" data-range4h="{{.Range4h}}" data-range24h="{{.Range24h}}"
-                        data-symbol="{{.Symbol}}" data-price="{{.LastPrice}}">
+                        data-rsi="{{.RSI}}" data-macdhist="{{.MACDHist}}" data-symbol="{{.Symbol}}"
+                        data-price="{{.LastPrice}}">
                         <td style="font-weight: 600;">
                             <div
                                 style="font-size: 0.85rem; font-weight: 400; color: var(--accent-color); margin-bottom: 2px;">
@@ -484,6 +487,18 @@
                         <td class="{{if gt .FundingRate 0.0}}text-danger{{else if lt .FundingRate 0.0}}text-success{{else}}text-muted{{end}}"
                             style="font-weight: 500;">
                             {{printf "%.4f%%" (mul .FundingRate 100.0)}}
+                        </td>
+                        <td class="{{if gt .RSI 70.0}}text-danger{{else if lt .RSI 30.0}}text-success{{end}}"
+                            style="font-weight: 600;">
+                            {{if gt .RSI 0.0}}{{printf "%.1f" .RSI}}{{else}}-{{end}}
+                        </td>
+                        <td class="{{if gt .MACDHist 0.0}}text-success{{else if lt .MACDHist 0.0}}text-danger{{end}}"
+                            style="font-weight: 500; font-size: 0.85rem;">
+                            {{if ne .MACD 0.0}}
+                            <div>M: {{printf "%.4f" .MACD}}</div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted);">H: {{printf "%.4f" .MACDHist}}
+                            </div>
+                            {{else}}-{{end}}
                         </td>
                         <td class="{{if lt .Range10m 1.0}}text-success{{else if gt .Range10m 3.0}}text-danger{{end}}"
                             style="font-weight: 600;">
@@ -676,7 +691,7 @@
             }
 
             // Sort functionality
-            let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1]; // Adjusted length
+            let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1, 1]; // Length 9
 
             function sortTable(columnIndex) {
                 const table = document.getElementById('coinsTable');
@@ -690,14 +705,16 @@
                     const bText = b.getElementsByTagName('td')[columnIndex].textContent.trim();
 
                     // Numeric sorting for columns
-                    if ([1, 2, 3, 4, 5, 6].includes(columnIndex)) {
-                        // New indices: 0:Symbol/Price, 1:Vol/OI, 2:Funding, 3:10m, 4:1h, 5:4h, 6:24h
+                    if ([1, 2, 3, 4, 5, 6, 7, 8].includes(columnIndex)) {
+                        // Indices: 0:Sym, 1:Vol/OI, 2:Funding, 7:RSI, 8:MACD, 3:10m, 4:1h, 5:4h, 6:24h
 
                         if (columnIndex === 1) return (parseFloat(a.getAttribute('data-volume')) - parseFloat(b.getAttribute('data-volume'))) * direction;
                         if (columnIndex === 3) return (parseFloat(a.getAttribute('data-range10m')) - parseFloat(b.getAttribute('data-range10m'))) * direction;
                         if (columnIndex === 4) return (parseFloat(a.getAttribute('data-range1h')) - parseFloat(b.getAttribute('data-range1h'))) * direction;
                         if (columnIndex === 5) return (parseFloat(a.getAttribute('data-range4h')) - parseFloat(b.getAttribute('data-range4h'))) * direction;
                         if (columnIndex === 6) return (parseFloat(a.getAttribute('data-range24h')) - parseFloat(b.getAttribute('data-range24h'))) * direction;
+                        if (columnIndex === 7) return (parseFloat(a.getAttribute('data-rsi') || 0) - parseFloat(b.getAttribute('data-rsi') || 0)) * direction;
+                        if (columnIndex === 8) return (parseFloat(a.getAttribute('data-macdhist') || 0) - parseFloat(b.getAttribute('data-macdhist') || 0)) * direction;
 
                         // Remove non-numeric chars like %, $, M, K
                         const parseVal = (text) => {

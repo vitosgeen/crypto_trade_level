@@ -28,6 +28,8 @@ type LevelState struct {
 	DisabledUntil         time.Time // Timestamp until which the level is disabled
 	RangeHigh             float64   // Highest price observed during active period
 	RangeLow              float64   // Lowest price observed during active period
+	OpenedAt              time.Time // When the position was first opened tracking started
+	CleanupInProgress     bool      // Prevents multiple cleanup routines for the same level close
 }
 
 type SublevelEngine struct {
@@ -72,6 +74,8 @@ func (e *SublevelEngine) ResetState(levelID string) {
 		s.Tier2Triggered = false
 		s.Tier3Triggered = false
 		s.ActiveSide = ""
+		s.OpenedAt = time.Time{}
+		s.CleanupInProgress = false
 		// ConsecutiveWins is preserved
 		// ConsecutiveBaseCloses is preserved
 		// DisabledUntil is preserved
@@ -228,6 +232,7 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 			triggered = true
 			action = ActionOpen
 			size = level.BaseSize * multiplier
+			state.OpenedAt = time.Now()
 		} else if !state.Tier2Triggered && crossesUp(prevPrice, currPrice, tier2Price) {
 			// Tier 2
 			log.Printf("AUDIT: Tier 2 Triggered (Short). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier2Price)
@@ -274,6 +279,7 @@ func (e *SublevelEngine) Evaluate(level *domain.Level, boundaries []float64, pre
 			triggered = true
 			action = ActionOpen
 			size = level.BaseSize * multiplier
+			state.OpenedAt = time.Now()
 		} else if !state.Tier2Triggered && crossesDown(prevPrice, currPrice, tier2Price) {
 			log.Printf("AUDIT: Tier 2 Triggered (Long). Level %s. Price %f -> %f. Boundary: %f", level.ID, prevPrice, currPrice, tier2Price)
 			state.Tier2Triggered = true

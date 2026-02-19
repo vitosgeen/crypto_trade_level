@@ -27,6 +27,8 @@ type TimeframeChange struct {
 	Direction      string
 	StartPrice     float64
 	EndPrice       float64
+	MinPrice       float64
+	MaxPrice       float64
 	VolChangePcnt  float64
 	VolChangeValue float64
 }
@@ -42,6 +44,10 @@ type AnalysisResult struct {
 	Change1h     TimeframeChange
 	Change4h     TimeframeChange
 	Change24h    TimeframeChange
+	RSI          float64
+	MACD         float64
+	MACDHist     float64
+	ShadowPcnt   float64
 }
 
 type LogAnalyzerService struct {
@@ -81,10 +87,14 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 
 	// Map symbol -> list of (Time, OI)
 	type Point struct {
-		Time   time.Time
-		OI     float64
-		Price  float64
-		Volume float64
+		Time       time.Time
+		OI         float64
+		Price      float64
+		Volume     float64
+		RSI        float64
+		MACD       float64
+		MACDHist   float64
+		ShadowPcnt float64
 	}
 	history := make(map[string][]Point)
 
@@ -98,10 +108,14 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 
 		for _, coin := range entry.Data {
 			history[coin.Symbol] = append(history[coin.Symbol], Point{
-				Time:   entry.Time,
-				OI:     coin.OpenInterest,
-				Price:  coin.LastPrice,
-				Volume: coin.Volume24h,
+				Time:       entry.Time,
+				OI:         coin.OpenInterest,
+				Price:      coin.LastPrice,
+				Volume:     coin.Volume24h,
+				RSI:        coin.RSI,
+				MACD:       coin.MACD,
+				MACDHist:   coin.MACDHist,
+				ShadowPcnt: coin.ShadowPcnt,
 			})
 		}
 	}
@@ -219,8 +233,18 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 				}
 			}
 
-			changeValue := endOI - startPoint.OI
+			minPrice := current.Price
+			maxPrice := current.Price
+			for i := startIndex; i < len(points); i++ {
+				if points[i].Price < minPrice {
+					minPrice = points[i].Price
+				}
+				if points[i].Price > maxPrice {
+					maxPrice = points[i].Price
+				}
+			}
 
+			changeValue := endOI - startPoint.OI
 			volChangeValue := endVol - startPoint.Volume
 			volChangePcnt := 0.0
 			if startPoint.Volume > 0 {
@@ -234,6 +258,8 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 				Direction:      direction,
 				StartPrice:     startPoint.Price,
 				EndPrice:       current.Price,
+				MinPrice:       minPrice,
+				MaxPrice:       maxPrice,
 				VolChangePcnt:  volChangePcnt,
 				VolChangeValue: volChangeValue,
 			}
@@ -251,6 +277,10 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 				Change1h:     calcChange(1 * time.Hour),
 				Change4h:     calcChange(4 * time.Hour),
 				Change24h:    calcChange(24 * time.Hour),
+				RSI:          current.RSI,
+				MACD:         current.MACD,
+				MACDHist:     current.MACDHist,
+				ShadowPcnt:   current.ShadowPcnt,
 			})
 		}
 	}

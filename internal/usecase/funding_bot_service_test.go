@@ -72,10 +72,19 @@ func (m *MockTradeRepo) SaveTrade(ctx context.Context, order *domain.Order) erro
 func (m *MockTradeRepo) ListTrades(ctx context.Context, limit int) ([]*domain.Order, error) {
 	return nil, nil
 }
-func (m *MockTradeRepo) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+func (m *MockTradeRepo) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) (int64, error) {
+	return 1, nil
+}
+func (m *MockTradeRepo) UpdatePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
 	return nil
 }
 func (m *MockTradeRepo) ListPositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
+	return nil, nil
+}
+func (m *MockTradeRepo) SaveExchangePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+	return nil
+}
+func (m *MockTradeRepo) ListExchangePositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
 	return nil, nil
 }
 func (m *MockTradeRepo) SaveTradeSessionLog(ctx context.Context, log *domain.TradeSessionLog) error {
@@ -86,6 +95,21 @@ func (m *MockTradeRepo) ListTradeSessionLogs(ctx context.Context, symbol string,
 }
 func (m *MockTradeRepo) GetTradeSessionLog(ctx context.Context, id string) (*domain.TradeSessionLog, error) {
 	return nil, nil
+}
+func (m *MockTradeRepo) SavePositionPnLHistory(ctx context.Context, history *domain.PositionPnLHistory) error {
+	return nil
+}
+func (m *MockTradeRepo) ListPositionPnLHistory(ctx context.Context, symbol string, limit int) ([]*domain.PositionPnLHistory, error) {
+	return nil, nil
+}
+func (m *MockTradeRepo) ListPositionPnLHistoryRange(ctx context.Context, symbol string, start, end time.Time) ([]*domain.PositionPnLHistory, error) {
+	return nil, nil
+}
+func (m *MockTradeRepo) GetTotalRealizedPnL(ctx context.Context) (float64, error) {
+	return 0, nil
+}
+func (m *MockTradeRepo) GetTotalExchangeRealizedPnL(ctx context.Context) (float64, error) {
+	return 0, nil
 }
 
 // Stubs for other interface methods
@@ -108,10 +132,10 @@ func (m *MockFundingExchange) GetInstruments(ctx context.Context, category strin
 func (m *MockFundingExchange) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
 	return nil, nil
 }
-func (m *MockFundingExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockFundingExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	return nil
 }
-func (m *MockFundingExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockFundingExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	return nil
 }
 func (m *MockFundingExchange) OnTradeUpdate(callback func(symbol string, side string, size float64, price float64)) {
@@ -119,6 +143,14 @@ func (m *MockFundingExchange) OnTradeUpdate(callback func(symbol string, side st
 
 func (m *MockFundingExchange) GetWSStatus() domain.WSStatus {
 	return domain.WSStatus{Connected: true}
+}
+
+func (m *MockFundingExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	return []*domain.WalletBalance{}, nil
+}
+
+func (m *MockFundingExchange) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	return []*domain.PositionHistory{}, nil
 }
 
 func TestEvaluate_ProfitableFunding(t *testing.T) {

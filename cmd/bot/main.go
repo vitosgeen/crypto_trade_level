@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/vitos/crypto_trade_level/internal/domain"
 	"github.com/vitos/crypto_trade_level/internal/infrastructure/exchange"
 	"github.com/vitos/crypto_trade_level/internal/infrastructure/logger"
 	"github.com/vitos/crypto_trade_level/internal/infrastructure/storage"
@@ -179,6 +180,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				svc.CheckSafety(context.Background())
+				svc.RecordActivePositionsPnL(context.Background())
 			case <-stop:
 				return
 			}
@@ -207,7 +209,26 @@ func main() {
 	// Start Auto-Scanner (Disabled by default)
 	// go fundingBotService.StartAutoScanner(context.Background())
 
-	server := web.NewServer(port, store, store, svc, marketService, speedBotService, fundingBotService, log)
+	// Init Wallet Monitor
+	walletMonitor := usecase.NewWalletMonitor(bybitAdapter, store, log)
+	go walletMonitor.Start(context.Background(), 5*time.Minute)
+
+	// Init RSI Monitor Service
+	rsiConfig := domain.RSIMonitorConfig{
+		Enabled:             false, // Disabled by default until configured
+		ScanIntervalMinutes: 1,
+		Timeframes:          []string{"1m", "5m", "15m"},
+		Period:              14,
+		Overbought:          70,
+		Oversold:            30,
+		SizeUSDT:            100,
+		Leverage:            10,
+		TakeProfitPct:       0.012, // 1.2%
+	}
+	rsiMonitorService := usecase.NewRSIMonitorService(marketService, svc, log, rsiConfig)
+	go rsiMonitorService.Start(context.Background())
+
+	server := web.NewServer(port, store, store, store, svc, marketService, speedBotService, fundingBotService, rsiMonitorService, log)
 
 	// 8. Start Server
 	go func() {

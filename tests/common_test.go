@@ -27,7 +27,7 @@ func (m *MockExchange) GetCurrentPrice(ctx context.Context, symbol string) (floa
 	return m.Price, nil
 }
 
-func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	m.BuyCalled = true
 	if m.Position == nil {
 		m.Position = &domain.Position{
@@ -43,7 +43,7 @@ func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float6
 	return nil
 }
 
-func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	m.SellCalled = true
 	if m.Position == nil {
 		m.Position = &domain.Position{
@@ -122,4 +122,14 @@ func (m *MockExchange) CancelOrder(ctx context.Context, symbol, orderID string) 
 
 func (m *MockExchange) GetWSStatus() domain.WSStatus {
 	return domain.WSStatus{Connected: true}
+}
+
+func (m *MockExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	return []*domain.WalletBalance{
+		{Coin: "USDT", Total: 10000, Free: 5000},
+	}, nil
+}
+
+func (m *MockExchange) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	return []*domain.PositionHistory{}, nil
 }

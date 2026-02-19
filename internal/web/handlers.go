@@ -44,9 +44,13 @@ func InitTemplates(dir string) error {
 type LevelView struct {
 	*domain.Level
 	CurrentPrice          float64
+	RSI                   float64
 	ZoneSide              domain.Side
 	LongTiers             []float64
 	ShortTiers            []float64
+	UsedTier1Pct          float64
+	UsedTier2Pct          float64
+	UsedTier3Pct          float64
 	ConsecutiveBaseCloses int
 }
 
@@ -58,6 +62,9 @@ func (s *Server) handleLanding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	// Parse form
+	r.ParseForm()
+
 	// Fetch initial data
 	levels, _ := s.levelRepo.ListLevels(r.Context())
 	history, _ := s.tradeRepo.ListPositionHistory(r.Context(), 50)
@@ -71,38 +78,68 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	for _, l := range levels {
 		price := s.service.GetLatestPrice(l.Symbol)
 
-		// Fetch tiers
-		tiers, err := s.levelRepo.GetSymbolTiers(r.Context(), l.Exchange, l.Symbol)
-		if err != nil || tiers == nil {
-			// Defaults if not found
-			tiers = &domain.SymbolTiers{
-				Tier1Pct: 0.005,
-				Tier2Pct: 0.003,
-				Tier3Pct: 0.0015,
+		// Use level-specific tiers if available, otherwise fallback to DB tiers or defaults
+		usedTiers := &domain.SymbolTiers{
+			Exchange: l.Exchange,
+			Symbol:   l.Symbol,
+			Tier1Pct: l.Tier1Pct,
+			Tier2Pct: l.Tier2Pct,
+			Tier3Pct: l.Tier3Pct,
+		}
+
+		// Fallback to symbol-wide tiers if level tiers are not set
+		if usedTiers.Tier1Pct == 0 {
+			dbTiers, _ := s.levelRepo.GetSymbolTiers(r.Context(), l.Exchange, l.Symbol)
+			if dbTiers != nil {
+				usedTiers.Tier1Pct = dbTiers.Tier1Pct
+				usedTiers.Tier2Pct = dbTiers.Tier2Pct
+				usedTiers.Tier3Pct = dbTiers.Tier3Pct
+			} else {
+				// Defaults
+				usedTiers.Tier1Pct = 0.005
+				usedTiers.Tier2Pct = 0.003
+				usedTiers.Tier3Pct = 0.0015
 			}
 		}
 
 		side := evaluator.DetermineSide(l.LevelPrice, price)
-		longTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideLong)
-		shortTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideShort)
+		longTiers := evaluator.CalculateBoundaries(l, usedTiers, domain.SideLong)
+		shortTiers := evaluator.CalculateBoundaries(l, usedTiers, domain.SideShort)
 
 		// Get Runtime State
 		state := s.service.GetLevelState(l.ID)
 
+		// Get RSI (1m)
+		rsi, _ := s.marketService.GetRSI(r.Context(), l.Symbol, "1", 14)
+
 		views = append(views, LevelView{
 			Level:                 l,
 			CurrentPrice:          price,
+			RSI:                   rsi,
 			ZoneSide:              side,
 			LongTiers:             longTiers,
 			ShortTiers:            shortTiers,
+			UsedTier1Pct:          usedTiers.Tier1Pct,
+			UsedTier2Pct:          usedTiers.Tier2Pct,
+			UsedTier3Pct:          usedTiers.Tier3Pct,
 			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
 		})
 	}
 
+	// Fetch exchange history
+	exchangeHistory, err := s.service.GetExchangeHistory(r.Context(), 50)
+	if err != nil {
+		s.logger.Error("Failed to fetch exchange history", zap.Error(err))
+	}
+
+	totalPnL, _ := s.tradeRepo.GetTotalRealizedPnL(r.Context())
+
 	data := map[string]interface{}{
-		"Levels":     views,
-		"History":    history,
-		"AllSymbols": allSymbols,
+		"Levels":          views,
+		"History":         history,
+		"ExchangeHistory": exchangeHistory,
+		"AllSymbols":      allSymbols,
+		"TotalPnL":        totalPnL,
 	}
 
 	if err := templates.ExecuteTemplate(w, "index.html", data); err != nil {
@@ -112,6 +149,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
+	// Parse form
+	r.ParseForm()
+
 	levels, _ := s.levelRepo.ListLevels(r.Context())
 
 	var views []LevelView
@@ -120,30 +160,50 @@ func (s *Server) handleLevelsTable(w http.ResponseWriter, r *http.Request) {
 	for _, l := range levels {
 		price := s.service.GetLatestPrice(l.Symbol)
 
-		// Fetch tiers
-		tiers, err := s.levelRepo.GetSymbolTiers(r.Context(), l.Exchange, l.Symbol)
-		if err != nil || tiers == nil {
-			// Defaults if not found
-			tiers = &domain.SymbolTiers{
-				Tier1Pct: 0.001,
-				Tier2Pct: 0.002,
-				Tier3Pct: 0.003,
+		// Use level-specific tiers if available, otherwise fallback to DB tiers or defaults
+		usedTiers := &domain.SymbolTiers{
+			Exchange: l.Exchange,
+			Symbol:   l.Symbol,
+			Tier1Pct: l.Tier1Pct,
+			Tier2Pct: l.Tier2Pct,
+			Tier3Pct: l.Tier3Pct,
+		}
+
+		// Fallback to symbol-wide tiers if level tiers are not set
+		if usedTiers.Tier1Pct == 0 {
+			dbTiers, _ := s.levelRepo.GetSymbolTiers(r.Context(), l.Exchange, l.Symbol)
+			if dbTiers != nil {
+				usedTiers.Tier1Pct = dbTiers.Tier1Pct
+				usedTiers.Tier2Pct = dbTiers.Tier2Pct
+				usedTiers.Tier3Pct = dbTiers.Tier3Pct
+			} else {
+				// Defaults
+				usedTiers.Tier1Pct = 0.005
+				usedTiers.Tier2Pct = 0.003
+				usedTiers.Tier3Pct = 0.0015
 			}
 		}
 
 		side := evaluator.DetermineSide(l.LevelPrice, price)
-		longTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideLong)
-		shortTiers := evaluator.CalculateBoundaries(l, tiers, domain.SideShort)
+		longTiers := evaluator.CalculateBoundaries(l, usedTiers, domain.SideLong)
+		shortTiers := evaluator.CalculateBoundaries(l, usedTiers, domain.SideShort)
 
 		// Get Runtime State
 		state := s.service.GetLevelState(l.ID)
 
+		// Get RSI (1m)
+		rsi, _ := s.marketService.GetRSI(r.Context(), l.Symbol, "1", 14)
+
 		views = append(views, LevelView{
 			Level:                 l,
 			CurrentPrice:          price,
+			RSI:                   rsi,
 			ZoneSide:              side,
 			LongTiers:             longTiers,
 			ShortTiers:            shortTiers,
+			UsedTier1Pct:          usedTiers.Tier1Pct,
+			UsedTier2Pct:          usedTiers.Tier2Pct,
+			UsedTier3Pct:          usedTiers.Tier3Pct,
 			ConsecutiveBaseCloses: state.ConsecutiveBaseCloses,
 		})
 	}
@@ -198,6 +258,8 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 	maxConsecutiveBaseCloses, _ := strconv.Atoi(r.FormValue("max_consecutive_base_closes"))
 	baseCloseCooldownMs, _ := strconv.ParseInt(r.FormValue("base_close_cooldown_ms"), 10, 64)
 	autoModeEnabled := r.FormValue("auto_mode_enabled") == "on"
+	ignoreSentimentFilter := r.FormValue("ignore_sentiment_filter") == "on"
+	analysisJSON := r.FormValue("analysis_json")
 
 	side := domain.Side(r.FormValue("side"))
 	if side == "" {
@@ -223,6 +285,11 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	source := r.FormValue("source")
+	if source == "" {
+		source = "manual-web"
+	}
+
 	level := &domain.Level{
 		ID:                       fmt.Sprintf("%d", time.Now().UnixNano()),
 		Exchange:                 exchange,
@@ -242,7 +309,12 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		TakeProfitMode:           takeProfitMode,
 		IsAuto:                   false,
 		AutoModeEnabled:          autoModeEnabled, // Enabled if checkbox checked
-		Source:                   "manual-web",
+		IgnoreSentimentFilter:    ignoreSentimentFilter,
+		Tier1Pct:                 tier1,
+		Tier2Pct:                 tier2,
+		Tier3Pct:                 tier3,
+		Source:                   source,
+		AnalysisJSON:             analysisJSON,
 		CreatedAt:                time.Now(),
 	}
 
@@ -265,9 +337,90 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save level", http.StatusInternalServerError)
 		return
 	}
+	s.logger.Info("Level created",
+		zap.String("symbol", level.Symbol),
+		zap.Float64("price", level.LevelPrice),
+		zap.String("source", level.Source),
+		zap.String("side", string(level.Side)),
+	)
 
 	// Return updated table
 	s.handleLevelsTable(w, r)
+}
+
+func (s *Server) handleQuickOpenLevel(w http.ResponseWriter, r *http.Request) {
+	symbol := strings.ToUpper(r.URL.Query().Get("symbol"))
+	sideStr := r.URL.Query().Get("side")
+	reason := r.URL.Query().Get("reason")
+
+	if symbol == "" || sideStr == "" {
+		http.Error(w, "Symbol and Side are required", http.StatusBadRequest)
+		return
+	}
+
+	side := domain.Side(sideStr)
+	// We use the RSIMonitorService's CreateLevel which uses the monitor config (size, tp, leverage)
+	// Note: We need to Export createLevel or wrap it.
+	// Actually, let's just use the service directly.
+	// WAIT, the rsiMonitorService.createLevel is unexported.
+	// I should add a public method or just implement the logic here using monitor config.
+
+	config := s.rsiMonitorService.GetConfig()
+
+	// Get current price
+	ticker, err := s.service.GetExchange().GetTickers(r.Context(), "linear")
+	var price float64
+	if err == nil {
+		for _, t := range ticker {
+			if t.Symbol == symbol {
+				price = t.LastPrice
+				break
+			}
+		}
+	}
+
+	if price == 0 {
+		// Try MarketService
+		stats, err := s.marketService.GetMarketStats(r.Context(), symbol)
+		if err == nil && stats != nil {
+			price = stats.LastPrice
+		}
+	}
+
+	if price == 0 {
+		http.Error(w, "Could not determine current price", http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate base size from size_usdt
+	baseSize := config.SizeUSDT / price
+
+	level := &domain.Level{
+		ID:             fmt.Sprintf("%d", time.Now().UnixNano()),
+		Exchange:       "bybit",
+		Symbol:         symbol,
+		LevelPrice:     price,
+		Side:           side,
+		BaseSize:       baseSize,
+		Leverage:       config.Leverage,
+		MarginType:     "cross",
+		CoolDownMs:     5000,
+		StopLossMode:   "exchange",
+		TakeProfitPct:  config.TakeProfitPct,
+		TakeProfitMode: "fixed",
+		IsAuto:         false,
+		Source:         fmt.Sprintf("scanner-%s", reason),
+		CreatedAt:      time.Now(),
+	}
+
+	if err := s.service.CreateLevel(r.Context(), level); err != nil {
+		s.logger.Error("Failed to quick create level", zap.Error(err))
+		http.Error(w, "Failed to save level", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Level created successfully"))
 }
 
 func (s *Server) handleDeleteLevel(w http.ResponseWriter, r *http.Request) {
@@ -291,8 +444,49 @@ func (s *Server) handleAutoCreateLevel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateTiers(w http.ResponseWriter, r *http.Request) {
-	// Implementation for updating tiers
-	// ...
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+
+	symbol := strings.ToUpper(r.FormValue("symbol"))
+	exchange := r.FormValue("exchange")
+	if exchange == "" {
+		exchange = "bybit"
+	}
+
+	tier1, _ := strconv.ParseFloat(r.FormValue("tier1"), 64)
+	tier2, _ := strconv.ParseFloat(r.FormValue("tier2"), 64)
+	tier3, _ := strconv.ParseFloat(r.FormValue("tier3"), 64)
+
+	if symbol == "" || tier1 <= 0 {
+		http.Error(w, "Symbol and Tier 1 are required", http.StatusBadRequest)
+		return
+	}
+
+	// Create/Update Tiers
+	tiers := &domain.SymbolTiers{
+		Exchange:  exchange,
+		Symbol:    symbol,
+		Tier1Pct:  tier1 / 100,
+		Tier2Pct:  tier2 / 100,
+		Tier3Pct:  tier3 / 100,
+		UpdatedAt: time.Now(),
+	}
+
+	if err := s.levelRepo.SaveSymbolTiers(r.Context(), tiers); err != nil {
+		s.logger.Error("Failed to save tiers", zap.Error(err))
+		http.Error(w, "Failed to save tiers", http.StatusInternalServerError)
+		return
+	}
+
+	// Also update levels cache so bot picks it up immediately
+	if err := s.service.UpdateCache(r.Context()); err != nil {
+		s.logger.Error("Failed to update cache", zap.Error(err))
+	}
+
+	// Return updated table
+	s.handleLevelsTable(w, r)
 }
 
 func (s *Server) handlePositionsTable(w http.ResponseWriter, r *http.Request) {
@@ -301,6 +495,11 @@ func (s *Server) handlePositionsTable(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("Failed to get positions", zap.Error(err))
 		http.Error(w, "Failed to get positions", http.StatusInternalServerError)
 		return
+	}
+
+	for _, p := range positions {
+		rsi, _ := s.marketService.GetRSI(r.Context(), p.Symbol, "1", 14)
+		p.RSI = rsi
 	}
 
 	if err := templates.ExecuteTemplate(w, "positions_table", positions); err != nil {
@@ -343,6 +542,24 @@ func (s *Server) handleClosePosition(w http.ResponseWriter, r *http.Request) {
 	s.handlePositionsTable(w, r)
 }
 
+func (s *Server) handleCloseAllPositions(w http.ResponseWriter, r *http.Request) {
+	if err := s.service.CloseAllPositions(r.Context()); err != nil {
+		s.logger.Error("Failed to close all positions", zap.Error(err))
+		http.Error(w, "Failed to close all positions", http.StatusInternalServerError)
+		return
+	}
+	s.handlePositionsTable(w, r)
+}
+
+func (s *Server) handleDeleteAllLevels(w http.ResponseWriter, r *http.Request) {
+	if err := s.service.DeleteAllLevels(r.Context()); err != nil {
+		s.logger.Error("Failed to delete all levels", zap.Error(err))
+		http.Error(w, "Failed to delete all levels", http.StatusInternalServerError)
+		return
+	}
+	s.handleLevelsTable(w, r)
+}
+
 func (s *Server) handleTradesTable(w http.ResponseWriter, r *http.Request) {
 	trades, _ := s.tradeRepo.ListTrades(r.Context(), 50)
 	if err := templates.ExecuteTemplate(w, "trades_table", trades); err != nil {
@@ -351,8 +568,39 @@ func (s *Server) handleTradesTable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHistoryTable(w http.ResponseWriter, r *http.Request) {
-	history, _ := s.tradeRepo.ListPositionHistory(r.Context(), 50)
-	if err := templates.ExecuteTemplate(w, "history_table", history); err != nil {
+	tab := r.URL.Query().Get("tab")
+
+	if tab == "pnl" {
+		history, _ := s.tradeRepo.ListPositionPnLHistory(r.Context(), "", 50)
+		if err := templates.ExecuteTemplate(w, "pnl_history_table", history); err != nil {
+			s.logger.Error("Template error", zap.Error(err))
+		}
+		return
+	}
+
+	var history []*domain.PositionHistory
+	var totalPnL float64
+	var err error
+	if tab == "exchange" {
+		history, err = s.service.GetExchangeHistory(r.Context(), 50)
+		if err != nil {
+			s.logger.Error("Failed to fetch exchange history", zap.Error(err))
+		}
+		totalPnL, _ = s.tradeRepo.GetTotalExchangeRealizedPnL(r.Context())
+	} else {
+		history, err = s.tradeRepo.ListPositionHistory(r.Context(), 50)
+		if err != nil {
+			s.logger.Error("Failed to fetch local history", zap.Error(err))
+		}
+		totalPnL, _ = s.tradeRepo.GetTotalRealizedPnL(r.Context())
+	}
+
+	data := map[string]interface{}{
+		"History":  history,
+		"TotalPnL": totalPnL,
+	}
+
+	if err := templates.ExecuteTemplate(w, "history_table", data); err != nil {
 		s.logger.Error("Template error", zap.Error(err))
 	}
 }
@@ -409,6 +657,88 @@ func (s *Server) handleLiquidity(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(clusters)
 }
 
+func (s *Server) handleBiggestOrderBook(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	currentPriceStr := r.URL.Query().Get("price")
+	side := r.URL.Query().Get("side") // "bid" or "ask"
+	var currentPrice float64
+	if currentPriceStr != "" {
+		currentPrice, _ = strconv.ParseFloat(currentPriceStr, 64)
+	}
+
+	if currentPrice == 0 {
+		currentPrice = s.service.GetLatestPrice(symbol)
+	}
+
+	if currentPrice == 0 {
+		http.Error(w, "Could not determine current price", http.StatusInternalServerError)
+		return
+	}
+
+	price, err := s.marketService.GetBiggestOrderBookPrice(r.Context(), symbol, currentPrice, side)
+	if err != nil {
+		s.logger.Warn("Failed to get biggest order book price", zap.String("symbol", symbol), zap.Error(err))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity) // 422
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"symbol": symbol,
+		"price":  price,
+	})
+}
+
+func (s *Server) handleAnalyzeLiquidityImbalance(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	currentPriceStr := r.URL.Query().Get("price")
+	var currentPrice float64
+	if currentPriceStr != "" {
+		currentPrice, _ = strconv.ParseFloat(currentPriceStr, 64)
+	}
+
+	if currentPrice == 0 {
+		currentPrice = s.service.GetLatestPrice(symbol)
+	}
+
+	if currentPrice == 0 {
+		http.Error(w, "Could not determine current price", http.StatusInternalServerError)
+		return
+	}
+
+	analysis, err := s.marketService.AnalyzeLiquidityImbalance(r.Context(), symbol, currentPrice,
+		getFloatParam(r, "ratio", 2.0),
+		getIntParam(r, "clusters", 5),
+		getFloatParam(r, "wall_pct", 25.0)/100.0, // Convert percentage to decimal
+	)
+	if err != nil {
+		s.logger.Warn("Failed to analyze liquidity imbalance", zap.String("symbol", symbol), zap.Error(err))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(analysis)
+}
+
 func (s *Server) handleLiquidityHistory(w http.ResponseWriter, r *http.Request) {
 	symbol := r.URL.Query().Get("symbol")
 	if symbol == "" {
@@ -416,6 +746,39 @@ func (s *Server) handleLiquidityHistory(w http.ResponseWriter, r *http.Request) 
 	}
 
 	history := s.marketService.GetLiquidityHistory(symbol)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
+}
+
+func (s *Server) handlePositionPnLHistory(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+	limitStr := r.URL.Query().Get("limit")
+
+	var history []*domain.PositionPnLHistory
+	var err error
+
+	if startStr != "" && endStr != "" {
+		start, _ := time.Parse(time.RFC3339, startStr)
+		end, _ := time.Parse(time.RFC3339, endStr)
+		history, err = s.tradeRepo.ListPositionPnLHistoryRange(r.Context(), symbol, start, end)
+	} else {
+		limit := 100
+		if limitStr != "" {
+			if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+				limit = l
+			}
+		}
+		history, err = s.tradeRepo.ListPositionPnLHistory(r.Context(), symbol, limit)
+	}
+
+	if err != nil {
+		s.logger.Error("Failed to fetch PnL history", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(history)
@@ -757,4 +1120,93 @@ func (s *Server) handleGetLogChartData(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(points)
+}
+
+func (s *Server) handleGetRSIConfig(w http.ResponseWriter, r *http.Request) {
+	config := s.rsiMonitorService.GetConfig()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(config)
+}
+
+func (s *Server) handleUpdateRSIConfig(w http.ResponseWriter, r *http.Request) {
+	var config domain.RSIMonitorConfig
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		s.logger.Error("Failed to decode RSI config", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Update the service
+	s.rsiMonitorService.UpdateConfig(config)
+	s.logger.Info("RSI Monitor Config updated", zap.Any("config", config))
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleGetRSISignals(w http.ResponseWriter, r *http.Request) {
+	signals := s.rsiMonitorService.GetSignals()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(signals)
+}
+
+func (s *Server) handleCheckSupport(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	priceStr := r.URL.Query().Get("price")
+	price, _ := strconv.ParseFloat(priceStr, 64)
+	if price == 0 {
+		http.Error(w, "Valid price is required", http.StatusBadRequest)
+		return
+	}
+
+	devStr := r.URL.Query().Get("dev")
+	dev, _ := strconv.ParseFloat(devStr, 64)
+	if dev == 0 {
+		dev = 1.0 // Default 1%
+	}
+
+	wallPrice, supported, err := s.marketService.HasNearbySignificantWall(r.Context(), symbol, price, dev)
+	if err != nil {
+		s.logger.Warn("Failed to check support", zap.String("symbol", symbol), zap.Error(err))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"symbol":    symbol,
+		"price":     price,
+		"wall":      wallPrice,
+		"supported": supported,
+	})
+}
+
+func getFloatParam(r *http.Request, name string, defaultVal float64) float64 {
+	valStr := r.URL.Query().Get(name)
+	if valStr == "" {
+		return defaultVal
+	}
+	val, err := strconv.ParseFloat(valStr, 64)
+	if err != nil {
+		return defaultVal
+	}
+	return val
+}
+
+func getIntParam(r *http.Request, name string, defaultVal int) int {
+	valStr := r.URL.Query().Get(name)
+	if valStr == "" {
+		return defaultVal
+	}
+	val, err := strconv.Atoi(valStr)
+	if err != nil {
+		return defaultVal
+	}
+	return val
 }

@@ -253,11 +253,11 @@
 
     <nav>
         <a href="/" class="logo">CRYPTOBOT</a>
-        <div class="nav-links">
-            <a href="/level-bot" style="color: var(--accent-color);">Level Bot</a>
-            <a href="/speed-bot">Speed Bot</a>
-            <a href="/funding-bot">Funding Bot</a>
-            <a href="/dashboard">Dashboard</a>
+        <a href="/level-bot" style="color: var(--accent-color);">Level Bot</a>
+        <a href="/speed-bot">Speed Bot</a>
+        <a href="/funding-bot">Funding Bot</a>
+        <a href="/wallet">Wallet</a>
+        <a href="/dashboard">Dashboard</a>
         </div>
         <a href="/dashboard" class="cta-button">Launch App</a>
     </nav>
@@ -292,8 +292,8 @@
                 </div>
                 <div>
                     <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Min
-                        Value Change ($)</label>
-                    <input type="number" id="monitorValue" value="500000" step="100000"
+                        Vol Change %</label>
+                    <input type="number" id="monitorVolPcnt" value="50.0" step="5"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
                 </div>
                 <div>
@@ -301,6 +301,19 @@
                         24h Vol ($)</label>
                     <input type="number" id="monitorVol" value="1000000" step="100000"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Min
+                        Consistent (C)</label>
+                    <select id="monitorConsistent"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                        <option value="0" selected>0 (Never mind)</option>
+                        <option value="1">1 C</option>
+                        <option value="2">2 C or more</option>
+                        <option value="3">3 C or more</option>
+                        <option value="4">4 C or more</option>
+                        <option value="5">5 C or more</option>
+                    </select>
                 </div>
                 <div>
                     <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Auto
@@ -326,6 +339,60 @@
                     <input type="number" id="autoLevelCool" value="600" step="100"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
                 </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Tier
+                        1 (x1)</label>
+                    <input type="number" id="autoLevelTier1" value="0.5" step="0.01"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Tier
+                        2 (x1)</label>
+                    <input type="number" id="autoLevelTier2" value="0.3" step="0.01"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Tier
+                        3 (x2)</label>
+                    <input type="number" id="autoLevelTier3" value="0.15" step="0.01"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Auto
+                        Price Mode</label>
+                    <select id="autoPriceMode"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                        <option value="current">Current Price</option>
+                        <option value="extremes" selected>Extremes (Standard)</option>
+                        <option value="extremes_opposite">Extremes (Opposite)</option>
+                        <option value="biggest_order_book">Biggest Order Book</option>
+                        <option value="local_high_low">Local High / Local Low</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Max
+                        Dev Big Order %</label>
+                    <input type="number" id="autoCloseDeviation" value="1.0" step="0.1"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--accent-color); font-size: 0.9rem; margin-bottom: 8px;">LI
+                        Min Ratio</label>
+                    <input type="number" id="liRatio" value="2.0" step="0.1"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--accent-color); font-size: 0.9rem; margin-bottom: 8px;">LI
+                        Max Clusters</label>
+                    <input type="number" id="liMaxClusters" value="5" step="1"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--accent-color); font-size: 0.9rem; margin-bottom: 8px;">LI
+                        Wall Pct (%)</label>
+                    <input type="number" id="liWallPct" value="25" step="1"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
             </div>
 
             <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color);">
@@ -345,6 +412,36 @@
                             style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;">
                             <input type="checkbox" id="autoLevelToggle" style="width: 18px; height: 18px;">
                             <span style="color: var(--accent-color);">Auto Create Level</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;">
+                            <input type="checkbox" id="tpByExchangeToggle" style="width: 18px; height: 18px;">
+                            <span style="color: var(--accent-color);">TP by Exch</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;">
+                            <input type="checkbox" id="ignoreSentimentToggle" checked
+                                style="width: 18px; height: 18px;">
+                            <span style="color: var(--warning);">Ignore Sentiment</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;"
+                            title="Avoid Chop Rule: Skip if Consistent timeframes < 30% AND Net Progress < 25% of recent range. Also skips if RSI between 45-55.">
+                            <input type="checkbox" id="avoidChopToggle" style="width: 18px; height: 18px;">
+                            <span style="color: var(--text-muted);">Avoid Chop</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;"
+                            title="Verify Liquidity Imbalance before opening a level.">
+                            <input type="checkbox" id="verifyLiquidityToggle" checked
+                                style="width: 18px; height: 18px;">
+                            <span style="color: var(--accent-color);">Verify Liquidity</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;"
+                            title="Auto Close Level if price deviates from Biggest Order">
+                            <input type="checkbox" id="autoCloseBiggestOrderToggle" style="width: 18px; height: 18px;">
+                            <span style="color: var(--danger);">Auto Close</span>
                         </label>
                     </div>
                     <div id="lastCheckTime" style="font-size: 0.8rem; color: var(--text-muted);"></div>
@@ -427,6 +524,9 @@
                             <th onclick="sortTable(5)">1h Change <span id="sort5"></span></th>
                             <th onclick="sortTable(6)">4h Change <span id="sort6"></span></th>
                             <th onclick="sortTable(7)">24h Change <span id="sort7"></span></th>
+                            <th onclick="sortTable(8)">Shadow 1h % <span id="sort8"></span></th>
+                            <th onclick="sortTable(9)">RSI (1m) <span id="sort9"></span></th>
+                            <th onclick="sortTable(10)">MACD (1m) <span id="sort10"></span></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -469,7 +569,7 @@
     </div>
 
     <script>
-        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1];
+        let sortDirection = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
         let currentSortColumn = 1;
 
         // Chart Instances
@@ -627,7 +727,7 @@
         // Let's just update headers dynamically.
 
         function updateSortIcons(activeIndex, direction) {
-            for (let i = 0; i <= 7; i++) {
+            for (let i = 0; i <= 9; i++) {
                 const span = document.getElementById(`sort${i}`);
                 if (!span) continue;
                 if (i === activeIndex) {
@@ -765,22 +865,48 @@
         async function checkAlerts() {
             const timeframeIndex = parseInt(document.getElementById('monitorTimeframe').value);
             const minPcnt = parseFloat(document.getElementById('monitorPcnt').value);
-            const minValue = parseFloat(document.getElementById('monitorValue').value);
+            const minVolPcnt = parseFloat(document.getElementById('monitorVolPcnt').value);
             const minVol = parseFloat(document.getElementById('monitorVol').value) || 0;
             const autoLevelSize = parseFloat(document.getElementById('autoLevelSize').value) || 100;
             const autoLevelTP = parseFloat(document.getElementById('autoLevelTP').value) || 1.0;
             const autoLevelLev = parseInt(document.getElementById('autoLevelLev').value) || 10;
             const autoLevelCool = parseInt(document.getElementById('autoLevelCool').value) || 60;
+            const autoLevelTier1 = parseFloat(document.getElementById('autoLevelTier1').value) || 0.5;
+            const autoLevelTier2 = parseFloat(document.getElementById('autoLevelTier2').value) || 0.3;
+            const autoLevelTier3 = parseFloat(document.getElementById('autoLevelTier3').value) || 0.15;
+            const minConsistent = parseInt(document.getElementById('monitorConsistent').value) || 0;
+            const ignoreSentiment = document.getElementById('ignoreSentimentToggle').checked;
+            const avoidChop = document.getElementById('avoidChopToggle').checked;
+            const tpByExchange = document.getElementById('tpByExchangeToggle').checked;
 
-            // Fetch active levels to prevent duplicates
+            console.log("Auto Level Size: " + autoLevelSize);
+            console.log("Auto Level TP: " + autoLevelTP);
+            console.log("Auto Level Lev: " + autoLevelLev);
+            console.log("Auto Level Cool: " + autoLevelCool);
+            console.log("Auto Level Tier 1: " + autoLevelTier1);
+            console.log("Auto Level Tier 2: " + autoLevelTier2);
+            console.log("Auto Level Tier 3: " + autoLevelTier3);
+            console.log("Min Consistent: " + minConsistent);
+
+            // Fetch active levels/positions to prevent duplicates and for Auto Close logic
             let activeSymbols = new Set();
+            let activeLevels = [];
+            let activePositions = new Set();
             try {
-                const levels = await fetch('/api/levels').then(r => r.json());
+                const [levels, positions] = await Promise.all([
+                    fetch('/api/levels').then(r => r.json()),
+                    fetch('/api/positions').then(r => r.json())
+                ]);
+
                 if (levels && Array.isArray(levels)) {
+                    activeLevels = levels;
                     levels.forEach(l => activeSymbols.add(l.Symbol));
                 }
+                if (positions && Array.isArray(positions)) {
+                    positions.forEach(p => activePositions.add(p.Symbol));
+                }
             } catch (err) {
-                console.error("Failed to fetch active levels for deduplication", err);
+                console.error("Failed to fetch active data", err);
             }
 
             const rows = document.querySelectorAll("#analysisTable tbody tr");
@@ -793,20 +919,73 @@
             const now = Date.now();
             const cooldown = 5 * 60 * 1000; // 5 minutes
 
-            rows.forEach(row => {
-                if (row.cells.length < 2) return; // Skip no data row
+            for (const row of rows) {
+                if (row.cells.length < 2) continue; // Skip no data row
 
                 const symbol = row.cells[0].querySelector('.symbol').innerText;
                 const cell = row.cells[timeframeIndex];
+                if (!cell) continue;
+
+                let pcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
+                let pcntCondition = Math.abs(pcntChange) >= minPcnt;
+                let volPcntChange = parseFloat(cell.getAttribute('data-vol-pcnt')) || 0;
+                const isAnomaly = pcntCondition && Math.abs(volPcntChange) >= minVolPcnt;
+
+                // Calculate Net Progress early for filter overrides
+                const startPrice = parseFloat(cell.getAttribute('data-start-price')) || 0;
+                const endPrice = parseFloat(cell.getAttribute('data-end-price')) || 0;
+                const minPrice = parseFloat(cell.getAttribute('data-min-price')) || 0;
+                const maxPrice = parseFloat(cell.getAttribute('data-max-price')) || 0;
+
+                let netProgress = 1.0;
+                const range = maxPrice - minPrice;
+                if (range > 0) {
+                    netProgress = Math.abs(endPrice - startPrice) / range;
+                }
 
                 // Check Volume Condition
                 const volCell = row.cells[2];
                 const vol24h = parseFloat(volCell.getAttribute('data-val')) || 0;
-                if (vol24h < minVol) return;
+                if (vol24h < minVol) continue;
 
-                if (!cell) return;
+                // Check Consistency Condition
+                const consistentCount = row.querySelectorAll('.badge-consistent').length;
+                // Rule: Ignore C-based filter if progress > 70%
+                if (consistentCount < minConsistent && netProgress < 0.7) continue;
 
-                let pcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
+                // Check Chop Condition
+                if (avoidChop) {
+                    const rsiVal = parseFloat(row.cells[9].getAttribute('data-val')) || 0;
+                    const consistencyRatio = consistentCount / 5;
+
+                    const isRSIZone = rsiVal >= 45 && rsiVal <= 55;
+                    const isLowConsistency = consistencyRatio < 0.3;
+                    const isLowProgress = netProgress < 0.25;
+
+                    // Logic: Chop if (Low Progress) AND (Low Consistency OR RSI Zone)
+                    // "High Confidence" if BOTH conditions are met
+                    const isChop = isLowProgress && (isLowConsistency || isRSIZone);
+                    const isHighConfidence = isLowConsistency && isRSIZone;
+
+                    if (isChop) {
+                        if (isAnomaly) {
+                            const logDiv = document.getElementById('alertLog');
+                            logDiv.style.display = 'block';
+                            const entry = document.createElement('div');
+                            entry.style.color = isHighConfidence ? 'var(--warning)' : 'var(--text-muted)';
+                            entry.style.fontSize = '0.8rem';
+                            let label = isHighConfidence ? "HIGH CONFIDENCE CHOP" : "CHOP";
+                            let reason = isRSIZone ? "RSI Zone" : "Low Consistency";
+                            entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol} Ignored (${label}): ${reason} (${rsiVal.toFixed(1)} RSI, ${(consistencyRatio * 100).toFixed(0)}% C, ${(netProgress * 100).toFixed(0)}% Prog)`;
+                            logDiv.appendChild(entry);
+                            logDiv.scrollTop = logDiv.scrollHeight;
+                        }
+                        continue;
+                    }
+                }
+
+                if (!cell) continue;
+
                 const rawVal = cell.getAttribute('data-val-raw');
                 let valueChange = 0;
                 if (rawVal) {
@@ -823,42 +1002,180 @@
                     }
                 }
 
-                let pcntCondition = false;
-                if (pcntChange < 0) {
-                    pcntChange = pcntChange * -1;
-                }
-                pcntCondition = pcntChange >= minPcnt;
-
-                if (pcntCondition && Math.abs(valueChange) >= minValue) {
+                if (pcntCondition && Math.abs(volPcntChange) >= minVolPcnt) {
                     row.classList.add('anomaly-alert'); // Highlight on table regardless of sound history
 
                     const alertKey = `${symbol}-${timeframeIndex}`;
                     const lastAlert = alertedHistory.get(alertKey);
 
                     if (!lastAlert || (now - lastAlert > cooldown)) {
-                        const msg = `${symbol}: ${pcntChange.toFixed(2)}% ($${(valueChange / 1000).toFixed(1)}K)`;
+                        const timeframeName = document.getElementById('monitorTimeframe').options[document.getElementById('monitorTimeframe').selectedIndex].text;
+                        const rsiValue = row.cells[8].getAttribute('data-val') || 0;
+                        const rsiText = ` | RSI: ${parseFloat(rsiValue).toFixed(1)}`;
+
+                        const msg = `${symbol}: ${Math.abs(pcntChange).toFixed(2)}% (Vol: ${Math.abs(volPcntChange).toFixed(1)}%)${rsiText}`;
                         anomalies.push(msg);
                         alertedHistory.set(alertKey, now);
 
-                        // Parse Current Price for Level Creation
+                        // Parse Price for Level Creation based on change direction and mode
                         // Check if level already exists
+                        if (activeSymbols.has(symbol)) {
+                            if (!activePositions.has(symbol)) {
+                                console.log(`${symbol} has level but no position. Deleting old level to recreate.`);
+                                const oldLevel = activeLevels.find(l => l.Symbol === symbol);
+                                if (oldLevel) {
+                                    await fetch(`/levels/${oldLevel.ID}`, { method: 'DELETE' });
+                                    activeSymbols.delete(symbol);
+
+                                    const logDiv = document.getElementById('alertLog');
+                                    logDiv.style.display = 'block';
+                                    const entry = document.createElement('div');
+                                    entry.style.color = 'var(--warning)';
+                                    entry.style.fontSize = '0.8rem';
+                                    entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Existing level deleted (no position) for recreation.`;
+                                    logDiv.appendChild(entry);
+                                }
+                            }
+                        }
+
                         if (!activeSymbols.has(symbol)) {
+                            let targetPrice = 0;
                             const priceText = row.cells[1].innerText;
                             const priceMatch = priceText.match(/\$([0-9.]+)/);
-                            if (priceMatch) {
+                            const currentPrice = priceMatch ? priceMatch[1] : 0;
+
+                            const mode = document.getElementById('autoPriceMode').value;
+                            const realPcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
+
+                            const minPrice = cell.getAttribute('data-min-price');
+                            const maxPrice = cell.getAttribute('data-max-price');
+                            const timeframeName = document.getElementById('monitorTimeframe').options[document.getElementById('monitorTimeframe').selectedIndex].text;
+                            const rsi = row.cells[8].getAttribute('data-val') || 0;
+
+                            if (mode === 'current') {
+                                targetPrice = currentPrice;
+                            } else if (mode === 'extremes') {
+                                if (realPcntChange < 0) {
+                                    // change - : highest price
+                                    targetPrice = maxPrice;
+                                } else {
+                                    // change + : lowest price
+                                    targetPrice = minPrice;
+                                }
+                            } else if (mode === 'extremes_opposite') {
+                                if (realPcntChange < 0) {
+                                    // change - : lowest price
+                                    targetPrice = minPrice;
+                                } else {
+                                    // change + : highest price
+                                    targetPrice = maxPrice;
+                                }
+                            } else if (mode === 'biggest_order_book') {
+                                try {
+                                    const sideParam = realPcntChange < 0 ? 'bid' : 'ask';
+                                    const levelSide = realPcntChange < 0 ? 'LONG' : 'SHORT';
+                                    const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${sideParam}`);
+                                    if (resp.ok) {
+                                        const data = await resp.json();
+                                        targetPrice = data.price;
+                                        console.log(`Found biggest order book level for ${symbol} (${sideParam}): ${targetPrice}`);
+
+                                        // Override default BOTH if we found a specific side level
+                                        currentLevelSide = levelSide;
+                                    } else {
+                                        const errData = await resp.json().catch(() => ({}));
+                                        if (resp.status === 422 && errData.error === "No structure in the book") {
+                                            anomalies.push(`${symbol}: Level Declined - No structure in book`);
+                                        }
+                                        console.error(`Failed to fetch biggest order book for ${symbol}: ${errData.error || resp.statusText}`);
+                                    }
+                                } catch (err) {
+                                    console.error(`Error fetching biggest order book for ${symbol}:`, err);
+                                }
+                            } else if (mode === 'local_high_low') {
+                                if (realPcntChange < 0) {
+                                    // Price Down -> Target Low
+                                    targetPrice = minPrice;
+                                } else {
+                                    // Price Up -> Target High
+                                    targetPrice = maxPrice;
+                                }
+                            }
+
+                            if (targetPrice) {
+                                let liAnalysis = null;
+                                if (document.getElementById('verifyLiquidityToggle').checked) {
+                                    try {
+                                        const liRatio = document.getElementById('liRatio').value || 2.0;
+                                        const liClusters = document.getElementById('liMaxClusters').value || 5;
+                                        const liWallPct = document.getElementById('liWallPct').value || 25;
+
+                                        const liResp = await fetch(`/api/orderbook/analyze-imbalance?symbol=${symbol}&price=${currentPrice}&ratio=${liRatio}&clusters=${liClusters}&wall_pct=${liWallPct}`);
+                                        if (liResp.ok) {
+                                            liAnalysis = await liResp.json();
+                                            if (!liAnalysis.is_imbalanced) {
+                                                console.log(`Liquidity Check Failed for ${symbol}: ${liAnalysis.reason}`);
+                                                const logDiv = document.getElementById('alertLog');
+                                                logDiv.style.display = 'block';
+                                                const entry = document.createElement('div');
+                                                entry.style.color = 'var(--text-muted)';
+                                                entry.style.fontSize = '0.8rem';
+                                                entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Liquidity Declined - ${liAnalysis.reason}`;
+                                                logDiv.appendChild(entry);
+                                                logDiv.scrollTop = logDiv.scrollHeight;
+                                                continue; // Skip this level
+                                            }
+                                            console.log(`Liquidity Check Passed for ${symbol}: ${liAnalysis.reason}`);
+                                        }
+                                    } catch (err) {
+                                        console.error(`Error verifying liquidity for ${symbol}:`, err);
+                                    }
+                                }
+
                                 levelRequests.push({
                                     symbol: symbol,
-                                    price: priceMatch[1]
+                                    price: targetPrice,
+                                    side: currentLevelSide || 'BOTH',
+                                    min: minPrice,
+                                    max: maxPrice,
+                                    timeframe: timeframeName,
+                                    rsi: rsi,
+                                    analysis: {
+                                        symbol: symbol,
+                                        price: currentPrice,
+                                        oi: parseFloat(row.cells[1].getAttribute('data-val')),
+                                        vol24h: vol24h,
+                                        pcnt_change: realPcntChange,
+                                        vol_pcnt_change: volPcntChange,
+                                        net_progress: netProgress,
+                                        value_change: valueChange,
+                                        timeframe: timeframeName,
+                                        min_price: minPrice,
+                                        max_price: maxPrice,
+                                        rsi: rsi,
+                                        macd: row.cells[9].getAttribute('data-val') || 0,
+                                        macd_hist: row.cells[9].getAttribute('data-val') || 0, //macd_hist column uses same data-val for simplicity in template
+                                        liquidity: liAnalysis
+                                    }
                                 });
-                            } else {
-                                console.warn(`Could not parse price for ${symbol} from text: ${priceText}`);
+                            }
+                            else {
+                                console.warn(`Could not determine target price for ${symbol} with mode ${mode}`);
                             }
                         } else {
-                            console.log(`Skipping auto-create for ${symbol}: Level already exists.`);
+                            console.log(`Skipping auto-create for ${symbol}: Active level with position already exists.`);
+                            const logDiv = document.getElementById('alertLog');
+                            logDiv.style.display = 'block';
+                            const entry = document.createElement('div');
+                            entry.style.color = 'var(--text-muted)';
+                            entry.style.fontSize = '0.8rem';
+                            entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Skipping auto-level - Active position already exists.`;
+                            logDiv.appendChild(entry);
+                            logDiv.scrollTop = logDiv.scrollHeight;
                         }
                     }
                 }
-            });
+            }
 
             const logDiv = document.getElementById('alertLog');
             document.getElementById('lastCheckTime').innerText = "Last checked: " + new Date().toLocaleTimeString();
@@ -886,31 +1203,79 @@
                 logDiv.appendChild(logEntry);
                 logDiv.scrollTop = logDiv.scrollHeight;
 
-                // Auto Create Levels
                 if (document.getElementById('autoLevelToggle').checked) {
                     if (levelRequests.length > 0) {
                         console.log("Triggering auto-creation for:", levelRequests);
                     }
                     levelRequests.forEach(req => {
-                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool);
+                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi, req.analysis, ignoreSentiment, tpByExchange, req.side, true);
                     });
+                }
+            }
+
+            // Auto Close Logic (Runs every cycle)
+            if (document.getElementById('autoCloseBiggestOrderToggle').checked && activeLevels.length > 0) {
+                const maxDev = parseFloat(document.getElementById('autoCloseDeviation').value) || 1.0;
+                const logDiv = document.getElementById('alertLog');
+
+                for (const level of activeLevels) {
+                    try {
+                        const resp = await fetch(`/api/orderbook/check-support?symbol=${level.Symbol}&price=${level.LevelPrice}&dev=${maxDev}`);
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            const supported = data.supported;
+
+                            if (!supported) {
+                                console.log(`Auto Close Triggered: ${level.Symbol} level $${level.LevelPrice} has NO nearby big orders within ${maxDev}%`);
+
+                                // Close Level
+                                await fetch(`/levels/${level.ID}`, { method: 'DELETE' });
+
+                                // Close Position
+                                await fetch(`/positions/${level.Symbol}`, { method: 'DELETE' });
+
+                                logDiv.style.display = 'block';
+                                const entry = document.createElement('div');
+                                entry.style.color = 'var(--danger)';
+                                entry.innerText = `>>> Auto Closed ${level.Symbol}: No significant walls found near $${level.LevelPrice} (+/- ${maxDev}%)`;
+                                logDiv.appendChild(entry);
+                                logDiv.scrollTop = logDiv.scrollHeight;
+
+                                playAlertSound();
+                                if (document.getElementById('pushToggle').checked && Notification.permission === "granted") {
+                                    new Notification("Level Auto-Closed", {
+                                        body: `${level.Symbol} @ $${level.LevelPrice}: No walls found nearby (+/- ${maxDev}%)`,
+                                        icon: '/static/icon.png'
+                                    });
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.error(`Error checking auto close for ${level.Symbol}`, err);
+                    }
                 }
             }
         }
 
-        function createLevel(symbol, price, size, tp, lev, cool) {
-            console.log(`Sending create request for ${symbol} @ ${price}`);
+        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, min, max, timeframe, rsi, analysisData, ignoreSentiment, tpByExchange, side, isAuto) {
+            console.log(`Sending create request for ${symbol} @ ${price} (${side})`);
 
-            // Calculate Base Size (Coin Quantity) from USDT Size
-            // User requested: Round up to nearest 10 (e.g. 713 -> 720)
+            // ... (qty calculation code remains) ...
             const priceVal = parseFloat(price);
             const sizeUsd = parseFloat(size);
             let coinQty = 0;
             if (priceVal > 0) {
                 const rawQty = sizeUsd / priceVal;
-                coinQty = Math.ceil(rawQty / 10) * 10;
+                if (rawQty < 1) {
+                    coinQty = parseFloat(rawQty.toFixed(4));
+                } else if (rawQty < 100) {
+                    coinQty = parseFloat(rawQty.toFixed(2));
+                } else {
+                    // For cheap coins/larger quantities, round up to nearest 10 as requested
+                    coinQty = Math.ceil(rawQty / 10) * 10;
+                }
             }
-            console.log(`Calculated size: $${sizeUsd} / $${priceVal} = ${sizeUsd / priceVal} coins -> Rounded to ${coinQty}`);
+            console.log(`Calculated size: $${sizeUsd} / $${priceVal} = ${sizeUsd / priceVal} coins -> Precision Qty: ${coinQty}`);
 
             const params = new URLSearchParams();
             params.append('symbol', symbol);
@@ -919,19 +1284,29 @@
             params.append('leverage', lev.toString());
             params.append('exchange', 'bybit');
             params.append('margin_type', 'cross');
-            params.append('side', 'BOTH');
+            params.append('side', side || 'BOTH');
             params.append('take_profit_pct', tp.toString());
             params.append('stop_loss_mode', 'exchange');
             params.append('stop_loss_at_base', 'on');
             params.append('disable_speed_close', 'on');
             params.append('cool_down_ms', cool.toString()); // Value is already in ms
             // Tier Defaults
-            params.append('tier1', '1.75');
-            params.append('tier2', '1.6');
-            params.append('tier3', '1.5');
+            params.append('tier1', tier1.toString());
+            params.append('tier2', tier2.toString());
+            params.append('tier3', tier3.toString());
 
             // Add auto flag
             params.append('auto_mode_enabled', 'on');
+            if (ignoreSentiment) {
+                params.append('ignore_sentiment_filter', 'on');
+            }
+            if (tpByExchange) {
+                params.append('take_profit_mode', 'exchange');
+            }
+            params.append('source', isAuto ? 'anomaly-monitor-auto' : 'anomaly-monitor-manual');
+            if (analysisData) {
+                params.append('analysis_json', JSON.stringify(analysisData));
+            }
 
             fetch('/levels', {
                 method: 'POST',
@@ -941,13 +1316,33 @@
                 body: params
             }).then(response => {
                 if (response.ok) {
-                    console.log(`Auto-created level for ${symbol} at ${price}`);
+                    const actionType = isAuto ? "Auto-created" : "Manually created";
+                    console.log(`${actionType} level for ${symbol} at ${price} side ${side}`);
                     const logDiv = document.getElementById('alertLog');
                     const entry = document.createElement('div');
                     entry.style.color = 'var(--accent-color)';
-                    entry.innerText = `>>> Auto-created level for ${symbol} @ $${price}`;
+                    let liInfo = "";
+                    if (analysisData && analysisData.liquidity) {
+                        const li = analysisData.liquidity;
+                        liInfo = ` | Liq: ${li.ratio.toFixed(1)} (${li.weak_side})`;
+                    }
+                    const volPcntInfo = analysisData && analysisData.vol_pcnt_change != undefined ? ` (V: ${analysisData.vol_pcnt_change.toFixed(1)}%)` : "";
+
+                    entry.innerText = `>>> ${actionType} level for ${symbol} @ $${price} (${side}) | Δ ${parseFloat(analysisData?.pcnt_change || 0).toFixed(2)}%${volPcntInfo} | RSI: ${parseFloat(rsi).toFixed(1)}${liInfo} | Range [${timeframe}]: $${min} - $${max}`;
                     logDiv.appendChild(entry);
                     logDiv.scrollTop = logDiv.scrollHeight;
+
+                    // Trigger Alerts for Auto-creation (only if auto)
+                    if (isAuto) {
+                        playAlertSound();
+                        if (document.getElementById('pushToggle').checked && Notification.permission === "granted") {
+                            const notifyBody = `${symbol} @ $${price} (${side}) | Δ ${parseFloat(analysisData?.pcnt_change || 0).toFixed(2)}%${volPcntInfo} | RSI: ${parseFloat(rsi).toFixed(1)}${liInfo}`;
+                            new Notification("Level Auto-Created", {
+                                body: notifyBody,
+                                icon: '/static/icon.png'
+                            });
+                        }
+                    }
                 } else {
                     console.error("Failed to create level", response.status, response.statusText);
                     response.text().then(text => console.error("Response body:", text));
@@ -955,7 +1350,7 @@
             }).catch(err => console.error("Error creating level:", err));
         }
 
-        // Auto Refresh
+        // Auto Refresh  
         let countdownSecs = 10;
         setInterval(() => {
             if (countdownSecs > 0) countdownSecs--;
@@ -993,16 +1388,90 @@
                 })
                 .catch(err => console.error("Auto-refresh failed", err));
         }, 10000); // 1 minute
-        function manualCreateLevel(event, symbol, price) {
+        async function manualCreateLevel(event, symbol, currentPrice) {
             event.stopPropagation();
-            if (!confirm('Create level for ' + symbol + ' at $' + price + '?')) return;
+
+            const timeframeIndex = parseInt(document.getElementById('monitorTimeframe').value);
+            const row = event.target.closest('tr');
+            const cell = row.cells[timeframeIndex];
+            const realPcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
+            const mode = document.getElementById('autoPriceMode').value;
+
+            let price = currentPrice;
+            let levelSide = 'BOTH';
+            if (mode === 'extremes') {
+                if (realPcntChange < 0) {
+                    price = cell.getAttribute('data-max-price') || currentPrice;
+                } else if (realPcntChange > 0) {
+                    price = cell.getAttribute('data-min-price') || currentPrice;
+                }
+            } else if (mode === 'extremes_opposite') {
+                if (realPcntChange < 0) {
+                    price = cell.getAttribute('data-min-price') || currentPrice;
+                } else if (realPcntChange > 0) {
+                    price = cell.getAttribute('data-max-price') || currentPrice;
+                }
+            } else if (mode === 'biggest_order_book') {
+                try {
+                    const sideParam = realPcntChange < 0 ? 'bid' : 'ask';
+                    levelSide = realPcntChange < 0 ? 'LONG' : 'SHORT';
+                    const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${sideParam}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        price = data.price;
+                    } else {
+                        const errData = await resp.json().catch(() => ({}));
+                        alert(`Cannot create level: ${errData.error || "Failed to fetch order book data"}`);
+                        return;
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch biggest OB", err);
+                    alert("Error fetching order book data");
+                    return;
+                }
+            } else if (mode === 'local_high_low') {
+                if (realPcntChange < 0) {
+                    price = cell.getAttribute('data-min-price') || currentPrice;
+                } else {
+                    price = cell.getAttribute('data-max-price') || currentPrice;
+                }
+            }
+
+            if (!confirm(`Create level for ${symbol} at $${price}? (Mode: ${mode}, Side: ${levelSide})`)) return;
 
             const size = document.getElementById('autoLevelSize').value;
             const tp = document.getElementById('autoLevelTP').value;
             const lev = document.getElementById('autoLevelLev').value;
             const cool = document.getElementById('autoLevelCool').value;
+            const tier1 = document.getElementById('autoLevelTier1').value;
+            const tier2 = document.getElementById('autoLevelTier2').value;
+            const tier3 = document.getElementById('autoLevelTier3').value;
+            const ignoreSentiment = document.getElementById('ignoreSentimentToggle').checked;
+            const tpByExchange = document.getElementById('tpByExchangeToggle').checked;
 
-            createLevel(symbol, price, size, tp, lev, cool);
+            const minPrice = cell.getAttribute('data-min-price');
+            const maxPrice = cell.getAttribute('data-max-price');
+            const timeframeName = document.getElementById('monitorTimeframe').options[document.getElementById('monitorTimeframe').selectedIndex].text;
+            const rsi = row.cells[8].getAttribute('data-val') || 0;
+
+            const volPcntChange = parseFloat(cell.getAttribute('data-vol-pcnt')) || 0;
+
+            const analysisData = {
+                symbol: symbol,
+                price: currentPrice,
+                oi: parseFloat(row.cells[1].getAttribute('data-val')),
+                vol24h: parseFloat(row.cells[2].getAttribute('data-val')),
+                pcnt_change: realPcntChange,
+                vol_pcnt_change: volPcntChange,
+                value_change: parseFloat(cell.getAttribute('data-val-raw')),
+                timeframe: timeframeName,
+                min_price: minPrice,
+                max_price: maxPrice,
+                rsi: rsi,
+                macd: row.cells[9].getAttribute('data-val') || 0
+            };
+
+            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi, analysisData, ignoreSentiment, tpByExchange, levelSide, false);
         }
 
         // Set initial time
