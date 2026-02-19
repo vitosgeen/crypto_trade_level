@@ -414,6 +414,13 @@
                         </label>
                         <label
                             style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;"
+                            title="Verify Liquidity Imbalance before opening a level.">
+                            <input type="checkbox" id="verifyLiquidityToggle" checked
+                                style="width: 18px; height: 18px;">
+                            <span style="color: var(--accent-color);">Verify Liquidity</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;"
                             title="Auto Close Level if price deviates from Biggest Order">
                             <input type="checkbox" id="autoCloseBiggestOrderToggle" style="width: 18px; height: 18px;">
                             <span style="color: var(--danger);">Auto Close</span>
@@ -863,17 +870,25 @@
             console.log("Auto Level Tier 3: " + autoLevelTier3);
             console.log("Min Consistent: " + minConsistent);
 
-            // Fetch active levels to prevent duplicates and for Auto Close logic
+            // Fetch active levels/positions to prevent duplicates and for Auto Close logic
             let activeSymbols = new Set();
             let activeLevels = [];
+            let activePositions = new Set();
             try {
-                const levels = await fetch('/api/levels').then(r => r.json());
+                const [levels, positions] = await Promise.all([
+                    fetch('/api/levels').then(r => r.json()),
+                    fetch('/api/positions').then(r => r.json())
+                ]);
+
                 if (levels && Array.isArray(levels)) {
                     activeLevels = levels;
                     levels.forEach(l => activeSymbols.add(l.Symbol));
                 }
+                if (positions && Array.isArray(positions)) {
+                    positions.forEach(p => activePositions.add(p.Symbol));
+                }
             } catch (err) {
-                console.error("Failed to fetch active levels", err);
+                console.error("Failed to fetch active data", err);
             }
 
             const rows = document.querySelectorAll("#analysisTable tbody tr");
@@ -898,6 +913,18 @@
                 let volPcntChange = parseFloat(cell.getAttribute('data-vol-pcnt')) || 0;
                 const isAnomaly = pcntCondition && Math.abs(volPcntChange) >= minVolPcnt;
 
+                // Calculate Net Progress early for filter overrides
+                const startPrice = parseFloat(cell.getAttribute('data-start-price')) || 0;
+                const endPrice = parseFloat(cell.getAttribute('data-end-price')) || 0;
+                const minPrice = parseFloat(cell.getAttribute('data-min-price')) || 0;
+                const maxPrice = parseFloat(cell.getAttribute('data-max-price')) || 0;
+
+                let netProgress = 1.0;
+                const range = maxPrice - minPrice;
+                if (range > 0) {
+                    netProgress = Math.abs(endPrice - startPrice) / range;
+                }
+
                 // Check Volume Condition
                 const volCell = row.cells[2];
                 const vol24h = parseFloat(volCell.getAttribute('data-val')) || 0;
@@ -905,39 +932,33 @@
 
                 // Check Consistency Condition
                 const consistentCount = row.querySelectorAll('.badge-consistent').length;
-                if (consistentCount < minConsistent) continue;
+                // Rule: Ignore C-based filter if progress > 70%
+                if (consistentCount < minConsistent && netProgress < 0.7) continue;
 
                 // Check Chop Condition
                 if (avoidChop) {
                     const rsiVal = parseFloat(row.cells[9].getAttribute('data-val')) || 0;
-                    // consistentCount is already defined above
                     const consistencyRatio = consistentCount / 5;
+
+                    const isRSIZone = rsiVal >= 45 && rsiVal <= 55;
                     const isLowConsistency = consistencyRatio < 0.3;
-
-                    const startPrice = parseFloat(cell.getAttribute('data-start-price')) || 0;
-                    const endPrice = parseFloat(cell.getAttribute('data-end-price')) || 0;
-                    const minPrice = parseFloat(cell.getAttribute('data-min-price')) || 0;
-                    const maxPrice = parseFloat(cell.getAttribute('data-max-price')) || 0;
-
-                    let netProgress = 1.0;
-                    const range = maxPrice - minPrice;
-                    if (range > 0) {
-                        netProgress = Math.abs(endPrice - startPrice) / range;
-                    }
                     const isLowProgress = netProgress < 0.25;
 
-                    const isChopByRule = isLowConsistency && isLowProgress;
-                    const isChopByRSI = rsiVal >= 45 && rsiVal <= 55;
+                    // Logic: Chop if (Low Progress) AND (Low Consistency OR RSI Zone)
+                    // "High Confidence" if BOTH conditions are met
+                    const isChop = isLowProgress && (isLowConsistency || isRSIZone);
+                    const isHighConfidence = isLowConsistency && isRSIZone;
 
-                    if (isChopByRule || isChopByRSI) {
+                    if (isChop) {
                         if (isAnomaly) {
                             const logDiv = document.getElementById('alertLog');
                             logDiv.style.display = 'block';
                             const entry = document.createElement('div');
-                            entry.style.color = 'var(--text-muted)';
+                            entry.style.color = isHighConfidence ? 'var(--warning)' : 'var(--text-muted)';
                             entry.style.fontSize = '0.8rem';
-                            let reason = isChopByRSI ? "RSI Chop" : "Low Consistency/Progress";
-                            entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol} Ignored: ${reason} (${rsiVal.toFixed(1)} RSI, ${(consistencyRatio * 100).toFixed(0)}% C, ${(netProgress * 100).toFixed(0)}% Prog)`;
+                            let label = isHighConfidence ? "HIGH CONFIDENCE CHOP" : "CHOP";
+                            let reason = isRSIZone ? "RSI Zone" : "Low Consistency";
+                            entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol} Ignored (${label}): ${reason} (${rsiVal.toFixed(1)} RSI, ${(consistencyRatio * 100).toFixed(0)}% C, ${(netProgress * 100).toFixed(0)}% Prog)`;
                             logDiv.appendChild(entry);
                             logDiv.scrollTop = logDiv.scrollHeight;
                         }
@@ -976,6 +997,25 @@
 
                         // Parse Price for Level Creation based on change direction and mode
                         // Check if level already exists
+                        if (activeSymbols.has(symbol)) {
+                            if (!activePositions.has(symbol)) {
+                                console.log(`${symbol} has level but no position. Deleting old level to recreate.`);
+                                const oldLevel = activeLevels.find(l => l.Symbol === symbol);
+                                if (oldLevel) {
+                                    await fetch(`/levels/${oldLevel.ID}`, { method: 'DELETE' });
+                                    activeSymbols.delete(symbol);
+
+                                    const logDiv = document.getElementById('alertLog');
+                                    logDiv.style.display = 'block';
+                                    const entry = document.createElement('div');
+                                    entry.style.color = 'var(--warning)';
+                                    entry.style.fontSize = '0.8rem';
+                                    entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Existing level deleted (no position) for recreation.`;
+                                    logDiv.appendChild(entry);
+                                }
+                            }
+                        }
+
                         if (!activeSymbols.has(symbol)) {
                             let targetPrice = 0;
                             const priceText = row.cells[1].innerText;
@@ -1036,6 +1076,31 @@
                             }
 
                             if (targetPrice) {
+                                // Liquidity Imbalance Check
+                                if (document.getElementById('verifyLiquidityToggle').checked) {
+                                    try {
+                                        const liResp = await fetch(`/api/orderbook/analyze-imbalance?symbol=${symbol}&price=${currentPrice}`);
+                                        if (liResp.ok) {
+                                            const liData = await liResp.json();
+                                            if (!liData.is_imbalanced) {
+                                                console.log(`Liquidity Check Failed for ${symbol}: ${liData.reason}`);
+                                                const logDiv = document.getElementById('alertLog');
+                                                logDiv.style.display = 'block';
+                                                const entry = document.createElement('div');
+                                                entry.style.color = 'var(--text-muted)';
+                                                entry.style.fontSize = '0.8rem';
+                                                entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Liquidity Declined - ${liData.reason}`;
+                                                logDiv.appendChild(entry);
+                                                logDiv.scrollTop = logDiv.scrollHeight;
+                                                continue; // Skip this level
+                                            }
+                                            console.log(`Liquidity Check Passed for ${symbol}: ${liData.reason}`);
+                                        }
+                                    } catch (err) {
+                                        console.error(`Error verifying liquidity for ${symbol}:`, err);
+                                    }
+                                }
+
                                 levelRequests.push({
                                     symbol: symbol,
                                     price: targetPrice,
@@ -1063,13 +1128,13 @@
                                 console.warn(`Could not determine target price for ${symbol} with mode ${mode}`);
                             }
                         } else {
-                            console.log(`Skipping auto-create for ${symbol}: Level already exists.`);
+                            console.log(`Skipping auto-create for ${symbol}: Active level with position already exists.`);
                             const logDiv = document.getElementById('alertLog');
                             logDiv.style.display = 'block';
                             const entry = document.createElement('div');
                             entry.style.color = 'var(--text-muted)';
                             entry.style.fontSize = '0.8rem';
-                            entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Skipping auto-level - Active level already exists.`;
+                            entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Skipping auto-level - Active position already exists.`;
                             logDiv.appendChild(entry);
                             logDiv.scrollTop = logDiv.scrollHeight;
                         }
@@ -1120,31 +1185,28 @@
 
                 for (const level of activeLevels) {
                     try {
-                        const resp = await fetch(`/api/orderbook/biggest?symbol=${level.Symbol}`);
+                        const resp = await fetch(`/api/orderbook/check-support?symbol=${level.Symbol}&price=${level.LevelPrice}&dev=${maxDev}`);
                         if (resp.ok) {
                             const data = await resp.json();
-                            const biggestPrice = data.price;
+                            const supported = data.supported;
 
-                            if (biggestPrice > 0) {
-                                const dev = Math.abs(level.LevelPrice - biggestPrice) / biggestPrice * 100;
-                                if (dev > maxDev) {
-                                    console.log(`Auto Close Triggered: ${level.Symbol} level ${level.LevelPrice} is ${dev.toFixed(2)}% away from biggest order ${biggestPrice}`);
+                            if (!supported) {
+                                console.log(`Auto Close Triggered: ${level.Symbol} level $${level.LevelPrice} has NO nearby big orders within ${maxDev}%`);
 
-                                    // Close Level
-                                    await fetch(`/levels/${level.ID}`, { method: 'DELETE' });
+                                // Close Level
+                                await fetch(`/levels/${level.ID}`, { method: 'DELETE' });
 
-                                    // Close Position
-                                    await fetch(`/positions/${level.Symbol}`, { method: 'DELETE' });
+                                // Close Position
+                                await fetch(`/positions/${level.Symbol}`, { method: 'DELETE' });
 
-                                    logDiv.style.display = 'block';
-                                    const entry = document.createElement('div');
-                                    entry.style.color = 'var(--danger)';
-                                    entry.innerText = `>>> Auto Closed ${level.Symbol}: Level $${level.LevelPrice} was ${dev.toFixed(2)}% away from Biggest Order $${biggestPrice}`;
-                                    logDiv.appendChild(entry);
-                                    logDiv.scrollTop = logDiv.scrollHeight;
+                                logDiv.style.display = 'block';
+                                const entry = document.createElement('div');
+                                entry.style.color = 'var(--danger)';
+                                entry.innerText = `>>> Auto Closed ${level.Symbol}: No significant walls found near $${level.LevelPrice} (+/- ${maxDev}%)`;
+                                logDiv.appendChild(entry);
+                                logDiv.scrollTop = logDiv.scrollHeight;
 
-                                    playAlertSound();
-                                }
+                                playAlertSound();
                             }
                         }
                     } catch (err) {

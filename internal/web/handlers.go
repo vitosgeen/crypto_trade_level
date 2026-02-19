@@ -692,6 +692,43 @@ func (s *Server) handleBiggestOrderBook(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (s *Server) handleAnalyzeLiquidityImbalance(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	currentPriceStr := r.URL.Query().Get("price")
+	var currentPrice float64
+	if currentPriceStr != "" {
+		currentPrice, _ = strconv.ParseFloat(currentPriceStr, 64)
+	}
+
+	if currentPrice == 0 {
+		currentPrice = s.service.GetLatestPrice(symbol)
+	}
+
+	if currentPrice == 0 {
+		http.Error(w, "Could not determine current price", http.StatusInternalServerError)
+		return
+	}
+
+	analysis, err := s.marketService.AnalyzeLiquidityImbalance(r.Context(), symbol, currentPrice)
+	if err != nil {
+		s.logger.Warn("Failed to analyze liquidity imbalance", zap.String("symbol", symbol), zap.Error(err))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(analysis)
+}
+
 func (s *Server) handleLiquidityHistory(w http.ResponseWriter, r *http.Request) {
 	symbol := r.URL.Query().Get("symbol")
 	if symbol == "" {
@@ -1100,4 +1137,42 @@ func (s *Server) handleGetRSISignals(w http.ResponseWriter, r *http.Request) {
 	signals := s.rsiMonitorService.GetSignals()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(signals)
+}
+
+func (s *Server) handleCheckSupport(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	priceStr := r.URL.Query().Get("price")
+	price, _ := strconv.ParseFloat(priceStr, 64)
+	if price == 0 {
+		http.Error(w, "Valid price is required", http.StatusBadRequest)
+		return
+	}
+
+	devStr := r.URL.Query().Get("dev")
+	dev, _ := strconv.ParseFloat(devStr, 64)
+	if dev == 0 {
+		dev = 1.0 // Default 1%
+	}
+
+	wallPrice, supported, err := s.marketService.HasNearbySignificantWall(r.Context(), symbol, price, dev)
+	if err != nil {
+		s.logger.Warn("Failed to check support", zap.String("symbol", symbol), zap.Error(err))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"symbol":    symbol,
+		"price":     price,
+		"wall":      wallPrice,
+		"supported": supported,
+	})
 }

@@ -79,6 +79,7 @@ func (s *Server) routes() {
 
 	// Positions
 	s.router.HandleFunc("GET /positions", s.handlePositionsTable)
+	s.router.HandleFunc("GET /api/positions", s.handleListPositionsJSON)
 	s.router.HandleFunc("DELETE /positions", s.handleCloseAllPositions)
 	s.router.HandleFunc("DELETE /positions/{symbol}", s.handleClosePosition)
 	s.router.HandleFunc("GET /history", s.handleHistoryTable)
@@ -91,12 +92,14 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /api/liquidity", s.handleLiquidity)
 	s.router.HandleFunc("GET /api/liquidity-history", s.handleLiquidityHistory)
 	s.router.HandleFunc("GET /api/orderbook/biggest", s.handleBiggestOrderBook)
+	s.router.HandleFunc("GET /api/orderbook/analyze-imbalance", s.handleAnalyzeLiquidityImbalance)
 
 	// Status
 	s.router.HandleFunc("GET /status", s.handleStatus)
 
 	// Candles
 	s.router.HandleFunc("GET /api/candles", s.handleGetCandles)
+	s.router.HandleFunc("GET /api/orderbook/check-support", s.handleCheckSupport)
 
 	// Market Stats
 	s.router.HandleFunc("GET /api/market-stats", s.handleMarketStats)

@@ -1162,3 +1162,196 @@ func (s *MarketService) GetBiggestOrderBookPrice(ctx context.Context, symbol str
 
 	return bestPrice, nil
 }
+
+func (s *MarketService) HasNearbySignificantWall(ctx context.Context, symbol string, targetPrice float64, maxDevPct float64) (float64, bool, error) {
+	clusters, err := s.GetLiquidityClusters(ctx, symbol)
+	if err != nil {
+		return 0, false, err
+	}
+
+	if len(clusters) == 0 {
+		return 0, false, fmt.Errorf("no clusters found")
+	}
+
+	// 1. Find the Absolute Biggest Wall for scale
+	var globalMaxVol float64
+	for _, c := range clusters {
+		if c.Volume > globalMaxVol {
+			globalMaxVol = c.Volume
+		}
+	}
+
+	if globalMaxVol == 0 {
+		return 0, false, fmt.Errorf("no walls found")
+	}
+
+	// 2. Search for any "big enough" wall within maxDevPct
+	// "Big Enough" = at least 30% of the biggest wall?
+	// Actually, let's use a threshold.
+	threshold := globalMaxVol * 0.3
+
+	var closestPrice float64
+	minDist := 100.0 // large number
+
+	for _, c := range clusters {
+		dist := math.Abs(c.Price-targetPrice) / targetPrice * 100
+		if dist <= maxDevPct && c.Volume >= threshold {
+			if dist < minDist {
+				minDist = dist
+				closestPrice = c.Price
+			}
+		}
+	}
+
+	if closestPrice > 0 {
+		return closestPrice, true, nil
+	}
+
+	return 0, false, nil
+}
+
+type LiquidityAnalysis struct {
+	IsImbalanced      bool    `json:"is_imbalanced"`
+	WeakSide          string  `json:"weak_side"`
+	Ratio             float64 `json:"ratio"`
+	Reason            string  `json:"reason"`
+	DominantMaxVolume float64 `json:"dominant_max_volume"`
+	WeakMaxVolume     float64 `json:"weak_max_volume"`
+}
+
+func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol string, currentPrice float64) (*LiquidityAnalysis, error) {
+	clusters, err := s.GetLiquidityClusters(ctx, symbol)
+	if err != nil {
+		return nil, err
+	}
+
+	analysis := &LiquidityAnalysis{
+		IsImbalanced: false,
+	}
+
+	// Range for cumulative volume (e.g., 2%)
+	rangeLimit := 0.02
+	var bidVol, askVol float64
+	var bidClusters, askClusters []LiquidityCluster
+	var maxBidVol, maxAskVol float64
+
+	for _, c := range clusters {
+		dist := math.Abs(c.Price-currentPrice) / currentPrice
+		if dist <= rangeLimit {
+			if c.Type == "bid" {
+				bidVol += c.Volume
+				bidClusters = append(bidClusters, c)
+				if c.Volume > maxBidVol {
+					maxBidVol = c.Volume
+				}
+			} else {
+				askVol += c.Volume
+				askClusters = append(askClusters, c)
+				if c.Volume > maxAskVol {
+					maxAskVol = c.Volume
+				}
+			}
+		}
+	}
+
+	if bidVol == 0 || askVol == 0 {
+		analysis.Reason = "One side has zero liquidity in range"
+		return analysis, nil
+	}
+
+	// Determine Weak/Dominant side
+	var dominantVol, weakVol float64
+	var weakSide string
+	var weakClusters []LiquidityCluster
+	var dominantMaxVol, weakMaxVol float64
+
+	if bidVol > askVol {
+		dominantVol = bidVol
+		weakVol = askVol
+		weakSide = "ask"
+		weakClusters = askClusters
+		dominantMaxVol = maxBidVol
+		weakMaxVol = maxAskVol
+	} else {
+		dominantVol = askVol
+		weakVol = bidVol
+		weakSide = "bid"
+		weakClusters = bidClusters
+		dominantMaxVol = maxAskVol
+		weakMaxVol = maxBidVol
+	}
+
+	ratio := dominantVol / weakVol
+	analysis.Ratio = ratio
+	analysis.WeakSide = weakSide
+	analysis.DominantMaxVolume = dominantMaxVol
+	analysis.WeakMaxVolume = weakMaxVol
+
+	// Condition 1: Imbalance Ratio > 2.0 (Adjustable)
+	if ratio < 2.0 {
+		analysis.Reason = fmt.Sprintf("Imbalance ratio too low: %.2f", ratio)
+		return analysis, nil
+	}
+
+	// Condition 2: Weaker side shows thin liquidity distribution (few clusters)
+	if len(weakClusters) > 5 {
+		analysis.Reason = fmt.Sprintf("Weak side too dense: %d clusters", len(weakClusters))
+		return analysis, nil
+	}
+
+	// Condition 3: No strong wall on the weak side within short distance (e.g., 0.5%)
+	shortRange := 0.005
+	for _, c := range weakClusters {
+		dist := math.Abs(c.Price-currentPrice) / currentPrice
+		if dist <= shortRange {
+			// A "strong wall" is defined relative to dominant side's max volume
+			if c.Volume > dominantMaxVol*0.25 {
+				analysis.Reason = fmt.Sprintf("Strong wall found on weak side at %.2f (vol %.2f)", c.Price, c.Volume)
+				return analysis, nil
+			}
+		}
+	}
+
+	// Condition 4: Largest order on weak side relatively small compared to dominant
+	if weakMaxVol > dominantMaxVol*0.4 {
+		analysis.Reason = fmt.Sprintf("Weak side max volume too large: %.2f vs Dominant %.2f", weakMaxVol, dominantMaxVol)
+		return analysis, nil
+	}
+
+	// Condition 5: Liquidity on the weak side is not increasing rapidly
+	// Check history (last 1 minute)
+	history := s.GetLiquidityHistory(symbol)
+	if len(history) > 2 {
+		cutoff := s.timeNow().Unix() - 60
+		var initialWeakVol float64
+		for _, snap := range history {
+			if snap.Time >= cutoff {
+				var snapWeakVol float64
+				buckets := snap.Asks
+				if weakSide == "bid" {
+					buckets = snap.Bids
+				}
+				for _, b := range buckets {
+					dist := math.Abs(b.Price-currentPrice) / currentPrice
+					if dist <= rangeLimit {
+						snapWeakVol += b.Volume
+					}
+				}
+				if initialWeakVol == 0 {
+					initialWeakVol = snapWeakVol
+				} else {
+					// Compare with initial (from 1 min ago or earliest in window)
+					if snapWeakVol > initialWeakVol*1.5 {
+						analysis.IsImbalanced = false
+						analysis.Reason = "Weak side liquidity increasing rapidly (reinforcement)"
+						return analysis, nil
+					}
+				}
+			}
+		}
+	}
+
+	analysis.IsImbalanced = true
+	analysis.Reason = "Clear structural weakness on " + weakSide + " side"
+	return analysis, nil
+}

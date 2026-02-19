@@ -611,6 +611,15 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 			}
 		}
 
+		// add mirror stop loss that equals to take profit
+		if level.TakeProfitMode == "exchange" && level.TakeProfitPct > 0 {
+			if side == domain.SideLong {
+				stopLoss = currPrice * (1 - level.TakeProfitPct)
+			} else {
+				stopLoss = currPrice * (1 + level.TakeProfitPct)
+			}
+		}
+
 		err := s.executor.Execute(ctx, level.Symbol, side, size, level.Leverage, level.MarginType, stopLoss, takeProfit)
 		if err != nil {
 			log.Printf("Failed to execute trade: %v", err)
