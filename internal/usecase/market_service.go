@@ -1219,7 +1219,7 @@ type LiquidityAnalysis struct {
 	WeakMaxVolume     float64 `json:"weak_max_volume"`
 }
 
-func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol string, currentPrice float64) (*LiquidityAnalysis, error) {
+func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol string, currentPrice float64, minRatio float64, maxClusters int, wallThresholdPct float64) (*LiquidityAnalysis, error) {
 	clusters, err := s.GetLiquidityClusters(ctx, symbol)
 	if err != nil {
 		return nil, err
@@ -1287,15 +1287,15 @@ func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol st
 	analysis.DominantMaxVolume = dominantMaxVol
 	analysis.WeakMaxVolume = weakMaxVol
 
-	// Condition 1: Imbalance Ratio > 2.0 (Adjustable)
-	if ratio < 2.0 {
-		analysis.Reason = fmt.Sprintf("Imbalance ratio too low: %.2f", ratio)
+	// Condition 1: Imbalance Ratio
+	if ratio < minRatio {
+		analysis.Reason = fmt.Sprintf("Imbalance ratio too low: %.2f (min %.1f)", ratio, minRatio)
 		return analysis, nil
 	}
 
-	// Condition 2: Weaker side shows thin liquidity distribution (few clusters)
-	if len(weakClusters) > 5 {
-		analysis.Reason = fmt.Sprintf("Weak side too dense: %d clusters", len(weakClusters))
+	// Condition 2: Weaker side thin liquidity distribution (few clusters)
+	if len(weakClusters) > maxClusters {
+		analysis.Reason = fmt.Sprintf("Weak side too dense: %d clusters (max %d)", len(weakClusters), maxClusters)
 		return analysis, nil
 	}
 
@@ -1305,7 +1305,7 @@ func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol st
 		dist := math.Abs(c.Price-currentPrice) / currentPrice
 		if dist <= shortRange {
 			// A "strong wall" is defined relative to dominant side's max volume
-			if c.Volume > dominantMaxVol*0.25 {
+			if c.Volume > dominantMaxVol*wallThresholdPct {
 				analysis.Reason = fmt.Sprintf("Strong wall found on weak side at %.2f (vol %.2f)", c.Price, c.Volume)
 				return analysis, nil
 			}
@@ -1313,8 +1313,9 @@ func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol st
 	}
 
 	// Condition 4: Largest order on weak side relatively small compared to dominant
-	if weakMaxVol > dominantMaxVol*0.4 {
-		analysis.Reason = fmt.Sprintf("Weak side max volume too large: %.2f vs Dominant %.2f", weakMaxVol, dominantMaxVol)
+	// We use wallThresholdPct * 1.5 as a heuristic for "The largest order overall" vs "Nearby wall"
+	if weakMaxVol > dominantMaxVol*(wallThresholdPct*1.6) {
+		analysis.Reason = fmt.Sprintf("Weak side max volume too large: %.2f vs Dominant %.2f (threshold %.1f%%)", weakMaxVol, dominantMaxVol, wallThresholdPct*160)
 		return analysis, nil
 	}
 

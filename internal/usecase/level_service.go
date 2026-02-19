@@ -602,21 +602,23 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 		if level.StopLossAtBase && level.StopLossMode == "exchange" {
 			stopLoss = level.LevelPrice
 		}
+
+		// Mirror stop loss for Anomaly Monitor: SL = TP
+		if level.Source == "anomaly-monitor" && level.TakeProfitMode == "exchange" && level.TakeProfitPct > 0 {
+			if side == domain.SideLong {
+				stopLoss = currPrice * (1 - level.TakeProfitPct)
+			} else {
+				stopLoss = currPrice * (1 + level.TakeProfitPct)
+			}
+			log.Printf("ANOMALY MONITOR: Setting mirror Stop Loss at %f (TP: %f%%)", stopLoss, level.TakeProfitPct*100)
+		}
+
 		takeProfit := 0.0
 		if level.TakeProfitMode == "exchange" && level.TakeProfitPct > 0 {
 			if side == domain.SideLong {
 				takeProfit = currPrice * (1 + level.TakeProfitPct)
 			} else {
 				takeProfit = currPrice * (1 - level.TakeProfitPct)
-			}
-		}
-
-		// add mirror stop loss that equals to take profit
-		if level.TakeProfitMode == "exchange" && level.TakeProfitPct > 0 {
-			if side == domain.SideLong {
-				stopLoss = currPrice * (1 - level.TakeProfitPct)
-			} else {
-				stopLoss = currPrice * (1 + level.TakeProfitPct)
 			}
 		}
 

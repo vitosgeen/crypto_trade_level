@@ -375,6 +375,24 @@
                     <input type="number" id="autoCloseDeviation" value="1.0" step="0.1"
                         style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
                 </div>
+                <div>
+                    <label style="display: block; color: var(--accent-color); font-size: 0.9rem; margin-bottom: 8px;">LI
+                        Min Ratio</label>
+                    <input type="number" id="liRatio" value="2.0" step="0.1"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--accent-color); font-size: 0.9rem; margin-bottom: 8px;">LI
+                        Max Clusters</label>
+                    <input type="number" id="liMaxClusters" value="5" step="1"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
+                <div>
+                    <label style="display: block; color: var(--accent-color); font-size: 0.9rem; margin-bottom: 8px;">LI
+                        Wall Pct (%)</label>
+                    <input type="number" id="liWallPct" value="25" step="1"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
             </div>
 
             <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color);">
@@ -1079,7 +1097,11 @@
                                 // Liquidity Imbalance Check
                                 if (document.getElementById('verifyLiquidityToggle').checked) {
                                     try {
-                                        const liResp = await fetch(`/api/orderbook/analyze-imbalance?symbol=${symbol}&price=${currentPrice}`);
+                                        const liRatio = document.getElementById('liRatio').value || 2.0;
+                                        const liClusters = document.getElementById('liMaxClusters').value || 5;
+                                        const liWallPct = document.getElementById('liWallPct').value || 25;
+
+                                        const liResp = await fetch(`/api/orderbook/analyze-imbalance?symbol=${symbol}&price=${currentPrice}&ratio=${liRatio}&clusters=${liClusters}&wall_pct=${liWallPct}`);
                                         if (liResp.ok) {
                                             const liData = await liResp.json();
                                             if (!liData.is_imbalanced) {
@@ -1263,6 +1285,7 @@
             if (tpByExchange) {
                 params.append('take_profit_mode', 'exchange');
             }
+            params.append('source', 'anomaly-monitor');
             if (analysisData) {
                 params.append('analysis_json', JSON.stringify(analysisData));
             }

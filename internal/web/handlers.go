@@ -285,6 +285,11 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	source := r.FormValue("source")
+	if source == "" {
+		source = "manual-web"
+	}
+
 	level := &domain.Level{
 		ID:                       fmt.Sprintf("%d", time.Now().UnixNano()),
 		Exchange:                 exchange,
@@ -308,7 +313,7 @@ func (s *Server) handleAddLevel(w http.ResponseWriter, r *http.Request) {
 		Tier1Pct:                 tier1,
 		Tier2Pct:                 tier2,
 		Tier3Pct:                 tier3,
-		Source:                   "manual-web",
+		Source:                   source,
 		AnalysisJSON:             analysisJSON,
 		CreatedAt:                time.Now(),
 	}
@@ -714,7 +719,11 @@ func (s *Server) handleAnalyzeLiquidityImbalance(w http.ResponseWriter, r *http.
 		return
 	}
 
-	analysis, err := s.marketService.AnalyzeLiquidityImbalance(r.Context(), symbol, currentPrice)
+	analysis, err := s.marketService.AnalyzeLiquidityImbalance(r.Context(), symbol, currentPrice,
+		getFloatParam(r, "ratio", 2.0),
+		getIntParam(r, "clusters", 5),
+		getFloatParam(r, "wall_pct", 25.0)/100.0, // Convert percentage to decimal
+	)
 	if err != nil {
 		s.logger.Warn("Failed to analyze liquidity imbalance", zap.String("symbol", symbol), zap.Error(err))
 		w.Header().Set("Content-Type", "application/json")
@@ -1175,4 +1184,28 @@ func (s *Server) handleCheckSupport(w http.ResponseWriter, r *http.Request) {
 		"wall":      wallPrice,
 		"supported": supported,
 	})
+}
+
+func getFloatParam(r *http.Request, name string, defaultVal float64) float64 {
+	valStr := r.URL.Query().Get(name)
+	if valStr == "" {
+		return defaultVal
+	}
+	val, err := strconv.ParseFloat(valStr, 64)
+	if err != nil {
+		return defaultVal
+	}
+	return val
+}
+
+func getIntParam(r *http.Request, name string, defaultVal int) int {
+	valStr := r.URL.Query().Get(name)
+	if valStr == "" {
+		return defaultVal
+	}
+	val, err := strconv.Atoi(valStr)
+	if err != nil {
+		return defaultVal
+	}
+	return val
 }
