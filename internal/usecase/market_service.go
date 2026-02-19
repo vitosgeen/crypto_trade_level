@@ -1112,7 +1112,7 @@ func (s *MarketService) CalculateEMA(values []float64, period int) []float64 {
 	return ema
 }
 
-func (s *MarketService) GetBiggestOrderBookPrice(ctx context.Context, symbol string, currentPrice float64) (float64, error) {
+func (s *MarketService) GetBiggestOrderBookPrice(ctx context.Context, symbol string, currentPrice float64, side string) (float64, error) {
 	clusters, err := s.GetLiquidityClusters(ctx, symbol)
 	if err != nil {
 		return 0, err
@@ -1122,6 +1122,11 @@ func (s *MarketService) GetBiggestOrderBookPrice(ctx context.Context, symbol str
 		var mVol, bPrice, sVol float64
 		var cnt int
 		for _, c := range clusters {
+			// Filter by side if provided
+			if side != "" && c.Type != side {
+				continue
+			}
+
 			// Distance in percentage
 			dist := math.Abs(c.Price-currentPrice) / currentPrice
 

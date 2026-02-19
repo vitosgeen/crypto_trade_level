@@ -1009,7 +1009,11 @@
                     const lastAlert = alertedHistory.get(alertKey);
 
                     if (!lastAlert || (now - lastAlert > cooldown)) {
-                        const msg = `${symbol}: ${Math.abs(pcntChange).toFixed(2)}% (Vol: ${Math.abs(volPcntChange).toFixed(1)}%)`;
+                        const timeframeName = document.getElementById('monitorTimeframe').options[document.getElementById('monitorTimeframe').selectedIndex].text;
+                        const rsiValue = row.cells[8].getAttribute('data-val') || 0;
+                        const rsiText = ` | RSI: ${parseFloat(rsiValue).toFixed(1)}`;
+
+                        const msg = `${symbol}: ${Math.abs(pcntChange).toFixed(2)}% (Vol: ${Math.abs(volPcntChange).toFixed(1)}%)${rsiText}`;
                         anomalies.push(msg);
                         alertedHistory.set(alertKey, now);
 
@@ -1068,11 +1072,16 @@
                                 }
                             } else if (mode === 'biggest_order_book') {
                                 try {
-                                    const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}`);
+                                    const sideParam = realPcntChange < 0 ? 'bid' : 'ask';
+                                    const levelSide = realPcntChange < 0 ? 'LONG' : 'SHORT';
+                                    const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${sideParam}`);
                                     if (resp.ok) {
                                         const data = await resp.json();
                                         targetPrice = data.price;
-                                        console.log(`Found biggest order book level for ${symbol}: ${targetPrice}`);
+                                        console.log(`Found biggest order book level for ${symbol} (${sideParam}): ${targetPrice}`);
+
+                                        // Override default BOTH if we found a specific side level
+                                        currentLevelSide = levelSide;
                                     } else {
                                         const errData = await resp.json().catch(() => ({}));
                                         if (resp.status === 422 && errData.error === "No structure in the book") {
@@ -1094,7 +1103,7 @@
                             }
 
                             if (targetPrice) {
-                                // Liquidity Imbalance Check
+                                let liAnalysis = null;
                                 if (document.getElementById('verifyLiquidityToggle').checked) {
                                     try {
                                         const liRatio = document.getElementById('liRatio').value || 2.0;
@@ -1103,20 +1112,20 @@
 
                                         const liResp = await fetch(`/api/orderbook/analyze-imbalance?symbol=${symbol}&price=${currentPrice}&ratio=${liRatio}&clusters=${liClusters}&wall_pct=${liWallPct}`);
                                         if (liResp.ok) {
-                                            const liData = await liResp.json();
-                                            if (!liData.is_imbalanced) {
-                                                console.log(`Liquidity Check Failed for ${symbol}: ${liData.reason}`);
+                                            liAnalysis = await liResp.json();
+                                            if (!liAnalysis.is_imbalanced) {
+                                                console.log(`Liquidity Check Failed for ${symbol}: ${liAnalysis.reason}`);
                                                 const logDiv = document.getElementById('alertLog');
                                                 logDiv.style.display = 'block';
                                                 const entry = document.createElement('div');
                                                 entry.style.color = 'var(--text-muted)';
                                                 entry.style.fontSize = '0.8rem';
-                                                entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Liquidity Declined - ${liData.reason}`;
+                                                entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Liquidity Declined - ${liAnalysis.reason}`;
                                                 logDiv.appendChild(entry);
                                                 logDiv.scrollTop = logDiv.scrollHeight;
                                                 continue; // Skip this level
                                             }
-                                            console.log(`Liquidity Check Passed for ${symbol}: ${liData.reason}`);
+                                            console.log(`Liquidity Check Passed for ${symbol}: ${liAnalysis.reason}`);
                                         }
                                     } catch (err) {
                                         console.error(`Error verifying liquidity for ${symbol}:`, err);
@@ -1126,6 +1135,7 @@
                                 levelRequests.push({
                                     symbol: symbol,
                                     price: targetPrice,
+                                    side: currentLevelSide || 'BOTH',
                                     min: minPrice,
                                     max: maxPrice,
                                     timeframe: timeframeName,
@@ -1136,13 +1146,16 @@
                                         oi: parseFloat(row.cells[1].getAttribute('data-val')),
                                         vol24h: vol24h,
                                         pcnt_change: realPcntChange,
+                                        vol_pcnt_change: volPcntChange,
+                                        net_progress: netProgress,
                                         value_change: valueChange,
                                         timeframe: timeframeName,
                                         min_price: minPrice,
                                         max_price: maxPrice,
                                         rsi: rsi,
                                         macd: row.cells[9].getAttribute('data-val') || 0,
-                                        macd_hist: row.cells[9].getAttribute('data-val') || 0 //macd_hist column uses same data-val for simplicity in template
+                                        macd_hist: row.cells[9].getAttribute('data-val') || 0, //macd_hist column uses same data-val for simplicity in template
+                                        liquidity: liAnalysis
                                     }
                                 });
                             }
@@ -1195,7 +1208,7 @@
                         console.log("Triggering auto-creation for:", levelRequests);
                     }
                     levelRequests.forEach(req => {
-                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi, req.analysis, ignoreSentiment, tpByExchange);
+                        createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi, req.analysis, ignoreSentiment, tpByExchange, req.side, true);
                     });
                 }
             }
@@ -1229,6 +1242,12 @@
                                 logDiv.scrollTop = logDiv.scrollHeight;
 
                                 playAlertSound();
+                                if (document.getElementById('pushToggle').checked && Notification.permission === "granted") {
+                                    new Notification("Level Auto-Closed", {
+                                        body: `${level.Symbol} @ $${level.LevelPrice}: No walls found nearby (+/- ${maxDev}%)`,
+                                        icon: '/static/icon.png'
+                                    });
+                                }
                             }
                         }
                     } catch (err) {
@@ -1238,11 +1257,10 @@
             }
         }
 
-        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, min, max, timeframe, rsi, analysisData, ignoreSentiment, tpByExchange) {
-            console.log(`Sending create request for ${symbol} @ ${price}`);
+        function createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, min, max, timeframe, rsi, analysisData, ignoreSentiment, tpByExchange, side, isAuto) {
+            console.log(`Sending create request for ${symbol} @ ${price} (${side})`);
 
-            // Calculate Base Size (Coin Quantity) from USDT Size
-            // User requested: Round up to nearest 10 (e.g. 713 -> 720) for larger quantities
+            // ... (qty calculation code remains) ...
             const priceVal = parseFloat(price);
             const sizeUsd = parseFloat(size);
             let coinQty = 0;
@@ -1266,7 +1284,7 @@
             params.append('leverage', lev.toString());
             params.append('exchange', 'bybit');
             params.append('margin_type', 'cross');
-            params.append('side', 'BOTH');
+            params.append('side', side || 'BOTH');
             params.append('take_profit_pct', tp.toString());
             params.append('stop_loss_mode', 'exchange');
             params.append('stop_loss_at_base', 'on');
@@ -1285,7 +1303,7 @@
             if (tpByExchange) {
                 params.append('take_profit_mode', 'exchange');
             }
-            params.append('source', 'anomaly-monitor');
+            params.append('source', isAuto ? 'anomaly-monitor-auto' : 'anomaly-monitor-manual');
             if (analysisData) {
                 params.append('analysis_json', JSON.stringify(analysisData));
             }
@@ -1298,13 +1316,33 @@
                 body: params
             }).then(response => {
                 if (response.ok) {
-                    console.log(`Auto-created level for ${symbol} at ${price}`);
+                    const actionType = isAuto ? "Auto-created" : "Manually created";
+                    console.log(`${actionType} level for ${symbol} at ${price} side ${side}`);
                     const logDiv = document.getElementById('alertLog');
                     const entry = document.createElement('div');
                     entry.style.color = 'var(--accent-color)';
-                    entry.innerText = `>>> Auto-created level for ${symbol} @ $${price} | RSI: ${parseFloat(rsi).toFixed(1)} | Range [${timeframe}]: Min $${min} - Max $${max}`;
+                    let liInfo = "";
+                    if (analysisData && analysisData.liquidity) {
+                        const li = analysisData.liquidity;
+                        liInfo = ` | Liq: ${li.ratio.toFixed(1)} (${li.weak_side})`;
+                    }
+                    const volPcntInfo = analysisData && analysisData.vol_pcnt_change != undefined ? ` (V: ${analysisData.vol_pcnt_change.toFixed(1)}%)` : "";
+
+                    entry.innerText = `>>> ${actionType} level for ${symbol} @ $${price} (${side}) | Δ ${parseFloat(analysisData?.pcnt_change || 0).toFixed(2)}%${volPcntInfo} | RSI: ${parseFloat(rsi).toFixed(1)}${liInfo} | Range [${timeframe}]: $${min} - $${max}`;
                     logDiv.appendChild(entry);
                     logDiv.scrollTop = logDiv.scrollHeight;
+
+                    // Trigger Alerts for Auto-creation (only if auto)
+                    if (isAuto) {
+                        playAlertSound();
+                        if (document.getElementById('pushToggle').checked && Notification.permission === "granted") {
+                            const notifyBody = `${symbol} @ $${price} (${side}) | Δ ${parseFloat(analysisData?.pcnt_change || 0).toFixed(2)}%${volPcntInfo} | RSI: ${parseFloat(rsi).toFixed(1)}${liInfo}`;
+                            new Notification("Level Auto-Created", {
+                                body: notifyBody,
+                                icon: '/static/icon.png'
+                            });
+                        }
+                    }
                 } else {
                     console.error("Failed to create level", response.status, response.statusText);
                     response.text().then(text => console.error("Response body:", text));
@@ -1360,6 +1398,7 @@
             const mode = document.getElementById('autoPriceMode').value;
 
             let price = currentPrice;
+            let levelSide = 'BOTH';
             if (mode === 'extremes') {
                 if (realPcntChange < 0) {
                     price = cell.getAttribute('data-max-price') || currentPrice;
@@ -1374,7 +1413,9 @@
                 }
             } else if (mode === 'biggest_order_book') {
                 try {
-                    const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}`);
+                    const sideParam = realPcntChange < 0 ? 'bid' : 'ask';
+                    levelSide = realPcntChange < 0 ? 'LONG' : 'SHORT';
+                    const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${sideParam}`);
                     if (resp.ok) {
                         const data = await resp.json();
                         price = data.price;
@@ -1396,7 +1437,7 @@
                 }
             }
 
-            if (!confirm(`Create level for ${symbol} at $${price}? (Mode: ${mode})`)) return;
+            if (!confirm(`Create level for ${symbol} at $${price}? (Mode: ${mode}, Side: ${levelSide})`)) return;
 
             const size = document.getElementById('autoLevelSize').value;
             const tp = document.getElementById('autoLevelTP').value;
@@ -1413,12 +1454,15 @@
             const timeframeName = document.getElementById('monitorTimeframe').options[document.getElementById('monitorTimeframe').selectedIndex].text;
             const rsi = row.cells[8].getAttribute('data-val') || 0;
 
+            const volPcntChange = parseFloat(cell.getAttribute('data-vol-pcnt')) || 0;
+
             const analysisData = {
                 symbol: symbol,
                 price: currentPrice,
                 oi: parseFloat(row.cells[1].getAttribute('data-val')),
                 vol24h: parseFloat(row.cells[2].getAttribute('data-val')),
                 pcnt_change: realPcntChange,
+                vol_pcnt_change: volPcntChange,
                 value_change: parseFloat(cell.getAttribute('data-val-raw')),
                 timeframe: timeframeName,
                 min_price: minPrice,
@@ -1427,7 +1471,7 @@
                 macd: row.cells[9].getAttribute('data-val') || 0
             };
 
-            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi, analysisData, ignoreSentiment, tpByExchange);
+            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi, analysisData, ignoreSentiment, tpByExchange, levelSide, false);
         }
 
         // Set initial time

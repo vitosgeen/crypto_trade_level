@@ -665,6 +665,7 @@ func (s *Server) handleBiggestOrderBook(w http.ResponseWriter, r *http.Request) 
 	}
 
 	currentPriceStr := r.URL.Query().Get("price")
+	side := r.URL.Query().Get("side") // "bid" or "ask"
 	var currentPrice float64
 	if currentPriceStr != "" {
 		currentPrice, _ = strconv.ParseFloat(currentPriceStr, 64)
@@ -679,7 +680,7 @@ func (s *Server) handleBiggestOrderBook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	price, err := s.marketService.GetBiggestOrderBookPrice(r.Context(), symbol, currentPrice)
+	price, err := s.marketService.GetBiggestOrderBookPrice(r.Context(), symbol, currentPrice, side)
 	if err != nil {
 		s.logger.Warn("Failed to get biggest order book price", zap.String("symbol", symbol), zap.Error(err))
 		w.Header().Set("Content-Type", "application/json")
