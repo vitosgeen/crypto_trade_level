@@ -369,6 +369,12 @@
                         <option value="local_high_low">Local High / Local Low</option>
                     </select>
                 </div>
+                <div>
+                    <label style="display: block; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 8px;">Max
+                        Dev Big Order %</label>
+                    <input type="number" id="autoCloseDeviation" value="1.0" step="0.1"
+                        style="width: 100%; padding: 8px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 6px;">
+                </div>
             </div>
 
             <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color);">
@@ -402,9 +408,15 @@
                         </label>
                         <label
                             style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;"
-                            title="Skip if RSI is between 45 and 55">
+                            title="Avoid Chop Rule: Skip if Consistent timeframes < 30% AND Net Progress < 25% of recent range. Also skips if RSI between 45-55.">
                             <input type="checkbox" id="avoidChopToggle" style="width: 18px; height: 18px;">
                             <span style="color: var(--text-muted);">Avoid Chop</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;"
+                            title="Auto Close Level if price deviates from Biggest Order">
+                            <input type="checkbox" id="autoCloseBiggestOrderToggle" style="width: 18px; height: 18px;">
+                            <span style="color: var(--danger);">Auto Close</span>
                         </label>
                     </div>
                     <div id="lastCheckTime" style="font-size: 0.8rem; color: var(--text-muted);"></div>
@@ -851,15 +863,17 @@
             console.log("Auto Level Tier 3: " + autoLevelTier3);
             console.log("Min Consistent: " + minConsistent);
 
-            // Fetch active levels to prevent duplicates
+            // Fetch active levels to prevent duplicates and for Auto Close logic
             let activeSymbols = new Set();
+            let activeLevels = [];
             try {
                 const levels = await fetch('/api/levels').then(r => r.json());
                 if (levels && Array.isArray(levels)) {
+                    activeLevels = levels;
                     levels.forEach(l => activeSymbols.add(l.Symbol));
                 }
             } catch (err) {
-                console.error("Failed to fetch active levels for deduplication", err);
+                console.error("Failed to fetch active levels", err);
             }
 
             const rows = document.querySelectorAll("#analysisTable tbody tr");
@@ -877,6 +891,12 @@
 
                 const symbol = row.cells[0].querySelector('.symbol').innerText;
                 const cell = row.cells[timeframeIndex];
+                if (!cell) continue;
+
+                let pcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
+                let pcntCondition = Math.abs(pcntChange) >= minPcnt;
+                let volPcntChange = parseFloat(cell.getAttribute('data-vol-pcnt')) || 0;
+                const isAnomaly = pcntCondition && Math.abs(volPcntChange) >= minVolPcnt;
 
                 // Check Volume Condition
                 const volCell = row.cells[2];
@@ -887,18 +907,46 @@
                 const consistentCount = row.querySelectorAll('.badge-consistent').length;
                 if (consistentCount < minConsistent) continue;
 
-                // Check Chop Condition (RSI)
+                // Check Chop Condition
                 if (avoidChop) {
                     const rsiVal = parseFloat(row.cells[9].getAttribute('data-val')) || 0;
-                    // Standard Chop Range: 45 - 55
-                    if (rsiVal >= 45 && rsiVal <= 55) {
+                    // consistentCount is already defined above
+                    const consistencyRatio = consistentCount / 5;
+                    const isLowConsistency = consistencyRatio < 0.3;
+
+                    const startPrice = parseFloat(cell.getAttribute('data-start-price')) || 0;
+                    const endPrice = parseFloat(cell.getAttribute('data-end-price')) || 0;
+                    const minPrice = parseFloat(cell.getAttribute('data-min-price')) || 0;
+                    const maxPrice = parseFloat(cell.getAttribute('data-max-price')) || 0;
+
+                    let netProgress = 1.0;
+                    const range = maxPrice - minPrice;
+                    if (range > 0) {
+                        netProgress = Math.abs(endPrice - startPrice) / range;
+                    }
+                    const isLowProgress = netProgress < 0.25;
+
+                    const isChopByRule = isLowConsistency && isLowProgress;
+                    const isChopByRSI = rsiVal >= 45 && rsiVal <= 55;
+
+                    if (isChopByRule || isChopByRSI) {
+                        if (isAnomaly) {
+                            const logDiv = document.getElementById('alertLog');
+                            logDiv.style.display = 'block';
+                            const entry = document.createElement('div');
+                            entry.style.color = 'var(--text-muted)';
+                            entry.style.fontSize = '0.8rem';
+                            let reason = isChopByRSI ? "RSI Chop" : "Low Consistency/Progress";
+                            entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol} Ignored: ${reason} (${rsiVal.toFixed(1)} RSI, ${(consistencyRatio * 100).toFixed(0)}% C, ${(netProgress * 100).toFixed(0)}% Prog)`;
+                            logDiv.appendChild(entry);
+                            logDiv.scrollTop = logDiv.scrollHeight;
+                        }
                         continue;
                     }
                 }
 
                 if (!cell) continue;
 
-                let pcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
                 const rawVal = cell.getAttribute('data-val-raw');
                 let valueChange = 0;
                 if (rawVal) {
@@ -914,9 +962,6 @@
                         valueChange = val;
                     }
                 }
-
-                let pcntCondition = Math.abs(pcntChange) >= minPcnt;
-                let volPcntChange = parseFloat(cell.getAttribute('data-vol-pcnt')) || 0;
 
                 if (pcntCondition && Math.abs(volPcntChange) >= minVolPcnt) {
                     row.classList.add('anomaly-alert'); // Highlight on table regardless of sound history
@@ -1019,6 +1064,14 @@
                             }
                         } else {
                             console.log(`Skipping auto-create for ${symbol}: Level already exists.`);
+                            const logDiv = document.getElementById('alertLog');
+                            logDiv.style.display = 'block';
+                            const entry = document.createElement('div');
+                            entry.style.color = 'var(--text-muted)';
+                            entry.style.fontSize = '0.8rem';
+                            entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Skipping auto-level - Active level already exists.`;
+                            logDiv.appendChild(entry);
+                            logDiv.scrollTop = logDiv.scrollHeight;
                         }
                     }
                 }
@@ -1050,7 +1103,6 @@
                 logDiv.appendChild(logEntry);
                 logDiv.scrollTop = logDiv.scrollHeight;
 
-                // Auto Create Levels
                 if (document.getElementById('autoLevelToggle').checked) {
                     if (levelRequests.length > 0) {
                         console.log("Triggering auto-creation for:", levelRequests);
@@ -1058,6 +1110,46 @@
                     levelRequests.forEach(req => {
                         createLevel(req.symbol, req.price, autoLevelSize, autoLevelTP, autoLevelLev, autoLevelCool, autoLevelTier1, autoLevelTier2, autoLevelTier3, req.min, req.max, req.timeframe, req.rsi, req.analysis, ignoreSentiment, tpByExchange);
                     });
+                }
+            }
+
+            // Auto Close Logic (Runs every cycle)
+            if (document.getElementById('autoCloseBiggestOrderToggle').checked && activeLevels.length > 0) {
+                const maxDev = parseFloat(document.getElementById('autoCloseDeviation').value) || 1.0;
+                const logDiv = document.getElementById('alertLog');
+
+                for (const level of activeLevels) {
+                    try {
+                        const resp = await fetch(`/api/orderbook/biggest?symbol=${level.Symbol}`);
+                        if (resp.ok) {
+                            const data = await resp.json();
+                            const biggestPrice = data.price;
+
+                            if (biggestPrice > 0) {
+                                const dev = Math.abs(level.LevelPrice - biggestPrice) / biggestPrice * 100;
+                                if (dev > maxDev) {
+                                    console.log(`Auto Close Triggered: ${level.Symbol} level ${level.LevelPrice} is ${dev.toFixed(2)}% away from biggest order ${biggestPrice}`);
+
+                                    // Close Level
+                                    await fetch(`/levels/${level.ID}`, { method: 'DELETE' });
+
+                                    // Close Position
+                                    await fetch(`/positions/${level.Symbol}`, { method: 'DELETE' });
+
+                                    logDiv.style.display = 'block';
+                                    const entry = document.createElement('div');
+                                    entry.style.color = 'var(--danger)';
+                                    entry.innerText = `>>> Auto Closed ${level.Symbol}: Level $${level.LevelPrice} was ${dev.toFixed(2)}% away from Biggest Order $${biggestPrice}`;
+                                    logDiv.appendChild(entry);
+                                    logDiv.scrollTop = logDiv.scrollHeight;
+
+                                    playAlertSound();
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.error(`Error checking auto close for ${level.Symbol}`, err);
+                    }
                 }
             }
         }
