@@ -203,7 +203,7 @@ func (s *SQLiteStore) SaveLevel(ctx context.Context, level *domain.Level) error 
 }
 
 func (s *SQLiteStore) GetLevel(ctx context.Context, id string) (*domain.Level, error) {
-	query := `SELECT id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, source, analysis_json, created_at FROM levels WHERE id = ?`
+	query := `SELECT id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, COALESCE(source, ''), COALESCE(analysis_json, ''), created_at FROM levels WHERE id = ?`
 	row := s.db.QueryRowContext(ctx, query, id)
 
 	var l domain.Level
@@ -215,7 +215,7 @@ func (s *SQLiteStore) GetLevel(ctx context.Context, id string) (*domain.Level, e
 }
 
 func (s *SQLiteStore) ListLevels(ctx context.Context) ([]*domain.Level, error) {
-	query := `SELECT id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, source, analysis_json, created_at FROM levels`
+	query := `SELECT id, exchange, symbol, level_price, side, base_size, leverage, margin_type, cool_down_ms, stop_loss_at_base, stop_loss_mode, disable_speed_close, max_consecutive_base_closes, base_close_cooldown_ms, take_profit_pct, take_profit_mode, is_auto, auto_mode_enabled, ignore_sentiment_filter, tier1_pct, tier2_pct, tier3_pct, COALESCE(source, ''), COALESCE(analysis_json, ''), created_at FROM levels`
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
