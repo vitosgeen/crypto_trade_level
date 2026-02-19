@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"sort"
@@ -166,6 +167,10 @@ type MarketStats struct {
 	ConclusionScore30s float64         `json:"conclusion_score_30s"`
 	ConclusionScore10s float64         `json:"conclusion_score_10s"`
 	LastPrice          float64         `json:"last_price"`
+	RSI                float64         `json:"rsi"`
+	MACD               float64         `json:"macd"`
+	MACDSignal         float64         `json:"macd_signal"`
+	MACDHist           float64         `json:"macd_hist"`
 	WSStatus           domain.WSStatus `json:"ws_status"`
 }
 
@@ -211,39 +216,33 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		s.mu.Lock() // Re-acquire lock
 		if err == nil {
 			// Double-check if we still need to refresh (another goroutine might have done it)
+			shouldUpdate := true
 			if len(s.trades[symbol]) > 0 {
 				// Check timestamp of latest trade
 				lastTradeTime := s.trades[symbol][len(s.trades[symbol])-1].Time
 				if s.timeNow().Sub(lastTradeTime) < 60*time.Second {
-					// Already refreshed, proceed to calculation
-					// We need to break out of the update block, but we are inside if err == nil.
-					// We can just set err = nil and skip the update loop?
-					// Or better, wrap the update logic in an else or just use a flag.
-					// Let's just use a goto or restructure.
-					// Restructuring is cleaner.
-				} else {
-					// Replace old trades with fresh ones
-					s.trades[symbol] = nil
-					for _, t := range recentTrades {
-						s.trades[symbol] = append(s.trades[symbol], Trade{
-							Symbol: t.Symbol,
-							Side:   t.Side,
-							Size:   t.Size,
-							Price:  t.Price,
-							Time:   time.UnixMilli(t.Time),
-						})
-					}
+					shouldUpdate = false
 				}
-			} else {
+			}
+
+			if shouldUpdate {
 				// Replace old trades with fresh ones
 				s.trades[symbol] = nil
-				for _, t := range recentTrades {
+				s.priceHistory[symbol] = nil
+				// iterate in reverse (oldest first) because GetRecentTrades returns newest first
+				for i := len(recentTrades) - 1; i >= 0; i-- {
+					t := recentTrades[i]
+					tradeTime := time.UnixMilli(t.Time)
 					s.trades[symbol] = append(s.trades[symbol], Trade{
 						Symbol: t.Symbol,
 						Side:   t.Side,
 						Size:   t.Size,
 						Price:  t.Price,
-						Time:   time.UnixMilli(t.Time),
+						Time:   tradeTime,
+					})
+					s.priceHistory[symbol] = append(s.priceHistory[symbol], PricePoint{
+						Price: t.Price,
+						Time:  tradeTime,
 					})
 				}
 			}
@@ -460,6 +459,19 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		lastPrice = prices[len(prices)-1].Price
 	}
 
+	if lastPrice == 0 {
+		// Fallback to simpler ticker fetch to ensure we have a price for the UI
+		if price, err := s.exchange.GetCurrentPrice(ctx, symbol); err == nil {
+			lastPrice = price
+		}
+	}
+
+	// 7. RSI (1m)
+	rsi, _ := s.GetRSI(ctx, symbol, "1", 14)
+
+	// 8. MACD (1m)
+	macd, signal, hist, _ := s.GetMACD(ctx, symbol, "1", 12, 26, 9)
+
 	return &MarketStats{
 		SpeedBuy:           speedBuy,
 		SpeedSell:          speedSell,
@@ -481,6 +493,10 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		ConclusionScore30s: conclusionScore30s,
 		ConclusionScore10s: conclusionScore10s,
 		LastPrice:          lastPrice,
+		RSI:                rsi,
+		MACD:               macd,
+		MACDSignal:         signal,
+		MACDHist:           hist,
 		WSStatus:           s.exchange.GetWSStatus(),
 	}, nil
 }
@@ -929,4 +945,419 @@ func (s *MarketService) GetTradeSentiment(ctx context.Context, symbol string) (f
 
 func (s *MarketService) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
 	return s.exchange.GetCandles(ctx, symbol, interval, limit)
+}
+
+func (s *MarketService) GetRSI(ctx context.Context, symbol, interval string, period int) (float64, error) {
+	history, err := s.GetRSIHistory(ctx, symbol, interval, period, 1)
+	if err != nil {
+		return 0, err
+	}
+	if len(history) == 0 {
+		return 0, fmt.Errorf("no rsi data")
+	}
+	return history[len(history)-1], nil
+}
+
+func (s *MarketService) GetRSIHistory(ctx context.Context, symbol, interval string, period int, limit RSIHistoryLimit) ([]float64, error) {
+	// To get 'limit' RSI values, we need:
+	// 1 initial candle for first price change
+	// 'period' candles for first average
+	// 'limit-1' additional candles for subsequent averages
+	// Total: period + limit
+	needed := period + int(limit) + 1
+	candles, err := s.exchange.GetCandles(ctx, symbol, interval, needed)
+	if err != nil {
+		return nil, err
+	}
+	if len(candles) < period+1 {
+		return nil, fmt.Errorf("not enough candles for RSI (got %d, need %d)", len(candles), period+1)
+	}
+
+	return s.CalculateRSI(candles, period), nil
+}
+
+type RSIHistoryLimit int
+
+func (s *MarketService) CalculateRSI(candles []domain.Candle, period int) []float64 {
+	if len(candles) < period+1 {
+		return nil
+	}
+
+	n := len(candles)
+	rsiValues := make([]float64, 0, n-period)
+
+	var gains, losses float64
+	// First RSI calculation (SMA)
+	for i := 1; i <= period; i++ {
+		change := candles[i].Close - candles[i-1].Close
+		if change > 0 {
+			gains += change
+		} else {
+			losses += -change
+		}
+	}
+
+	avgGain := gains / float64(period)
+	avgLoss := losses / float64(period)
+
+	calcRSI := func(g, l float64) float64 {
+		if l == 0 {
+			if g == 0 {
+				return 50
+			}
+			return 100
+		}
+		rs := g / l
+		return 100.0 - (100.0 / (1.0 + rs))
+	}
+
+	rsiValues = append(rsiValues, calcRSI(avgGain, avgLoss))
+
+	// Wilder's Smoothing / Exponential Moving Average for subsequent values
+	for i := period + 1; i < n; i++ {
+		change := candles[i].Close - candles[i-1].Close
+		currentGain := 0.0
+		currentLoss := 0.0
+		if change > 0 {
+			currentGain = change
+		} else {
+			currentLoss = -change
+		}
+
+		avgGain = (avgGain*float64(period-1) + currentGain) / float64(period)
+		avgLoss = (avgLoss*float64(period-1) + currentLoss) / float64(period)
+
+		rsiValues = append(rsiValues, calcRSI(avgGain, avgLoss))
+	}
+
+	return rsiValues
+}
+
+func (s *MarketService) GetMACD(ctx context.Context, symbol, interval string, fastPeriod, slowPeriod, signalPeriod int) (macd, signal, hist float64, err error) {
+	// Needed candles: slowPeriod (for first EMA) + signalPeriod (for signal line) + some warmup
+	needed := slowPeriod + signalPeriod + 50
+	candles, err := s.exchange.GetCandles(ctx, symbol, interval, needed)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if len(candles) < slowPeriod {
+		return 0, 0, 0, fmt.Errorf("not enough candles for MACD (got %d, need %d)", len(candles), slowPeriod)
+	}
+
+	macdValues, signalValues, histValues := s.CalculateMACD(candles, fastPeriod, slowPeriod, signalPeriod)
+	if len(macdValues) == 0 {
+		return 0, 0, 0, fmt.Errorf("not enough data for MACD calculation")
+	}
+
+	return macdValues[len(macdValues)-1], signalValues[len(signalValues)-1], histValues[len(histValues)-1], nil
+}
+
+func (s *MarketService) CalculateMACD(candles []domain.Candle, fastPeriod, slowPeriod, signalPeriod int) (macd, signal, hist []float64) {
+	if len(candles) < slowPeriod {
+		return nil, nil, nil
+	}
+
+	prices := make([]float64, len(candles))
+	for i, c := range candles {
+		prices[i] = c.Close
+	}
+
+	fastEMA := s.CalculateEMA(prices, fastPeriod)
+	slowEMA := s.CalculateEMA(prices, slowPeriod)
+
+	// Since slowEMA starts at index slowPeriod-1, and fastEMA starts at fastPeriod-1,
+	// we need to align them. Both will have a value at index i >= slowPeriod-1.
+
+	macdLine := make([]float64, 0)
+	for i := slowPeriod - 1; i < len(prices); i++ {
+		macdLine = append(macdLine, fastEMA[i]-slowEMA[i])
+	}
+
+	if len(macdLine) < signalPeriod {
+		return macdLine, nil, nil
+	}
+
+	signalLine := s.CalculateEMA(macdLine, signalPeriod)
+
+	// Align MACD and Signal
+	startIdx := signalPeriod - 1
+	macdRet := macdLine[startIdx:]
+	signalRet := signalLine[startIdx:]
+	histRet := make([]float64, len(macdRet))
+
+	for i := 0; i < len(macdRet); i++ {
+		histRet[i] = macdRet[i] - signalRet[i]
+	}
+
+	return macdRet, signalRet, histRet
+}
+
+func (s *MarketService) CalculateEMA(values []float64, period int) []float64 {
+	if len(values) < period {
+		return nil
+	}
+	ema := make([]float64, len(values))
+	k := 2.0 / float64(period+1)
+
+	// SMA for first value
+	var sum float64
+	for i := 0; i < period; i++ {
+		sum += values[i]
+	}
+	ema[period-1] = sum / float64(period)
+
+	for i := period; i < len(values); i++ {
+		ema[i] = values[i]*k + ema[i-1]*(1-k)
+	}
+	return ema
+}
+
+func (s *MarketService) GetBiggestOrderBookPrice(ctx context.Context, symbol string, currentPrice float64, side string) (float64, error) {
+	clusters, err := s.GetLiquidityClusters(ctx, symbol)
+	if err != nil {
+		return 0, err
+	}
+
+	findIn := func(limit float64) (float64, float64, float64, int) {
+		var mVol, bPrice, sVol float64
+		var cnt int
+		for _, c := range clusters {
+			// Filter by side if provided
+			if side != "" && c.Type != side {
+				continue
+			}
+
+			// Distance in percentage
+			dist := math.Abs(c.Price-currentPrice) / currentPrice
+
+			// Filter: Near but not too close
+			// Near: limit (2% or 5%)
+			// Too close: 0.15% (to avoid immediate entry/noise)
+			if dist >= 0.0015 && dist <= limit {
+				sVol += c.Volume
+				cnt++
+				if c.Volume > mVol {
+					mVol = c.Volume
+					bPrice = c.Price
+				}
+			}
+		}
+		return bPrice, mVol, sVol, cnt
+	}
+
+	bestPrice, maxVol, sumVol, count := findIn(0.02)
+	if bestPrice == 0 {
+		// Fallback: try a wider range if nothing found in 2%
+		bestPrice, maxVol, sumVol, count = findIn(0.05)
+	}
+
+	if bestPrice == 0 {
+		return 0, fmt.Errorf("no suitable order book level found for %s", symbol)
+	}
+
+	// Structure Check: "No structure in the book"
+	// Ensure the biggest wall is distinctively larger than the average noise.
+	if count > 1 {
+		avgOthers := (sumVol - maxVol) / float64(count-1)
+		// Threshold: Max must be at least 30% larger than the average of the rest
+		if maxVol < avgOthers*1.3 {
+			return 0, fmt.Errorf("No structure in the book")
+		}
+	}
+
+	return bestPrice, nil
+}
+
+func (s *MarketService) HasNearbySignificantWall(ctx context.Context, symbol string, targetPrice float64, maxDevPct float64) (float64, bool, error) {
+	clusters, err := s.GetLiquidityClusters(ctx, symbol)
+	if err != nil {
+		return 0, false, err
+	}
+
+	if len(clusters) == 0 {
+		return 0, false, fmt.Errorf("no clusters found")
+	}
+
+	// 1. Find the Absolute Biggest Wall for scale
+	var globalMaxVol float64
+	for _, c := range clusters {
+		if c.Volume > globalMaxVol {
+			globalMaxVol = c.Volume
+		}
+	}
+
+	if globalMaxVol == 0 {
+		return 0, false, fmt.Errorf("no walls found")
+	}
+
+	// 2. Search for any "big enough" wall within maxDevPct
+	// "Big Enough" = at least 30% of the biggest wall?
+	// Actually, let's use a threshold.
+	threshold := globalMaxVol * 0.3
+
+	var closestPrice float64
+	minDist := 100.0 // large number
+
+	for _, c := range clusters {
+		dist := math.Abs(c.Price-targetPrice) / targetPrice * 100
+		if dist <= maxDevPct && c.Volume >= threshold {
+			if dist < minDist {
+				minDist = dist
+				closestPrice = c.Price
+			}
+		}
+	}
+
+	if closestPrice > 0 {
+		return closestPrice, true, nil
+	}
+
+	return 0, false, nil
+}
+
+type LiquidityAnalysis struct {
+	IsImbalanced      bool    `json:"is_imbalanced"`
+	WeakSide          string  `json:"weak_side"`
+	Ratio             float64 `json:"ratio"`
+	Reason            string  `json:"reason"`
+	DominantMaxVolume float64 `json:"dominant_max_volume"`
+	WeakMaxVolume     float64 `json:"weak_max_volume"`
+}
+
+func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol string, currentPrice float64, minRatio float64, maxClusters int, wallThresholdPct float64) (*LiquidityAnalysis, error) {
+	clusters, err := s.GetLiquidityClusters(ctx, symbol)
+	if err != nil {
+		return nil, err
+	}
+
+	analysis := &LiquidityAnalysis{
+		IsImbalanced: false,
+	}
+
+	// Range for cumulative volume (e.g., 2%)
+	rangeLimit := 0.02
+	var bidVol, askVol float64
+	var bidClusters, askClusters []LiquidityCluster
+	var maxBidVol, maxAskVol float64
+
+	for _, c := range clusters {
+		dist := math.Abs(c.Price-currentPrice) / currentPrice
+		if dist <= rangeLimit {
+			if c.Type == "bid" {
+				bidVol += c.Volume
+				bidClusters = append(bidClusters, c)
+				if c.Volume > maxBidVol {
+					maxBidVol = c.Volume
+				}
+			} else {
+				askVol += c.Volume
+				askClusters = append(askClusters, c)
+				if c.Volume > maxAskVol {
+					maxAskVol = c.Volume
+				}
+			}
+		}
+	}
+
+	if bidVol == 0 || askVol == 0 {
+		analysis.Reason = "One side has zero liquidity in range"
+		return analysis, nil
+	}
+
+	// Determine Weak/Dominant side
+	var dominantVol, weakVol float64
+	var weakSide string
+	var weakClusters []LiquidityCluster
+	var dominantMaxVol, weakMaxVol float64
+
+	if bidVol > askVol {
+		dominantVol = bidVol
+		weakVol = askVol
+		weakSide = "ask"
+		weakClusters = askClusters
+		dominantMaxVol = maxBidVol
+		weakMaxVol = maxAskVol
+	} else {
+		dominantVol = askVol
+		weakVol = bidVol
+		weakSide = "bid"
+		weakClusters = bidClusters
+		dominantMaxVol = maxAskVol
+		weakMaxVol = maxBidVol
+	}
+
+	ratio := dominantVol / weakVol
+	analysis.Ratio = ratio
+	analysis.WeakSide = weakSide
+	analysis.DominantMaxVolume = dominantMaxVol
+	analysis.WeakMaxVolume = weakMaxVol
+
+	// Condition 1: Imbalance Ratio
+	if ratio < minRatio {
+		analysis.Reason = fmt.Sprintf("Imbalance ratio too low: %.2f (min %.1f)", ratio, minRatio)
+		return analysis, nil
+	}
+
+	// Condition 2: Weaker side thin liquidity distribution (few clusters)
+	if len(weakClusters) > maxClusters {
+		analysis.Reason = fmt.Sprintf("Weak side too dense: %d clusters (max %d)", len(weakClusters), maxClusters)
+		return analysis, nil
+	}
+
+	// Condition 3: No strong wall on the weak side within short distance (e.g., 0.5%)
+	shortRange := 0.005
+	for _, c := range weakClusters {
+		dist := math.Abs(c.Price-currentPrice) / currentPrice
+		if dist <= shortRange {
+			// A "strong wall" is defined relative to dominant side's max volume
+			if c.Volume > dominantMaxVol*wallThresholdPct {
+				analysis.Reason = fmt.Sprintf("Strong wall found on weak side at %.2f (vol %.2f)", c.Price, c.Volume)
+				return analysis, nil
+			}
+		}
+	}
+
+	// Condition 4: Largest order on weak side relatively small compared to dominant
+	// We use wallThresholdPct * 1.5 as a heuristic for "The largest order overall" vs "Nearby wall"
+	if weakMaxVol > dominantMaxVol*(wallThresholdPct*1.6) {
+		analysis.Reason = fmt.Sprintf("Weak side max volume too large: %.2f vs Dominant %.2f (threshold %.1f%%)", weakMaxVol, dominantMaxVol, wallThresholdPct*160)
+		return analysis, nil
+	}
+
+	// Condition 5: Liquidity on the weak side is not increasing rapidly
+	// Check history (last 1 minute)
+	history := s.GetLiquidityHistory(symbol)
+	if len(history) > 2 {
+		cutoff := s.timeNow().Unix() - 60
+		var initialWeakVol float64
+		for _, snap := range history {
+			if snap.Time >= cutoff {
+				var snapWeakVol float64
+				buckets := snap.Asks
+				if weakSide == "bid" {
+					buckets = snap.Bids
+				}
+				for _, b := range buckets {
+					dist := math.Abs(b.Price-currentPrice) / currentPrice
+					if dist <= rangeLimit {
+						snapWeakVol += b.Volume
+					}
+				}
+				if initialWeakVol == 0 {
+					initialWeakVol = snapWeakVol
+				} else {
+					// Compare with initial (from 1 min ago or earliest in window)
+					if snapWeakVol > initialWeakVol*1.5 {
+						analysis.IsImbalanced = false
+						analysis.Reason = "Weak side liquidity increasing rapidly (reinforcement)"
+						return analysis, nil
+					}
+				}
+			}
+		}
+	}
+
+	analysis.IsImbalanced = true
+	analysis.Reason = "Clear structural weakness on " + weakSide + " side"
+	return analysis, nil
 }

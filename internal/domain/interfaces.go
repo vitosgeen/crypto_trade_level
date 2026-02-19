@@ -1,12 +1,15 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Exchange defines the interface for interacting with a crypto exchange.
 type Exchange interface {
 	GetCurrentPrice(ctx context.Context, symbol string) (float64, error)
-	MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error
-	MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error
+	MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error
+	MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error
 	ClosePosition(ctx context.Context, symbol string) error
 	GetPosition(ctx context.Context, symbol string) (*Position, error)
 	GetPositions(ctx context.Context) ([]*Position, error)
@@ -22,6 +25,8 @@ type Exchange interface {
 	PlaceOrder(ctx context.Context, order *Order) (*Order, error)
 	GetOrder(ctx context.Context, symbol, orderID string) (*Order, error)
 	CancelOrder(ctx context.Context, symbol, orderID string) error
+	GetWalletBalance(ctx context.Context) ([]*WalletBalance, error)
+	GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*PositionHistory, error)
 	GetWSStatus() WSStatus
 }
 
@@ -67,6 +72,7 @@ type LevelRepository interface {
 	ListLevels(ctx context.Context) ([]*Level, error)
 	GetLevelsBySymbol(ctx context.Context, symbol string) ([]*Level, error)
 	DeleteLevel(ctx context.Context, id string) error
+	DeleteAllLevels(ctx context.Context) error
 	CountActiveLevels(ctx context.Context, symbol string) (int, error)
 
 	SaveSymbolTiers(ctx context.Context, tiers *SymbolTiers) error
@@ -81,9 +87,25 @@ type TradeRepository interface {
 	SaveTrade(ctx context.Context, order *Order) error
 	ListTrades(ctx context.Context, limit int) ([]*Order, error)
 
-	SavePositionHistory(ctx context.Context, history *PositionHistory) error
+	SavePositionHistory(ctx context.Context, history *PositionHistory) (int64, error)
+	UpdatePositionHistory(ctx context.Context, history *PositionHistory) error
 	ListPositionHistory(ctx context.Context, limit int) ([]*PositionHistory, error)
+
+	SaveExchangePositionHistory(ctx context.Context, history *PositionHistory) error
+	ListExchangePositionHistory(ctx context.Context, limit int) ([]*PositionHistory, error)
+
 	SaveTradeSessionLog(ctx context.Context, log *TradeSessionLog) error
 	ListTradeSessionLogs(ctx context.Context, symbol string, limit int) ([]*TradeSessionLog, error)
 	GetTradeSessionLog(ctx context.Context, id string) (*TradeSessionLog, error)
+
+	SavePositionPnLHistory(ctx context.Context, history *PositionPnLHistory) error
+	ListPositionPnLHistory(ctx context.Context, symbol string, limit int) ([]*PositionPnLHistory, error)
+	ListPositionPnLHistoryRange(ctx context.Context, symbol string, start, end time.Time) ([]*PositionPnLHistory, error)
+	GetTotalRealizedPnL(ctx context.Context) (float64, error)
+	GetTotalExchangeRealizedPnL(ctx context.Context) (float64, error)
+}
+
+type WalletRepository interface {
+	SaveWalletBalance(ctx context.Context, balance *WalletBalance) error
+	GetWalletBalanceHistory(ctx context.Context, coin string, limit int) ([]*WalletBalance, error)
 }

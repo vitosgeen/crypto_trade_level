@@ -1,0 +1,218 @@
+{{range .Results}}
+<tr onclick="showChart('{{.Symbol}}')" style="cursor: pointer;">
+    <td style="font-weight: 600; font-size: 1rem;">
+        <span class="symbol">{{.Symbol}}</span>
+        <div style="margin-top: 5px;">
+            <button class="cta-button"
+                style="font-size: 0.65rem; padding: 2px 6px; background: rgba(0, 255, 136, 0.15); border: 1px solid rgba(0, 255, 136, 0.3); color: var(--accent-color);"
+                onclick="manualCreateLevel(event, '{{.Symbol}}', {{.CurrentPrice}})">
+                + Create Level
+            </button>
+        </div>
+    </td>
+    <td style="font-family: monospace; color: var(--text-muted);" data-val="{{.EndOI}}">
+        <div>OI: {{printf "%.0f" .EndOI}}</div>
+        <div style="color: var(--accent-color); font-size: 0.8rem; margin-top: 2px;">${{printf "%.6f" .CurrentPrice}}
+        </div>
+    </td>
+
+    <!-- 24h Vol -->
+    <td style="font-family: monospace; color: var(--text-muted);" data-val="{{.Volume24h}}">
+        <div>Vol: {{if gt .Volume24h 1000000.0}}{{printf "%.1fM" (div .Volume24h 1000000.0)}}{{else}}{{printf "%.0fK"
+            (div .Volume24h 1000.0)}}{{end}}</div>
+    </td>
+
+    <!-- 1m -->
+    <td data-val="{{.Change1m.ChangePcnt}}" data-val-raw="{{.Change1m.ChangeValue}}"
+        data-vol-pcnt="{{.Change1m.VolChangePcnt}}" data-min-price="{{.Change1m.MinPrice}}"
+        data-max-price="{{.Change1m.MaxPrice}}" data-start-price="{{.Change1m.StartPrice}}"
+        data-end-price="{{.Change1m.EndPrice}}">
+        {{if ne .Change1m.Direction "flat"}}
+        <div class="{{if eq .Change1m.Direction " up"}}change-up{{else}}change-down{{end}}">
+            {{printf "%+.2f" .Change1m.ChangePcnt}}%
+            {{if .Change1m.IsConsistent}}<span class="badge-consistent" title="Consistent Trend">C</span>{{end}}
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+            {{if gt (abs .Change1m.ChangeValue) 1000000.0}}
+            {{printf "%+.1fM" (div .Change1m.ChangeValue 1000000.0)}}
+            {{else}}
+            {{printf "%+.1fK" (div .Change1m.ChangeValue 1000.0)}}
+            {{end}}
+        </div>
+        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; opacity: 0.7;">
+            ${{printf "%.6f" .Change1m.StartPrice}} &#8594; ${{printf "%.6f" .Change1m.EndPrice}}
+        </div>
+        <div
+            style="font-size: 0.75rem; color: #aaa; margin-top: 2px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 2px;">
+            <span
+                style="{{if gt .Change1m.VolChangePcnt 0.0}}color: var(--success);{{else if lt .Change1m.VolChangePcnt 0.0}}color: var(--danger);{{end}}">
+                Vol: {{if gt .Change1m.VolChangeValue 0.0}}+{{end}}{{if gt (abs .Change1m.VolChangeValue)
+                1000000.0}}{{printf "%.1fM" (div .Change1m.VolChangeValue 1000000.0)}}{{else}}{{printf "%.1fK" (div
+                .Change1m.VolChangeValue 1000.0)}}{{end}}
+                ({{printf "%+.1f" .Change1m.VolChangePcnt}}%)
+            </span>
+        </div>
+        {{else}}
+        <span class="change-flat">-</span>
+        {{end}}
+    </td>
+
+    <!-- 10m -->
+    <td data-val="{{.Change10m.ChangePcnt}}" data-val-raw="{{.Change10m.ChangeValue}}"
+        data-vol-pcnt="{{.Change10m.VolChangePcnt}}" data-min-price="{{.Change10m.MinPrice}}"
+        data-max-price="{{.Change10m.MaxPrice}}" data-start-price="{{.Change10m.StartPrice}}"
+        data-end-price="{{.Change10m.EndPrice}}">
+        {{if ne .Change10m.Direction "flat"}}
+        <div class="{{if eq .Change10m.Direction " up"}}change-up{{else}}change-down{{end}}">
+            {{printf "%+.2f" .Change10m.ChangePcnt}}%
+            {{if .Change10m.IsConsistent}}<span class="badge-consistent" title="Consistent Trend">C</span>{{end}}
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+            {{if gt (abs .Change10m.ChangeValue) 1000000.0}}
+            {{printf "%+.1fM" (div .Change10m.ChangeValue 1000000.0)}}
+            {{else}}
+            {{printf "%+.1fK" (div .Change10m.ChangeValue 1000.0)}}
+            {{end}}
+        </div>
+        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; opacity: 0.7;">
+            ${{printf "%.6f" .Change10m.StartPrice}} &#8594; ${{printf "%.6f" .Change10m.EndPrice}}
+        </div>
+        <div
+            style="font-size: 0.75rem; color: #aaa; margin-top: 2px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 2px;">
+            <span
+                style="{{if gt .Change10m.VolChangePcnt 0.0}}color: var(--success);{{else if lt .Change10m.VolChangePcnt 0.0}}color: var(--danger);{{end}}">
+                Vol: {{if gt .Change10m.VolChangeValue 0.0}}+{{end}}{{if gt (abs .Change10m.VolChangeValue)
+                1000000.0}}{{printf "%.1fM" (div .Change10m.VolChangeValue 1000000.0)}}{{else}}{{printf "%.1fK" (div
+                .Change10m.VolChangeValue 1000.0)}}{{end}}
+                ({{printf "%+.1f" .Change10m.VolChangePcnt}}%)
+            </span>
+        </div>
+        {{else}}
+        <span class="change-flat">-</span>
+        {{end}}
+    </td>
+
+    <!-- 1h -->
+    <td style="background: rgba(255,255,255,0.02);" data-val="{{.Change1h.ChangePcnt}}"
+        data-val-raw="{{.Change1h.ChangeValue}}" data-vol-pcnt="{{.Change1h.VolChangePcnt}}"
+        data-min-price="{{.Change1h.MinPrice}}" data-max-price="{{.Change1h.MaxPrice}}"
+        data-start-price="{{.Change1h.StartPrice}}" data-end-price="{{.Change1h.EndPrice}}">
+        {{if ne .Change1h.Direction "flat"}}
+        <div class="{{if eq .Change1h.Direction " up"}}change-up{{else}}change-down{{end}}">
+            {{printf "%+.2f" .Change1h.ChangePcnt}}%
+            {{if .Change1h.IsConsistent}}<span class="badge-consistent" title="Consistent Trend">C</span>{{end}}
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+            {{if gt (abs .Change1h.ChangeValue) 1000000.0}}
+            {{printf "%+.1fM" (div .Change1h.ChangeValue 1000000.0)}}
+            {{else}}
+            {{printf "%+.1fK" (div .Change1h.ChangeValue 1000.0)}}
+            {{end}}
+        </div>
+        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; opacity: 0.7;">
+            ${{printf "%.6f" .Change1h.StartPrice}} &#8594; ${{printf "%.6f" .Change1h.EndPrice}}
+        </div>
+        <div
+            style="font-size: 0.75rem; color: #aaa; margin-top: 2px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 2px;">
+            <span
+                style="{{if gt .Change1h.VolChangePcnt 0.0}}color: var(--success);{{else if lt .Change1h.VolChangePcnt 0.0}}color: var(--danger);{{end}}">
+                Vol: {{if gt .Change1h.VolChangeValue 0.0}}+{{end}}{{if gt (abs .Change1h.VolChangeValue)
+                1000000.0}}{{printf "%.1fM" (div .Change1h.VolChangeValue 1000000.0)}}{{else}}{{printf "%.1fK" (div
+                .Change1h.VolChangeValue 1000.0)}}{{end}}
+                ({{printf "%+.1f" .Change1h.VolChangePcnt}}%)
+            </span>
+        </div>
+        {{else}}
+        <span class="change-flat">-</span>
+        {{end}}
+    </td>
+
+    <!-- 4h -->
+    <td data-val="{{.Change4h.ChangePcnt}}" data-val-raw="{{.Change4h.ChangeValue}}"
+        data-vol-pcnt="{{.Change4h.VolChangePcnt}}" data-min-price="{{.Change4h.MinPrice}}"
+        data-max-price="{{.Change4h.MaxPrice}}" data-start-price="{{.Change4h.StartPrice}}"
+        data-end-price="{{.Change4h.EndPrice}}">
+        {{if ne .Change4h.Direction "flat"}}
+        <div class="{{if eq .Change4h.Direction " up"}}change-up{{else}}change-down{{end}}">
+            {{printf "%+.2f" .Change4h.ChangePcnt}}%
+            {{if .Change4h.IsConsistent}}<span class="badge-consistent" title="Consistent Trend">C</span>{{end}}
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+            {{if gt (abs .Change4h.ChangeValue) 1000000.0}}
+            {{printf "%+.1fM" (div .Change4h.ChangeValue 1000000.0)}}
+            {{else}}
+            {{printf "%+.1fK" (div .Change4h.ChangeValue 1000.0)}}
+            {{end}}
+        </div>
+        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; opacity: 0.7;">
+            ${{printf "%.6f" .Change4h.StartPrice}} &#8594; ${{printf "%.6f" .Change4h.EndPrice}}
+        </div>
+        <div
+            style="font-size: 0.75rem; color: #aaa; margin-top: 2px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 2px;">
+            <span
+                style="{{if gt .Change4h.VolChangePcnt 0.0}}color: var(--success);{{else if lt .Change4h.VolChangePcnt 0.0}}color: var(--danger);{{end}}">
+                Vol: {{if gt .Change4h.VolChangeValue 0.0}}+{{end}}{{if gt (abs .Change4h.VolChangeValue)
+                1000000.0}}{{printf "%.1fM" (div .Change4h.VolChangeValue 1000000.0)}}{{else}}{{printf "%.1fK" (div
+                .Change4h.VolChangeValue 1000.0)}}{{end}}
+                ({{printf "%+.1f" .Change4h.VolChangePcnt}}%)
+            </span>
+        </div>
+        {{else}}
+        <span class="change-flat">-</span>
+        {{end}}
+    </td>
+
+    <!-- 24h -->
+    <td data-val="{{.Change24h.ChangePcnt}}" data-val-raw="{{.Change24h.ChangeValue}}"
+        data-vol-pcnt="{{.Change24h.VolChangePcnt}}" data-min-price="{{.Change24h.MinPrice}}"
+        data-max-price="{{.Change24h.MaxPrice}}" data-start-price="{{.Change24h.StartPrice}}"
+        data-end-price="{{.Change24h.EndPrice}}">
+        {{if ne .Change24h.Direction "flat"}}
+        <div class="{{if eq .Change24h.Direction " up"}}change-up{{else}}change-down{{end}}">
+            {{printf "%+.2f" .Change24h.ChangePcnt}}%
+            {{if .Change24h.IsConsistent}}<span class="badge-consistent" title="Consistent Trend">C</span>{{end}}
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+            {{if gt (abs .Change24h.ChangeValue) 1000000.0}}
+            {{printf "%+.1fM" (div .Change24h.ChangeValue 1000000.0)}}
+            {{else}}
+            {{printf "%+.1fK" (div .Change24h.ChangeValue 1000.0)}}
+            {{end}}
+        </div>
+        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; opacity: 0.7;">
+            ${{printf "%.6f" .Change24h.StartPrice}} &#8594; ${{printf "%.6f" .Change24h.EndPrice}}
+        </div>
+        {{else}}
+        <span class="change-flat">-</span>
+        {{end}}
+    </td>
+    <!-- Shadow % -->
+    <td data-val="{{.ShadowPcnt}}" title="Average Wick Percentage (Shadow / Range)"
+        style="font-family: monospace; color: var(--text-muted);">
+        {{if gt .ShadowPcnt 0.0}}{{printf "%.1f" .ShadowPcnt}}%{{else}}-{{end}}
+    </td>
+    <!-- RSI -->
+    <td data-val="{{.RSI}}"
+        style="font-family: monospace; font-weight: 600; color: {{if ge .RSI 70.0}}var(--danger){{else if le .RSI 30.0}}var(--success){{else}}var(--text-color){{end}}">
+        {{if gt .RSI 0.0}}{{printf "%.1f" .RSI}}{{else}}-{{end}}
+    </td>
+    <!-- MACD -->
+    <td data-val="{{.MACDHist}}" style="font-family: monospace; font-size: 0.85rem;">
+        {{if ne .MACD 0.0}}
+        <div
+            style="color: {{if gt .MACDHist 0.0}}var(--success){{else if lt .MACDHist 0.0}}var(--danger){{else}}var(--text-color){{end}}">
+            H: {{printf "%.4f" .MACDHist}}
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted);">
+            M: {{printf "%.4f" .MACD}}
+        </div>
+        {{else}}-{{end}}
+    </td>
+</tr>
+{{else}}
+<tr>
+    <td colspan="10" style="text-align: center; padding: 40px; color: var(--text-muted);">
+        No data available yet. Please wait for the bot to collect logs...
+    </td>
+</tr>
+{{end}}

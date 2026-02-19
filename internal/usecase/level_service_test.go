@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/vitos/crypto_trade_level/internal/domain"
 	"github.com/vitos/crypto_trade_level/internal/usecase"
@@ -11,8 +12,9 @@ import (
 
 // MockLevelRepo
 type MockLevelRepo struct {
-	Levels []*domain.Level
-	Tiers  *domain.SymbolTiers
+	Levels     []*domain.Level
+	Tiers      *domain.SymbolTiers
+	DeletedIDs []string
 }
 
 func (m *MockLevelRepo) SaveLevel(ctx context.Context, level *domain.Level) error { return nil }
@@ -22,7 +24,14 @@ func (m *MockLevelRepo) GetLevel(ctx context.Context, id string) (*domain.Level,
 func (m *MockLevelRepo) ListLevels(ctx context.Context) ([]*domain.Level, error) {
 	return m.Levels, nil
 }
-func (m *MockLevelRepo) DeleteLevel(ctx context.Context, id string) error { return nil }
+func (m *MockLevelRepo) DeleteLevel(ctx context.Context, id string) error {
+	m.DeletedIDs = append(m.DeletedIDs, id)
+	return nil
+}
+func (m *MockLevelRepo) DeleteAllLevels(ctx context.Context) error {
+	m.Levels = nil
+	return nil
+}
 func (m *MockLevelRepo) GetSymbolTiers(ctx context.Context, exchange, symbol string) (*domain.SymbolTiers, error) {
 	return m.Tiers, nil
 }
@@ -71,12 +80,25 @@ func (m *MockTradeRepo) ListTrades(ctx context.Context, limit int) ([]*domain.Or
 	return nil, nil
 }
 
-func (m *MockTradeRepo) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+func (m *MockTradeRepo) SavePositionHistory(ctx context.Context, history *domain.PositionHistory) (int64, error) {
+	m.LastHistory = history
+	return 1, nil
+}
+
+func (m *MockTradeRepo) UpdatePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
 	m.LastHistory = history
 	return nil
 }
 
 func (m *MockTradeRepo) ListPositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
+	return nil, nil
+}
+
+func (m *MockTradeRepo) SaveExchangePositionHistory(ctx context.Context, history *domain.PositionHistory) error {
+	return nil
+}
+
+func (m *MockTradeRepo) ListExchangePositionHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
 	return nil, nil
 }
 
@@ -90,6 +112,23 @@ func (m *MockTradeRepo) GetTradeSessionLog(ctx context.Context, id string) (*dom
 	return nil, nil
 }
 
+func (m *MockTradeRepo) SavePositionPnLHistory(ctx context.Context, history *domain.PositionPnLHistory) error {
+	return nil
+}
+
+func (m *MockTradeRepo) ListPositionPnLHistory(ctx context.Context, symbol string, limit int) ([]*domain.PositionPnLHistory, error) {
+	return nil, nil
+}
+func (m *MockTradeRepo) ListPositionPnLHistoryRange(ctx context.Context, symbol string, start, end time.Time) ([]*domain.PositionPnLHistory, error) {
+	return nil, nil
+}
+func (m *MockTradeRepo) GetTotalRealizedPnL(ctx context.Context) (float64, error) {
+	return 0, nil
+}
+func (m *MockTradeRepo) GetTotalExchangeRealizedPnL(ctx context.Context) (float64, error) {
+	return 0, nil
+}
+
 type MockExchange struct {
 	BuyCalled    bool
 	SellCalled   bool
@@ -99,12 +138,12 @@ type MockExchange struct {
 func (m *MockExchange) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
 	return 0, nil
 }
-func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockExchange) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	m.BuyCalled = true
 	m.LastStopLoss = stopLoss
 	return nil
 }
-func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockExchange) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	m.SellCalled = true
 	m.LastStopLoss = stopLoss
 	return nil
@@ -157,6 +196,18 @@ func (m *MockExchange) GetWSStatus() domain.WSStatus {
 	return domain.WSStatus{Connected: true}
 }
 
+func (m *MockExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	return []*domain.WalletBalance{}, nil
+}
+
+func (m *MockExchange) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	return []*domain.PositionHistory{}, nil
+}
+
+func (m *MockExchangeForService) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	return []*domain.WalletBalance{}, nil
+}
+
 func (m *MockExchangeForService) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
 	return order, nil
 }
@@ -187,7 +238,9 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 
 	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
 	mockTradeRepo := &MockTradeRepo{}
-	mockEx := &MockExchangeForService{} // Reusing MockExchange from trade_executor_test.go if in same package, but we are in usecase_test
+	mockEx := &MockExchangeForService{
+		Position: &domain.Position{Size: 0},
+	} // Reusing MockExchange from trade_executor_test.go if in same package, but we are in usecase_test
 
 	// We need to define MockExchange here since we are in a new file/package (or same package test)
 	// Let's redefine minimal mock
@@ -214,6 +267,13 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 	if !mockEx.BuyCalled {
 		t.Fatal("Expected Buy on Tier 1")
 	}
+	// Simulate Position Opened
+	mockEx.Position = &domain.Position{
+		Symbol:     "BTCUSDT",
+		Side:       domain.SideLong,
+		Size:       0.1,
+		EntryPrice: 10040,
+	}
 
 	// 2. Trigger Close (Base Level)
 	// Price falls to 10000
@@ -222,12 +282,14 @@ func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
 
 	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10000)
 
+	// Mock that position is gone (consistent with "position not found")
+	mockEx.Position = &domain.Position{Size: 0}
+	mockEx.BuyCalled = false // Reset
+	mockEx.CloseError = nil
+
 	// 3. Trigger Open Again (Re-entry)
 	// Must reset price above Tier 1 first to trigger "Cross Down"
 	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10100)
-
-	mockEx.BuyCalled = false // Reset
-	mockEx.CloseError = nil
 
 	// Trigger Open (Cross 10050 Downward)
 	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10040)
@@ -247,17 +309,18 @@ type MockExchangeForService struct {
 
 	TradeCallback func(symbol string, side string, size float64, price float64)
 	Position      *domain.Position
+	Candles       []domain.Candle
 }
 
 func (m *MockExchangeForService) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
 	return 0, nil
 }
-func (m *MockExchangeForService) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockExchangeForService) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	m.BuyCalled = true
 	m.LastStopLoss = stopLoss
 	return nil
 }
-func (m *MockExchangeForService) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (m *MockExchangeForService) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	m.SellCalled = true
 	m.LastStopLoss = stopLoss
 	return nil
@@ -279,7 +342,7 @@ func (m *MockExchangeForService) GetPositions(ctx context.Context) ([]*domain.Po
 	return []*domain.Position{}, nil
 }
 func (m *MockExchangeForService) GetCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
-	return nil, nil
+	return m.Candles, nil
 }
 func (m *MockExchangeForService) GetOrderBook(ctx context.Context, symbol string, category string) (*domain.OrderBook, error) {
 	return nil, nil
@@ -304,6 +367,10 @@ func (m *MockExchangeForService) Subscribe(symbols []string) error {
 
 func (m *MockExchangeForService) GetWSStatus() domain.WSStatus {
 	return domain.WSStatus{Connected: true}
+}
+
+func (m *MockExchangeForService) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	return []*domain.PositionHistory{}, nil
 }
 
 func TestLevelService_StopLossMode(t *testing.T) {
@@ -391,7 +458,9 @@ func TestLevelService_SentimentLogic(t *testing.T) {
 
 	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
 	mockTradeRepo := &MockTradeRepo{}
-	mockEx := &MockExchangeForService{} // Use Enhanced Mock
+	mockEx := &MockExchangeForService{
+		Position: &domain.Position{Size: 0},
+	} // Use Enhanced Mock
 
 	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
 	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
@@ -505,7 +574,13 @@ func TestLevelService_SentimentLogic(t *testing.T) {
 	}
 
 	// 5. Test Exit Trigger
-	// We have a Long Position on ETH (from Mock GetPosition default)
+	// We have a Long Position on ETH (Manual Set)
+	mockEx.Position = &domain.Position{
+		Symbol:     "ETHUSDT",
+		Side:       domain.SideLong,
+		Size:       1.0,
+		EntryPrice: 2000,
+	}
 	// Inject Bearish Sentiment for ETH
 	mockEx.TradeCallback("ETHUSDT", "Sell", 5000, 2000) // Flip to Bearish
 
@@ -906,5 +981,132 @@ func TestLevelService_PositionHistory(t *testing.T) {
 	}
 	if mockTradeRepo.LastTrade.LevelID != "manual-close" {
 		t.Errorf("Expected LevelID manual-close, got %s", mockTradeRepo.LastTrade.LevelID)
+	}
+}
+func TestLevelService_DeleteOnProfit(t *testing.T) {
+	// Setup
+	level := &domain.Level{
+		ID:            "level-to-delete",
+		Symbol:        "BTCUSDT",
+		Exchange:      "bybit",
+		LevelPrice:    10000,
+		BaseSize:      0.1,
+		TakeProfitPct: 0.02, // 2% -> 10200
+	}
+	tiers := &domain.SymbolTiers{
+		Tier1Pct: 0.005,
+		Tier2Pct: 0.010,
+		Tier3Pct: 0.015,
+	}
+
+	mockLevelRepo := &MockLevelRepo{Levels: []*domain.Level{level}, Tiers: tiers}
+	mockTradeRepo := &MockTradeRepo{}
+	mockEx := &MockExchangeForService{}
+
+	marketService := usecase.NewMarketService(mockEx, mockLevelRepo)
+	service := usecase.NewLevelService(mockLevelRepo, mockTradeRepo, mockEx, marketService)
+	ctx := context.Background()
+	service.UpdateCache(ctx)
+
+	// 1. Simulate Active Position opened by this level
+	mockEx.Position = &domain.Position{
+		Symbol:     "BTCUSDT",
+		Side:       domain.SideLong,
+		Size:       0.1,
+		EntryPrice: 10000,
+	}
+
+	// 2. Mock Take Profit Hit (Profit!)
+	// First tick to seed prevPrice
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10000)
+	// Second tick: Price 10205 (Hit 10200 TP)
+	service.ProcessTick(ctx, "bybit", "BTCUSDT", 10205)
+
+	// 3. Verify DeleteLevel Called
+	found := false
+	for _, id := range mockLevelRepo.DeletedIDs {
+		if id == "level-to-delete" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Expected Level level-to-delete to be deleted after profit")
+	}
+
+	// 4. Test Loss Scenario (Should NOT Delete)
+	mockLevelRepo.DeletedIDs = nil
+	level2 := &domain.Level{
+		ID:             "level-to-keep",
+		Symbol:         "ETHUSDT",
+		Exchange:       "bybit",
+		LevelPrice:     2000,
+		BaseSize:       1.0,
+		StopLossAtBase: true,
+	}
+	mockLevelRepo.Levels = []*domain.Level{level2}
+	service.UpdateCache(ctx)
+
+	mockEx.Position = &domain.Position{
+		Symbol:     "ETHUSDT",
+		Side:       domain.SideLong,
+		Size:       1.0,
+		EntryPrice: 2000,
+	}
+
+	// Mock Stop Loss Hit (Loss!)
+	// Price 1990 (Below 2000 Base)
+	service.ProcessTick(ctx, "bybit", "ETHUSDT", 1990)
+
+	found = false
+	for _, id := range mockLevelRepo.DeletedIDs {
+		if id == "level-to-keep" {
+			found = true
+			break
+		}
+	}
+
+	if found {
+		t.Error("Expected Level level-to-keep NOT to be deleted after loss")
+	}
+
+	// 5. Test Sentiment Exit with Profit (Should Delete)
+	mockLevelRepo.DeletedIDs = nil
+	level3 := &domain.Level{
+		ID:         "level-sentiment-delete",
+		Symbol:     "SOLUSDT",
+		Exchange:   "bybit",
+		LevelPrice: 20,
+		BaseSize:   1.0,
+	}
+	mockLevelRepo.Levels = []*domain.Level{level3}
+	service.UpdateCache(ctx)
+
+	// Inject Bearish Sentiment (to trigger exit)
+	mockEx.TradeCallback("SOLUSDT", "Sell", 10000, 20)
+
+	mockEx.Position = &domain.Position{
+		Symbol:     "SOLUSDT",
+		Side:       domain.SideLong,
+		Size:       1.0,
+		EntryPrice: 20,
+	}
+
+	// First tick to seed price
+	service.ProcessTick(ctx, "bybit", "SOLUSDT", 20.5)
+	// Second tick: price same (profit exists: 0.5)
+	service.ProcessTick(ctx, "bybit", "SOLUSDT", 20.5)
+
+	found = false
+	for _, id := range mockLevelRepo.DeletedIDs {
+		if id == "level-sentiment-delete" {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Error("Expected Level level-sentiment-delete to be deleted after sentiment profit")
 	}
 }

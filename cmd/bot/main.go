@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/vitos/crypto_trade_level/internal/domain"
 	"github.com/vitos/crypto_trade_level/internal/infrastructure/exchange"
 	"github.com/vitos/crypto_trade_level/internal/infrastructure/logger"
 	"github.com/vitos/crypto_trade_level/internal/infrastructure/storage"
@@ -86,6 +87,9 @@ func main() {
 	if err := svc.UpdateCache(context.Background()); err != nil {
 		log.Error("Failed to init cache", zap.Error(err))
 	}
+	if err := svc.LoadInitialPrices(context.Background()); err != nil {
+		log.Error("Failed to load initial prices", zap.Error(err))
+	}
 
 	// 9. Wait for Shutdown (moved up to allow goroutines to use 'stop')
 	stop := make(chan os.Signal, 1)
@@ -94,8 +98,17 @@ func main() {
 	// 6. Connect WS and Start Processing (with Reload Loop)
 	// Register callback once
 	bybitAdapter.OnPriceUpdate(func(symbol string, price float64) {
+		// log.Info("Processing price tick", zap.String("symbol", symbol), zap.Float64("price", price))
 		if err := svc.ProcessTick(context.Background(), "bybit", symbol, price); err != nil {
 			log.Error("Error processing tick", zap.Error(err))
+		}
+	})
+
+	// Also process individual trades for responsiveness and to catch all price moves
+	bybitAdapter.OnTradeUpdate(func(symbol string, side string, size float64, price float64) {
+		// log.Info("Processing trade tick 1", zap.String("symbol", symbol), zap.String("side", side), zap.Float64("size", size), zap.Float64("price", price))
+		if err := svc.ProcessTick(context.Background(), "bybit", symbol, price); err != nil {
+			log.Error("Error processing trade tick", zap.Error(err))
 		}
 	})
 
@@ -112,6 +125,9 @@ func main() {
 			// Update Cache
 			if err := svc.UpdateCache(ctx); err != nil {
 				log.Error("Failed to update cache", zap.Error(err))
+			}
+			if err := svc.LoadInitialPrices(ctx); err != nil {
+				log.Error("Failed to sync prices", zap.Error(err))
 			}
 
 			levels, err := store.ListLevels(ctx)
@@ -164,6 +180,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				svc.CheckSafety(context.Background())
+				svc.RecordActivePositionsPnL(context.Background())
 			case <-stop:
 				return
 			}
@@ -192,7 +209,26 @@ func main() {
 	// Start Auto-Scanner (Disabled by default)
 	// go fundingBotService.StartAutoScanner(context.Background())
 
-	server := web.NewServer(port, store, store, svc, marketService, speedBotService, fundingBotService, log)
+	// Init Wallet Monitor
+	walletMonitor := usecase.NewWalletMonitor(bybitAdapter, store, log)
+	go walletMonitor.Start(context.Background(), 5*time.Minute)
+
+	// Init RSI Monitor Service
+	rsiConfig := domain.RSIMonitorConfig{
+		Enabled:             false, // Disabled by default until configured
+		ScanIntervalMinutes: 1,
+		Timeframes:          []string{"1m", "5m", "15m"},
+		Period:              14,
+		Overbought:          70,
+		Oversold:            30,
+		SizeUSDT:            100,
+		Leverage:            10,
+		TakeProfitPct:       0.012, // 1.2%
+	}
+	rsiMonitorService := usecase.NewRSIMonitorService(marketService, svc, log, rsiConfig)
+	go rsiMonitorService.Start(context.Background())
+
+	server := web.NewServer(port, store, store, store, svc, marketService, speedBotService, fundingBotService, rsiMonitorService, log)
 
 	// 8. Start Server
 	go func() {

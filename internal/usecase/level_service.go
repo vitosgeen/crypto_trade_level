@@ -21,8 +21,9 @@ type LevelService struct {
 	engine    *SublevelEngine
 	executor  *TradeExecutor
 
-	mu         sync.RWMutex
-	lastPrices map[string]float64 // symbol -> price
+	mu             sync.RWMutex
+	lastPrices     map[string]float64   // symbol -> price
+	lastPriceTimes map[string]time.Time // symbol -> timestamp
 
 	// Cache
 	levelsCache map[string][]*domain.Level     // symbol -> levels
@@ -44,18 +45,19 @@ func NewLevelService(
 	market *MarketService,
 ) *LevelService {
 	return &LevelService{
-		levelRepo:     levelRepo,
-		tradeRepo:     tradeRepo,
-		exchange:      exchange,
-		market:        market,
-		evaluator:     NewLevelEvaluator(),
-		engine:        NewSublevelEngine(),
-		executor:      NewTradeExecutor(exchange),
-		lastPrices:    make(map[string]float64),
-		levelsCache:   make(map[string][]*domain.Level),
-		tiersCache:    make(map[string]*domain.SymbolTiers),
-		positionCache: make(map[string]*domain.Position),
-		positionTime:  make(map[string]time.Time),
+		levelRepo:      levelRepo,
+		tradeRepo:      tradeRepo,
+		exchange:       exchange,
+		market:         market,
+		evaluator:      NewLevelEvaluator(),
+		engine:         NewSublevelEngine(),
+		executor:       NewTradeExecutor(exchange),
+		lastPrices:     make(map[string]float64),
+		lastPriceTimes: make(map[string]time.Time),
+		levelsCache:    make(map[string][]*domain.Level),
+		tiersCache:     make(map[string]*domain.SymbolTiers),
+		positionCache:  make(map[string]*domain.Position),
+		positionTime:   make(map[string]time.Time),
 	}
 }
 
@@ -64,6 +66,26 @@ func (s *LevelService) GetLatestPrice(symbol string) float64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastPrices[symbol]
+}
+
+// LoadInitialPrices fetches latest prices from exchange and seeds the cache for any missing symbols
+func (s *LevelService) LoadInitialPrices(ctx context.Context) error {
+	tickers, err := s.exchange.GetTickers(ctx, "linear")
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, t := range tickers {
+		// Update if missing, zero, or stale (> 5 seconds)
+		if val, ok := s.lastPrices[t.Symbol]; !ok || val == 0 || time.Since(s.lastPriceTimes[t.Symbol]) > 5*time.Second {
+			s.lastPrices[t.Symbol] = t.LastPrice
+			s.lastPriceTimes[t.Symbol] = time.Now()
+		}
+	}
+	return nil
 }
 
 // GetLevelState returns the current runtime state of a level
@@ -114,8 +136,15 @@ func (s *LevelService) UpdateCache(ctx context.Context) error {
 
 		tiers, err := s.levelRepo.GetSymbolTiers(ctx, exchangeName, symbol)
 		if err != nil {
-			log.Printf("Warning: Failed to fetch tiers for %s: %v", symbol, err)
-			continue
+			log.Printf("Warning: Failed to fetch tiers for %s: %v. Using defaults.", symbol, err)
+			tiers = &domain.SymbolTiers{
+				Exchange:  exchangeName,
+				Symbol:    symbol,
+				Tier1Pct:  0.005,
+				Tier2Pct:  0.003,
+				Tier3Pct:  0.0015,
+				UpdatedAt: time.Now(),
+			}
 		}
 		newTiersCache[symbol] = tiers
 	}
@@ -207,23 +236,13 @@ func (s *LevelService) invalidatePositionCache(symbol string) {
 
 // ProcessTick should be called when a new price arrives (e.g. from WebSocket).
 func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol string, price float64) error {
-	// fmt.Printf("Tick: %s %f\n", symbol, price) // Too noisy
 	s.mu.Lock()
 	prevPrice, ok := s.lastPrices[symbol]
 	s.lastPrices[symbol] = price
-
-	// Read from cache while locked
+	s.lastPriceTimes[symbol] = time.Now()
 	levels := s.levelsCache[symbol]
 	tiers := s.tiersCache[symbol]
 	s.mu.Unlock()
-
-	// if !ok {
-	// 	return nil
-	// }
-
-	if len(levels) == 0 {
-		return nil
-	}
 
 	// Filter for this exchange
 	var relevantLevels []*domain.Level
@@ -237,30 +256,9 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		return nil
 	}
 
-	if tiers == nil {
-		return nil // No tiers, can't trade
-	}
-
-	// --- SENTIMENT LOGIC ---
-	sentiment, err := s.market.GetTradeSentiment(ctx, symbol)
-	if err != nil {
-		log.Printf("Error getting sentiment for %s: %v", symbol, err)
-		sentiment = 0 // Default to neutral
-	}
-
-	// Dynamic Threshold Logic
-	// Default Loose Threshold
-	sentimentThreshold := 0.6
-
-	// --- SENTIMENT-BASED EXIT LOGIC ---
-	// Check if any level for this symbol has DisableSpeedClose enabled
-	speedCloseDisabled := false
+	// 1. MANDATORY: Update Range High/Low for all relevant levels.
+	// This must happen even on the first tick to support Auto-Split logic.
 	for _, l := range relevantLevels {
-		if l.DisableSpeedClose {
-			speedCloseDisabled = true
-			break
-		}
-		// Update Range High/Low
 		s.engine.UpdateState(l.ID, func(ls *LevelState) {
 			if ls.RangeHigh == 0 || price > ls.RangeHigh {
 				ls.RangeHigh = price
@@ -271,17 +269,11 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		})
 	}
 
-	// Check Position for Exit Logic (TP and Sentiment)
+	// 2. Position Handling (SL at Base and Eval Price updates)
 	pos, err := s.getPosition(ctx, symbol)
+	var activeLevel *domain.Level
 	if err == nil && pos.Size > 0 {
-
-		// --- STOP LOSS AT BASE LOGIC ---
 		// Find relevant level (closest to entry)
-		// We already found tpLevel, let's reuse or find again if needed.
-		// Actually, we need to check ALL relevant levels or just the closest?
-		// Usually just the one we are trading against.
-		// Let's reuse tpLevel logic but rename to relevantLevel for clarity.
-		var activeLevel *domain.Level
 		minDiff := 1e9
 		for _, l := range relevantLevels {
 			diff := pos.EntryPrice - l.LevelPrice
@@ -295,20 +287,85 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		}
 
 		if activeLevel != nil {
+			// Update the evaluation price in the position cache so the UI shows it
+			s.mu.Lock()
+			if p, ok := s.positionCache[symbol]; ok {
+				p.EvalPrice = price
+			}
+			s.mu.Unlock()
 
-			// Check TP
-			// Check TP
+			log.Printf("TICK: [%s] Price: %f, Position: %s %f @ %f (Unrealized PnL: %f), Active Level: %s (Price: %f)",
+				symbol, price, pos.Side, pos.Size, pos.EntryPrice, pos.UnrealizedPnL, activeLevel.ID, activeLevel.LevelPrice)
+
+			// Check Stop Loss at Base (Does NOT need prevPrice/crossover)
+			if activeLevel.StopLossAtBase {
+				shouldSL := false
+				if pos.Side == domain.SideLong {
+					if price <= activeLevel.LevelPrice {
+						log.Printf("STOP LOSS (Base): LONG on %s. Price %f <= Level %f. Closing...", symbol, price, activeLevel.LevelPrice)
+						shouldSL = true
+					}
+				} else if pos.Side == domain.SideShort {
+					if price >= activeLevel.LevelPrice {
+						log.Printf("STOP LOSS (Base): SHORT on %s. Price %f >= Level %f. Closing...", symbol, price, activeLevel.LevelPrice)
+						shouldSL = true
+					}
+				}
+
+				if shouldSL {
+					if _, err := s.finalizePosition(ctx, symbol, "Stop Loss (Base)", activeLevel.ID, price); err != nil {
+						log.Printf("Failed to finalize position on SL: %v", err)
+					}
+					return nil
+				}
+			}
+		}
+	}
+
+	// 3. Strategy Evaluation Logic (Needs prevPrice and tiers)
+	if !ok {
+		// First tick recorded, return nil so we have prevPrice for next tick evaluation
+		return nil
+	}
+
+	if tiers == nil {
+		return nil // No tiers, can't evaluate strategy
+	}
+
+	log.Printf("DEBUG: %s price %f (prev %f) - relevant levels: %d", symbol, price, prevPrice, len(relevantLevels))
+
+	// --- SENTIMENT LOGIC ---
+	sentiment, err := s.market.GetTradeSentiment(ctx, symbol)
+	if err != nil {
+		log.Printf("Error getting sentiment for %s: %v", symbol, err)
+		sentiment = 0 // Default to neutral
+	}
+
+	// Dynamic Threshold Logic
+	sentimentThreshold := 0.6
+
+	// Determine if speed close is disabled for this symbol
+	speedCloseDisabled := false
+	for _, l := range relevantLevels {
+		if l.DisableSpeedClose {
+			speedCloseDisabled = true
+			break
+		}
+	}
+
+	// TP and Sentiment-based Exits
+	if pos != nil && pos.Size > 0 {
+		// Check Take Profit
+		if activeLevel != nil {
 			if activeLevel.TakeProfitPct > 0 || activeLevel.TakeProfitMode == "liquidity" || activeLevel.TakeProfitMode == "sentiment" {
 				shouldTP := false
 				var tpPrice float64
 
 				if activeLevel.TakeProfitMode == "liquidity" {
-					// Dynamic TP based on liquidity
 					dynamicTP, err := s.CalculateLiquidityTP(ctx, symbol, pos.Side, pos.EntryPrice)
 					if err == nil && dynamicTP > 0 {
 						tpPrice = dynamicTP
 					} else {
-						// Fallback to fixed % if liquidity TP fails
 						if pos.Side == domain.SideLong {
 							tpPrice = pos.EntryPrice * (1 + activeLevel.TakeProfitPct)
 						} else {
@@ -316,33 +373,15 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 						}
 					}
 				} else if activeLevel.TakeProfitMode == "sentiment" {
-					// Sentiment-Adjusted TP
-					// TargetTP = BaseTP * (1 + (ConclusionScore * Factor))
-					// Factor = 0.5 (Adjustable? Hardcoded for now per plan)
 					baseTP := activeLevel.TakeProfitPct
 					if baseTP <= 0 {
-						baseTP = 0.02 // Default 2% if not set
+						baseTP = 0.02
 					}
-
-					stats, err := s.market.GetMarketStats(ctx, symbol)
+					stats, _ := s.market.GetMarketStats(ctx, symbol)
 					score := 0.0
-					if err == nil && stats != nil {
+					if stats != nil {
 						score = stats.ConclusionScore
 					}
-
-					// Adjust TP
-					// If Long: Positive Score (Bullish) -> Increase TP. Negative Score (Bearish) -> Decrease TP.
-					// If Short: Negative Score (Bearish) -> Increase TP. Positive Score (Bullish) -> Decrease TP.
-					// Wait, Score is -1 (Bear) to 1 (Bull).
-					// For Long: Multiplier = 1 + (Score * 0.5)
-					//   Score 0.8 -> 1 + 0.4 = 1.4x TP.
-					//   Score -0.5 -> 1 - 0.25 = 0.75x TP.
-					// For Short: We want to INCREASE TP if Bearish (Score < 0).
-					//   Score -0.8 -> We want larger TP.
-					//   Multiplier = 1 - (Score * 0.5)
-					//   Score -0.8 -> 1 - (-0.4) = 1.4x TP.
-					//   Score 0.5 -> 1 - 0.25 = 0.75x TP.
-
 					factor := 0.5
 					multiplier := 1.0
 					if pos.Side == domain.SideLong {
@@ -350,24 +389,16 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 					} else {
 						multiplier = 1 - (score * factor)
 					}
-
-					// Clamp multiplier to avoid negative or too small TP?
-					// If score is extreme, e.g. -1. Multiplier = 0.5. TP becomes half.
-					// Seems safe.
-
 					adjustedPct := baseTP * multiplier
 					if adjustedPct < 0.001 {
-						adjustedPct = 0.001 // Minimum 0.1% TP
+						adjustedPct = 0.001
 					}
-
 					if pos.Side == domain.SideLong {
 						tpPrice = pos.EntryPrice * (1 + adjustedPct)
 					} else {
 						tpPrice = pos.EntryPrice * (1 - adjustedPct)
 					}
-
 				} else {
-					// Fixed TP
 					if pos.Side == domain.SideLong {
 						tpPrice = pos.EntryPrice * (1 + activeLevel.TakeProfitPct)
 					} else {
@@ -391,69 +422,44 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 					if _, err := s.finalizePosition(ctx, symbol, "Take Profit", activeLevel.ID, price); err != nil {
 						log.Printf("Failed to finalize position on TP: %v", err)
 					}
-					// State update is now handled in finalizePosition
-					return nil
-				}
-			}
-
-			// Check Stop Loss at Base
-			if activeLevel.StopLossAtBase {
-				shouldSL := false
-				if pos.Side == domain.SideLong {
-					// Long: Close if Price <= LevelPrice
-					if price <= activeLevel.LevelPrice {
-						log.Printf("STOP LOSS (Base): LONG on %s. Price %f <= Level %f. Closing...", symbol, price, activeLevel.LevelPrice)
-						shouldSL = true
-					}
-				} else if pos.Side == domain.SideShort {
-					// Short: Close if Price >= LevelPrice
-					if price >= activeLevel.LevelPrice {
-						log.Printf("STOP LOSS (Base): SHORT on %s. Price %f >= Level %f. Closing...", symbol, price, activeLevel.LevelPrice)
-						shouldSL = true
-					}
-				}
-
-				if shouldSL {
-					if _, err := s.finalizePosition(ctx, symbol, "Stop Loss (Base)", activeLevel.ID, price); err != nil {
-						log.Printf("Failed to finalize position on SL: %v", err)
-					}
 					return nil
 				}
 			}
 		}
 
-		// --- SENTIMENT-BASED EXIT LOGIC ---
+		// Sentiment-Based Speed Exit
 		if !speedCloseDisabled {
-			// Determine if in strict zone (within 1% of any level)
+			// Strict zone calculation (1% from any level)
 			inStrictZone := false
 			for _, l := range relevantLevels {
-				distance := (price - l.LevelPrice) / l.LevelPrice
-				if distance < 0 {
-					distance = -distance
+				dist := (price - l.LevelPrice) / l.LevelPrice
+				if dist < 0 {
+					dist = -dist
 				}
-				const strictZoneThreshold = 0.01 // 1%
-				if distance < strictZoneThreshold {
+				if dist < 0.01 {
 					inStrictZone = true
 					break
 				}
 			}
-
 			if inStrictZone {
 				sentimentThreshold = 0.3
 			}
 
-			// Check Exit Trigger
 			shouldClose := false
 			if pos.Side == domain.SideLong && sentiment < -sentimentThreshold {
-				log.Printf("SENTIMENT: Strong Sell Speed (%f < -%f). Closing LONG on %s.", sentiment, sentimentThreshold, symbol)
+				log.Printf("SENTIMENT: Exit LONG on %s. Sentiment %f < -%f", symbol, sentiment, sentimentThreshold)
 				shouldClose = true
 			} else if pos.Side == domain.SideShort && sentiment > sentimentThreshold {
-				log.Printf("SENTIMENT: Strong Buy Speed (%f > %f). Closing SHORT on %s.", sentiment, sentimentThreshold, symbol)
+				log.Printf("SENTIMENT: Exit SHORT on %s. Sentiment %f > %f", symbol, sentiment, sentimentThreshold)
 				shouldClose = true
 			}
 
 			if shouldClose {
-				if _, err := s.finalizePosition(ctx, symbol, "Sentiment Exit", "sentiment-exit", price); err != nil {
+				targetID := "sentiment-exit"
+				if activeLevel != nil {
+					targetID = activeLevel.ID
+				}
+				if _, err := s.finalizePosition(ctx, symbol, "Sentiment Exit", targetID, price); err != nil {
 					log.Printf("Failed to finalize position on sentiment: %v", err)
 				}
 				return nil
@@ -461,26 +467,81 @@ func (s *LevelService) ProcessTick(ctx context.Context, exchangeName, symbol str
 		}
 	}
 
-	if !ok {
-		return nil
-	}
-
+	// 4. Process new level triggers
 	for _, level := range relevantLevels {
-		s.processLevel(ctx, level, tiers, prevPrice, price, sentiment, sentimentThreshold)
+		s.processLevel(ctx, level, tiers, pos, prevPrice, price, sentiment, sentimentThreshold)
 	}
 
 	return nil
 }
 
-func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, prevPrice, currPrice, sentiment, sentimentThreshold float64) {
+func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, tiers *domain.SymbolTiers, pos *domain.Position, prevPrice, currPrice, sentiment, sentimentThreshold float64) {
+	// Sync Check: Detect external closes
+	// If the state thinks we are triggered, but the exchange says we have no position (Size 0),
+	// we should reset the state so we can trade again.
+	state := s.engine.GetState(level.ID)
+	if state.Tier1Triggered {
+		// Only sync if we successfully fetched position data (pos != nil)
+		// AND that data says we have no size (pos.Size == 0).
+		// We add a 10s buffer to avoid race conditions with just-opened positions where API might lag.
+		if pos != nil && pos.Size == 0 {
+			if time.Since(state.LastTriggerTime) > 10*time.Second {
+				// Prevent spawning multiple routines
+				if !state.CleanupInProgress {
+					log.Printf("STATE SYNC: Position for %s (Level %s) is closed (Size 0). Starting async cleanup.", level.Symbol, level.ID)
+
+					// Mark cleanup in progress
+					s.engine.UpdateState(level.ID, func(s *LevelState) {
+						s.CleanupInProgress = true
+					})
+
+					// Launch async cleanup
+					go s.handleExternalCloseAsync(ctx, level)
+				}
+			}
+		}
+	}
 	// 1. Determine Side
-	side := s.evaluator.DetermineSide(level.LevelPrice, currPrice)
+	// If the level has a fixed side, use it. Otherwise, determine based on price relative to level.
+	side := level.Side
+	if side == "" || side == domain.SideBoth {
+		side = s.evaluator.DetermineSide(level.LevelPrice, currPrice)
+	}
+
 	if side == "" {
 		return
 	}
 
+	// 1b. Respect Side Filter (Redundant if we just used it, but keeps logic safe for 'Both' case)
+	// If Side was Both, we calculated 'side' dynamically.
+	// If Side was Fixed, 'side' is Fixed.
+	// So we don't need the filter check anymore, just proceed with 'side'.
+	// But wait, if Side=Both, and DetermineSide says Short, we process as Short.
+	// That's correct.
+
 	// 2. Calculate Boundaries
-	boundaries := s.evaluator.CalculateBoundaries(level, tiers, side)
+	usedTiers := tiers
+	if level.Tier1Pct > 0 {
+		usedTiers = &domain.SymbolTiers{
+			Exchange:  level.Exchange,
+			Symbol:    level.Symbol,
+			Tier1Pct:  level.Tier1Pct,
+			Tier2Pct:  level.Tier2Pct,
+			Tier3Pct:  level.Tier3Pct,
+			UpdatedAt: level.CreatedAt,
+		}
+	} else if usedTiers == nil {
+		// Final fallback for safety
+		usedTiers = &domain.SymbolTiers{
+			Exchange: level.Exchange,
+			Symbol:   level.Symbol,
+			Tier1Pct: 0.005,
+			Tier2Pct: 0.003,
+			Tier3Pct: 0.0015,
+		}
+	}
+
+	boundaries := s.evaluator.CalculateBoundaries(level, usedTiers, side)
 
 	// 3. Evaluate Trigger
 	action, size := s.engine.Evaluate(level, boundaries, prevPrice, currPrice, side)
@@ -488,13 +549,39 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 	if action != ActionNone {
 		// --- ENTRY FILTER ---
 		if action == ActionOpen || action == ActionAddToPosition {
-			if side == domain.SideLong && sentiment < -sentimentThreshold {
-				log.Printf("SENTIMENT: Skipping LONG on %s. Sentiment is Bearish (%f).", level.Symbol, sentiment)
-				return
+			if !level.IgnoreSentimentFilter {
+				if side == domain.SideLong && sentiment < -sentimentThreshold {
+					log.Printf("SENTIMENT: Skipping LONG on %s. Sentiment is Bearish (%f).", level.Symbol, sentiment)
+					return
+				}
+				if side == domain.SideShort && sentiment > sentimentThreshold {
+					log.Printf("SENTIMENT: Skipping SHORT on %s. Sentiment is Bullish (%f).", level.Symbol, sentiment)
+					return
+				}
 			}
-			if side == domain.SideShort && sentiment > sentimentThreshold {
-				log.Printf("SENTIMENT: Skipping SHORT on %s. Sentiment is Bullish (%f).", level.Symbol, sentiment)
-				return
+
+			// --- STATE SYNC / DOUBLE ENTRY PROTECTION ---
+			if pos != nil && pos.Size > 0 {
+				// We already have a position. Check if we should skip this action.
+				// If ActionOpen, we should definitely skip and just ensure state is synced.
+				if action == ActionOpen {
+					log.Printf("STATE SYNC: Detected existing position for %s while attempting OPEN. Syncing state only.", level.Symbol)
+					s.engine.UpdateState(level.ID, func(ls *LevelState) {
+						ls.Tier1Triggered = true
+						ls.ActiveSide = side
+						ls.LastTriggerTime = time.Now()
+					})
+					return
+				}
+				// If ActionAddToPosition, we might process it if it's a higher tier?
+				// But Evaluate() already checks !Tier2Triggered.
+				// However, if we restarted, Tier2Triggered is false.
+				// If we have a large position, we probably already added.
+				// Simple heuristic: If position size >= calculated target size, skip.
+				// Target Size for Tier 2 = Base + Base = 2x Base.
+				// But leverage/size management is complex.
+				// SAFE BET: If we have ANY position, assume state recovery is needed for OPEN, but maybe allow Adds if significantly larger?
+				// For now, let's just Sync OPEN. If the user wants to add, they can manually or let the next tier trigger.
 			}
 		}
 
@@ -516,7 +603,26 @@ func (s *LevelService) processLevel(ctx context.Context, level *domain.Level, ti
 			stopLoss = level.LevelPrice
 		}
 
-		err := s.executor.Execute(ctx, level.Symbol, side, size, level.Leverage, level.MarginType, stopLoss)
+		// Mirror stop loss for Anomaly Monitor: SL = TP
+		if level.Source == "anomaly-monitor" && level.TakeProfitMode == "exchange" && level.TakeProfitPct > 0 {
+			if side == domain.SideLong {
+				stopLoss = currPrice * (1 - level.TakeProfitPct)
+			} else {
+				stopLoss = currPrice * (1 + level.TakeProfitPct)
+			}
+			log.Printf("ANOMALY MONITOR: Setting mirror Stop Loss at %f (TP: %f%%)", stopLoss, level.TakeProfitPct*100)
+		}
+
+		takeProfit := 0.0
+		if level.TakeProfitMode == "exchange" && level.TakeProfitPct > 0 {
+			if side == domain.SideLong {
+				takeProfit = currPrice * (1 + level.TakeProfitPct)
+			} else {
+				takeProfit = currPrice * (1 - level.TakeProfitPct)
+			}
+		}
+
+		err := s.executor.Execute(ctx, level.Symbol, side, size, level.Leverage, level.MarginType, stopLoss, takeProfit)
 		if err != nil {
 			log.Printf("Failed to execute trade: %v", err)
 			return
@@ -611,7 +717,8 @@ func (s *LevelService) CheckSafety(ctx context.Context) {
 		}
 
 		if shouldClose {
-			if _, err := s.finalizePosition(ctx, symbol, "Safety Exit", "safety-exit", price); err != nil {
+			targetID := relevantLevel.ID
+			if _, err := s.finalizePosition(ctx, symbol, "Safety Exit", targetID, price); err != nil {
 				log.Printf("SAFETY: Failed to finalize position for %s: %v", symbol, err)
 			} else {
 				log.Printf("SAFETY: Closed position for %s", symbol)
@@ -626,13 +733,45 @@ func (s *LevelService) ClosePosition(ctx context.Context, symbol string) error {
 	return err
 }
 
+// CloseAllPositions closes all active positions on the exchange
+func (s *LevelService) CloseAllPositions(ctx context.Context) error {
+	positions, err := s.exchange.GetPositions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, p := range positions {
+		if p.Size > 0 {
+			if err := s.ClosePosition(ctx, p.Symbol); err != nil {
+				log.Printf("Failed to close position for %s: %v", p.Symbol, err)
+			}
+		}
+	}
+	return nil
+}
+
+// DeleteAllLevels removes all levels and updates cache
+func (s *LevelService) DeleteAllLevels(ctx context.Context) error {
+	if err := s.levelRepo.DeleteAllLevels(ctx); err != nil {
+		return err
+	}
+	return s.UpdateCache(ctx)
+}
+
 // finalizePosition handles the common logic for closing a position, calculating PnL, and saving history.
 func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, levelID string, price float64) (float64, error) {
-	// 1. Fetch position details
-	pos, err := s.getPosition(ctx, symbol)
+	// 0. Invalidate Cache IMMEDIATELY to prevent race conditions from other ticks
+	// We also set a "Size: 0" position in cache to block further processing while we are waiting for API.
+	s.mu.Lock()
+	s.positionCache[symbol] = &domain.Position{Symbol: symbol, Size: 0}
+	s.positionTime[symbol] = time.Now()
+	s.mu.Unlock()
+
+	// 1. Fetch position details (should be from cache or most recent before we wiped it)
+	// Actually, we need the position details BEFORE we wiped it for PnL calculation.
+	// We'll pass them in or fetch once and store.
+	pos, err := s.exchange.GetPosition(ctx, symbol)
 	if err != nil || pos == nil || pos.Size == 0 {
 		log.Printf("FINALIZE: Warning: No active position found for %s when closing (%s). Proceeding to ensure close.", symbol, reason)
-		// We still try to close on exchange to be safe
 	}
 
 	// 2. Close on Exchange
@@ -641,7 +780,7 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 		// We proceed to reset state to avoid getting stuck, assuming the position might be closed manually or liquidated.
 	}
 
-	// 3. Invalidate Cache
+	// 3. Invalidate Cache again to be sure
 	s.invalidatePositionCache(symbol)
 
 	// 4. Reset State for all levels of this symbol
@@ -653,6 +792,12 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 		// ResetState clears triggers and active side but PRESERVES ConsecutiveWins.
 		// This is safe to call here as we want to reset the level for a fresh start after a position close.
 		s.engine.ResetState(l.ID)
+
+		// MANDATORY: Update LastTriggerTime to now to enforce cooldown after close
+		// This prevents immediate re-entry if price is still in the trigger zone.
+		s.engine.UpdateState(l.ID, func(ls *LevelState) {
+			ls.LastTriggerTime = time.Now()
+		})
 	}
 
 	// 5. Calculate PnL and Save History
@@ -660,15 +805,13 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 	var side domain.Side = "UNKNOWN"
 	var size float64
 	var entryPrice float64
-	var leverage int
-	var marginType string
 
 	if pos != nil && pos.Size > 0 {
 		side = pos.Side
 		size = pos.Size
 		entryPrice = pos.EntryPrice
-		leverage = pos.Leverage
-		marginType = pos.MarginType
+		leverage := pos.Leverage
+		marginType := pos.MarginType
 
 		if side == domain.SideLong {
 			realizedPnL = (price - entryPrice) * size
@@ -676,21 +819,76 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 			realizedPnL = (entryPrice - price) * size
 		}
 
-		// Save Position History
-		history := &domain.PositionHistory{
-			Exchange:    pos.Exchange,
-			Symbol:      pos.Symbol,
-			Side:        side,
-			Size:        size,
-			EntryPrice:  entryPrice,
-			ExitPrice:   price,
-			RealizedPnL: realizedPnL,
-			Leverage:    leverage,
-			MarginType:  marginType,
-			ClosedAt:    time.Now(),
+		log.Printf("FINALIZE: Symbol: %s, Side: %s, Size: %f, Entry: %f, Exit: %f, Calculated Realized PnL: %f",
+			symbol, side, size, entryPrice, price, realizedPnL)
+
+		// Find analysis data for history
+		var analysisJSON string
+		var source string
+		s.mu.RLock()
+		if levels, ok := s.levelsCache[symbol]; ok {
+			for _, l := range levels {
+				if l.ID == levelID {
+					analysisJSON = l.AnalysisJSON
+					source = l.Source
+					break
+				}
+			}
 		}
-		if err := s.tradeRepo.SavePositionHistory(ctx, history); err != nil {
+		s.mu.RUnlock()
+
+		// Fetch OpenedAt from engine state
+		state := s.engine.GetState(levelID)
+		openedAt := state.OpenedAt
+		if openedAt.IsZero() {
+			openedAt = time.Now().Add(-1 * time.Minute) // Fallback
+		}
+
+		// Save Position History (Initial estimation)
+		history := &domain.PositionHistory{
+			Exchange:     pos.Exchange,
+			Symbol:       pos.Symbol,
+			Side:         side,
+			Size:         size,
+			EntryPrice:   entryPrice,
+			ExitPrice:    price,
+			RealizedPnL:  realizedPnL,
+			Leverage:     leverage,
+			MarginType:   marginType,
+			LevelID:      levelID,
+			AnalysisJSON: analysisJSON,
+			Source:       source,
+			OpenedAt:     openedAt,
+			ClosedAt:     time.Now(),
+		}
+
+		historyID, err := s.tradeRepo.SavePositionHistory(ctx, history)
+		if err != nil {
 			log.Printf("Failed to save position history: %v", err)
+		} else {
+			// SYNC: Start a goroutine to fetch actual exchange data and update this record
+			go func(hID int64, sym string, sde domain.Side) {
+				time.Sleep(2 * time.Second) // Wait for exchange to record PnL
+				// Use a fresh context for background sync
+				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				actualHistory, err := s.exchange.GetClosedPnL(bgCtx, sym, 5)
+				if err == nil {
+					for _, ah := range actualHistory {
+						// Match by side and recent time
+						if ah.Side == sde && time.Since(ah.ClosedAt) < 30*time.Second {
+							ah.ID = hID // Set the ID for update
+							if err := s.tradeRepo.UpdatePositionHistory(bgCtx, ah); err != nil {
+								log.Printf("SYNC: Failed to update position history %d: %v", hID, err)
+							} else {
+								log.Printf("SYNC: Updated history %d with real exchange data (PnL: %f)", hID, ah.RealizedPnL)
+							}
+							break
+						}
+					}
+				}
+			}(historyID, symbol, side)
 		}
 	}
 
@@ -788,6 +986,18 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 				}
 			}
 		})
+	}
+
+	// 8. Close level if profit was achieved
+	if realizedPnL > 0 && levelID != "" && levelID != "unknown" &&
+		levelID != "sentiment-exit" && levelID != "safety-exit" && levelID != "manual-close" {
+		log.Printf("FINALIZE: Level %s achieved profit (%f). Deleting level.", levelID, realizedPnL)
+		if err := s.levelRepo.DeleteLevel(ctx, levelID); err != nil {
+			log.Printf("FINALIZE: Failed to delete level %s after profit: %v", levelID, err)
+		} else {
+			// Update cache to reflect deletion immediately
+			s.UpdateCache(ctx)
+		}
 	}
 
 	return realizedPnL, nil
@@ -957,6 +1167,9 @@ func (s *LevelService) AutoCreateNextLevel(ctx context.Context, oldLevelID strin
 			BaseCloseCooldownMs:      oldLevel.BaseCloseCooldownMs,
 			TakeProfitPct:            oldLevel.TakeProfitPct,
 			TakeProfitMode:           oldLevel.TakeProfitMode,
+			Tier1Pct:                 oldLevel.Tier1Pct,
+			Tier2Pct:                 oldLevel.Tier2Pct,
+			Tier3Pct:                 oldLevel.Tier3Pct,
 			IsAuto:                   true,
 			AutoModeEnabled:          true,
 			Source:                   "auto-next-" + c.Type,
@@ -1188,4 +1401,125 @@ func (s *LevelService) IncrementBaseCloses(ctx context.Context, levelID string) 
 	}
 
 	return nil
+}
+
+// RecordActivePositionsPnL fetches all active positions and records their unrealized PnL to history.
+func (s *LevelService) RecordActivePositionsPnL(ctx context.Context) {
+	positions, err := s.exchange.GetPositions(ctx)
+	if err != nil {
+		log.Printf("ERROR: Failed to fetch positions for PnL history: %v", err)
+		return
+	}
+
+	for _, pos := range positions {
+		if pos.Size == 0 {
+			continue
+		}
+
+		rsi, _ := s.market.GetRSI(ctx, pos.Symbol, "1", 14)
+		history := &domain.PositionPnLHistory{
+			Symbol:        pos.Symbol,
+			Side:          pos.Side,
+			Size:          pos.Size,
+			EntryPrice:    pos.EntryPrice,
+			MarkPrice:     pos.MarkPrice,
+			UnrealizedPnL: pos.UnrealizedPnL,
+			RSI:           rsi,
+			Timestamp:     time.Now(),
+		}
+
+		if err := s.tradeRepo.SavePositionPnLHistory(ctx, history); err != nil {
+			log.Printf("ERROR: Failed to save position PnL history for %s: %v", pos.Symbol, err)
+		}
+	}
+}
+
+// GetExchangeHistory fetches the closed PnL history from the exchange, saves new entries to DB, and returns consolidated history.
+func (s *LevelService) GetExchangeHistory(ctx context.Context, limit int) ([]*domain.PositionHistory, error) {
+	// 1. Fetch from exchange (get a bit more than limit to ensure we sync enough)
+	exchangeHistory, err := s.exchange.GetClosedPnL(ctx, "", 50)
+	if err == nil {
+		// 2. Save new entries to DB
+		for _, h := range exchangeHistory {
+			if err := s.tradeRepo.SaveExchangePositionHistory(ctx, h); err != nil {
+				// We don't want to fail the whole request if one save fails (e.g. unique constraint)
+				// But our SaveExchangePositionHistory uses ON CONFLICT DO NOTHING, so it should be fine.
+				log.Printf("Warning: Failed to save exchange history item: %v", err)
+			}
+		}
+	} else {
+		log.Printf("Error: Failed to fetch exchange history: %v", err)
+	}
+
+	// 3. Return from DB
+	return s.tradeRepo.ListExchangePositionHistory(ctx, limit)
+}
+
+func (s *LevelService) handleExternalCloseAsync(ctx context.Context, level *domain.Level) {
+	// Retry loop to catch PnL record which might lag
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	timeout := time.After(45 * time.Second) // Try for 45 seconds
+
+	for {
+		select {
+		case <-timeout:
+			log.Printf("Async Cleanup Timeout for %s (Level %s). Providing state reset.", level.Symbol, level.ID)
+			s.engine.UpdateState(level.ID, func(s *LevelState) {
+				s.CleanupInProgress = false
+			})
+			s.engine.ResetState(level.ID)
+			return
+		case <-ticker.C:
+			// Try to record
+			if s.recordExternalClose(context.Background(), level) {
+				// Success! Level is deleted inside recordExternalClose.
+				// We don't need to reset state as level is gone.
+				return
+			}
+		}
+	}
+}
+
+func (s *LevelService) recordExternalClose(ctx context.Context, level *domain.Level) bool {
+	// Try to fetch the very latest closed PnL item
+	history, err := s.exchange.GetClosedPnL(ctx, level.Symbol, 1)
+	if err != nil {
+		// log.Printf("Failed to fetch closed PnL for %s during sync: %v", level.Symbol, err)
+		return false
+	}
+	if len(history) == 0 {
+		return false // No history found
+	}
+
+	latest := history[0]
+	// Check recency: if closed more than 2 minutes ago, assume it's old news.
+	if time.Since(latest.ClosedAt) > 2*time.Minute {
+		// Found history but it's old. This means the new close hasn't appeared yet.
+		return false
+	}
+
+	// Enrich with Level Info since Exchange doesn't know it
+	latest.LevelID = level.ID
+	latest.Source = "Exchange Trigger" // e.g. TP/SL on exchange
+	latest.AnalysisJSON = level.AnalysisJSON
+
+	// Save to Local History
+	if _, err := s.tradeRepo.SavePositionHistory(ctx, latest); err != nil {
+		// Log but don't fail, it might be a duplicate
+		// log.Printf("Failed to save external history for %s: %v", level.Symbol, err)
+	} else {
+		log.Printf("Captured external close for %s (Level %s): PnL %f", level.Symbol, level.ID, latest.RealizedPnL)
+
+		// DELETE LEVEL (External Close = Used)
+		if err := s.levelRepo.DeleteLevel(ctx, level.ID); err != nil {
+			log.Printf("Sync: Failed to delete level %s after external close: %v", level.ID, err)
+		} else {
+			log.Printf("AUTO-DELETE: Deleted level %s after external close", level.ID)
+			s.UpdateCache(ctx)
+		}
+		return true // SUCCESS
+	}
+	return true // Saved or duplicate, accept as success
 }

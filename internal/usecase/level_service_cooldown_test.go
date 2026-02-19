@@ -16,7 +16,9 @@ func TestLevelService_CooldownLogic(t *testing.T) {
 		Tiers:  &domain.SymbolTiers{},
 	}
 	mockTradeRepo := &MockTradeRepo{}
-	mockExchange := &MockExchangeForService{} // Use Enhanced Mock
+	mockExchange := &MockExchangeForService{
+		Position: &domain.Position{Size: 0},
+	} // Use Enhanced Mock
 	mockMarket := usecase.NewMarketService(mockExchange, mockRepo)
 
 	service := usecase.NewLevelService(mockRepo, mockTradeRepo, mockExchange, mockMarket)
@@ -86,7 +88,7 @@ func TestLevelService_CooldownLogic(t *testing.T) {
 		t.Fatalf("Cycle 1: Failed to close position (Close not called)")
 	}
 	// Simulate Close
-	mockExchange.Position = nil
+	mockExchange.Position = &domain.Position{Size: 0}
 	mockExchange.BuyCalled = false // Reset for next cycle
 	mockExchange.CloseCalled = false
 
@@ -119,7 +121,7 @@ func TestLevelService_CooldownLogic(t *testing.T) {
 	if !mockExchange.CloseCalled {
 		t.Fatalf("Cycle 2: Failed to close position")
 	}
-	mockExchange.Position = nil
+	mockExchange.Position = &domain.Position{Size: 0}
 	mockExchange.BuyCalled = false
 	mockExchange.CloseCalled = false
 

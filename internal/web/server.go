@@ -15,10 +15,13 @@ type Server struct {
 	server            *http.Server
 	levelRepo         domain.LevelRepository
 	tradeRepo         domain.TradeRepository
+	walletRepo        domain.WalletRepository
 	service           *usecase.LevelService
 	marketService     *usecase.MarketService
 	speedBotService   *usecase.SpeedBotService
 	fundingBotService *usecase.FundingBotService
+	levelBotWorker    *usecase.LevelBotWorker
+	rsiMonitorService *usecase.RSIMonitorService
 	logger            *zap.Logger
 }
 
@@ -26,20 +29,25 @@ func NewServer(
 	port int,
 	levelRepo domain.LevelRepository,
 	tradeRepo domain.TradeRepository,
+	walletRepo domain.WalletRepository,
 	service *usecase.LevelService,
 	marketService *usecase.MarketService,
 	speedBotService *usecase.SpeedBotService,
 	fundingBotService *usecase.FundingBotService,
+	rsiMonitorService *usecase.RSIMonitorService,
 	logger *zap.Logger,
 ) *Server {
 	s := &Server{
 		router:            http.NewServeMux(),
 		levelRepo:         levelRepo,
 		tradeRepo:         tradeRepo,
+		walletRepo:        walletRepo,
 		service:           service,
 		marketService:     marketService,
 		speedBotService:   speedBotService,
 		fundingBotService: fundingBotService,
+		levelBotWorker:    usecase.NewLevelBotWorker(service, logger),
+		rsiMonitorService: rsiMonitorService,
 		logger:            logger,
 	}
 	s.routes()
@@ -59,7 +67,9 @@ func (s *Server) routes() {
 
 	// Levels
 	s.router.HandleFunc("GET /levels", s.handleLevelsTable)
+	s.router.HandleFunc("GET /api/levels", s.handleListLevelsJSON)
 	s.router.HandleFunc("POST /levels", s.handleAddLevel)
+	s.router.HandleFunc("DELETE /levels", s.handleDeleteAllLevels)
 	s.router.HandleFunc("DELETE /levels/{id}", s.handleDeleteLevel)
 	s.router.HandleFunc("POST /levels/{id}/increment-closes", s.handleIncrementCloses)
 	s.router.HandleFunc("POST /levels/{id}/auto", s.handleAutoCreateLevel)
@@ -69,8 +79,11 @@ func (s *Server) routes() {
 
 	// Positions
 	s.router.HandleFunc("GET /positions", s.handlePositionsTable)
+	s.router.HandleFunc("GET /api/positions", s.handleListPositionsJSON)
+	s.router.HandleFunc("DELETE /positions", s.handleCloseAllPositions)
 	s.router.HandleFunc("DELETE /positions/{symbol}", s.handleClosePosition)
 	s.router.HandleFunc("GET /history", s.handleHistoryTable)
+	s.router.HandleFunc("GET /api/position-pnl-history", s.handlePositionPnLHistory)
 
 	// Trades
 	s.router.HandleFunc("GET /trades", s.handleTradesTable)
@@ -78,18 +91,23 @@ func (s *Server) routes() {
 	// Liquidity
 	s.router.HandleFunc("GET /api/liquidity", s.handleLiquidity)
 	s.router.HandleFunc("GET /api/liquidity-history", s.handleLiquidityHistory)
+	s.router.HandleFunc("GET /api/orderbook/biggest", s.handleBiggestOrderBook)
+	s.router.HandleFunc("GET /api/orderbook/analyze-imbalance", s.handleAnalyzeLiquidityImbalance)
 
 	// Status
 	s.router.HandleFunc("GET /status", s.handleStatus)
 
 	// Candles
 	s.router.HandleFunc("GET /api/candles", s.handleGetCandles)
+	s.router.HandleFunc("GET /api/orderbook/check-support", s.handleCheckSupport)
 
 	// Market Stats
 	s.router.HandleFunc("GET /api/market-stats", s.handleMarketStats)
 
 	// Level Bot
 	s.router.HandleFunc("GET /level-bot", s.handleLevelBot)
+	s.router.HandleFunc("GET /analysis", s.handleLogAnalysis)
+	s.router.HandleFunc("GET /api/analysis/chart", s.handleGetLogChartData)
 
 	// Speed Bot
 	s.router.HandleFunc("GET /speed-bot", s.handleSpeedBot)
@@ -114,10 +132,21 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /api/fundingbot/auto/status", s.handleGetAutoScannerStatus)
 	s.router.HandleFunc("GET /api/fundingbot/session-logs", s.handleListSessionLogs)
 	s.router.HandleFunc("GET /api/fundingbot/session-logs/{id}", s.handleGetSessionLog)
+
+	// Wallet
+	s.router.HandleFunc("GET /wallet", s.handleWalletPage)
+	s.router.HandleFunc("GET /api/wallet/history", s.handleWalletHistory)
+
+	// RSI Monitor API
+	s.router.HandleFunc("GET /api/rsi/config", s.handleGetRSIConfig)
+	s.router.HandleFunc("POST /api/rsi/config", s.handleUpdateRSIConfig)
+	s.router.HandleFunc("GET /api/rsi/signals", s.handleGetRSISignals)
+	s.router.HandleFunc("POST /api/rsi/quick-open", s.handleQuickOpenLevel)
 }
 
 func (s *Server) Start() error {
 	s.logger.Info("Starting web server", zap.String("addr", s.server.Addr))
+	s.levelBotWorker.Start(context.Background())
 	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}

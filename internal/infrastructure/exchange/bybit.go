@@ -24,6 +24,8 @@ import (
 const (
 	BybitBaseURL = "https://api.bybit.com"
 	BybitWSURL   = "wss://stream.bybit.com/v5/public/linear"
+	// BybitTakerFeeRate is the standard taker fee rate (0.055%)
+	BybitTakerFeeRate = 0.00055
 )
 
 type BybitAdapter struct {
@@ -33,7 +35,6 @@ type BybitAdapter struct {
 	wsURL          string
 	client         *http.Client
 	wsConn         *websocket.Conn
-	wsDone         chan struct{}
 	pingTicker     *time.Ticker
 	pingDone       chan struct{}
 	callbacks      []func(symbol string, price float64)
@@ -57,7 +58,6 @@ func NewBybitAdapter(apiKey, apiSecret, baseURL, wsURL string) *BybitAdapter {
 		baseURL:   baseURL,
 		wsURL:     wsURL,
 		client:    &http.Client{Timeout: 10 * time.Second},
-		wsDone:    make(chan struct{}),
 	}
 }
 
@@ -154,7 +154,7 @@ func (b *BybitAdapter) GetCurrentPrice(ctx context.Context, symbol string) (floa
 	return strconv.ParseFloat(result.Result.List[0].LastPrice, 64)
 }
 
-func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side string, size float64, leverage int, marginType string, stopLoss float64) error {
+func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
 	// 1. Set Margin Mode (isolated/cross)
 	b.setMarginMode(ctx, symbol, marginType)
 
@@ -167,13 +167,18 @@ func (b *BybitAdapter) placeOrder(ctx context.Context, symbol string, side strin
 		"symbol":      symbol,
 		"side":        side,
 		"orderType":   "Market",
-		"qty":         fmt.Sprintf("%f", size),
+		"qty":         strconv.FormatFloat(size, 'f', -1, 64),
 		"timeInForce": "GTC",
 	}
 
 	// Add Stop Loss if provided
 	if stopLoss > 0 {
-		payload["stopLoss"] = fmt.Sprintf("%f", stopLoss)
+		payload["stopLoss"] = strconv.FormatFloat(stopLoss, 'f', -1, 64)
+	}
+
+	// Add Take Profit if provided
+	if takeProfit > 0 {
+		payload["takeProfit"] = strconv.FormatFloat(takeProfit, 'f', -1, 64)
 	}
 
 	resp, err := b.sendRequest(ctx, "POST", "/v5/order/create", payload)
@@ -233,12 +238,12 @@ func (b *BybitAdapter) setMarginMode(ctx context.Context, symbol string, marginM
 	}
 }
 
-func (b *BybitAdapter) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
-	return b.placeOrder(ctx, symbol, "Buy", size, leverage, marginType, stopLoss)
+func (b *BybitAdapter) MarketBuy(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
+	return b.placeOrder(ctx, symbol, "Buy", size, leverage, marginType, stopLoss, takeProfit)
 }
 
-func (b *BybitAdapter) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64) error {
-	return b.placeOrder(ctx, symbol, "Sell", size, leverage, marginType, stopLoss)
+func (b *BybitAdapter) MarketSell(ctx context.Context, symbol string, size float64, leverage int, marginType string, stopLoss float64, takeProfit float64) error {
+	return b.placeOrder(ctx, symbol, "Sell", size, leverage, marginType, stopLoss, takeProfit)
 }
 
 func (b *BybitAdapter) ClosePosition(ctx context.Context, symbol string) error {
@@ -261,7 +266,7 @@ func (b *BybitAdapter) ClosePosition(ctx context.Context, symbol string) error {
 		"symbol":     symbol,
 		"side":       closeSide,
 		"orderType":  "Market",
-		"qty":        fmt.Sprintf("%f", pos.Size),
+		"qty":        strconv.FormatFloat(pos.Size, 'f', -1, 64),
 		"reduceOnly": true,
 	}
 
@@ -320,10 +325,10 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 
 	raw := result.Result.List[0]
 	size, _ := strconv.ParseFloat(raw.Size, 64)
-	entry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
-	curr, _ := strconv.ParseFloat(raw.MarkPrice, 64)
-	pnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
-	lev, _ := strconv.Atoi(raw.Leverage)
+	respEntry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
+	respMark, _ := strconv.ParseFloat(raw.MarkPrice, 64)
+	respPnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
+	respLev, _ := strconv.Atoi(raw.Leverage)
 
 	side := domain.SideLong
 	if raw.Side == "Sell" {
@@ -341,10 +346,12 @@ func (b *BybitAdapter) GetPosition(ctx context.Context, symbol string) (*domain.
 		Symbol:        raw.Symbol,
 		Side:          side,
 		Size:          size,
-		EntryPrice:    entry,
-		CurrentPrice:  curr,
-		UnrealizedPnL: pnl,
-		Leverage:      lev,
+		EntryPrice:    respEntry,
+		MarkPrice:     respMark,
+		CurrentPrice:  respMark, // For backward compatibility
+		EvalPrice:     respMark, // Default to mark price until updated by ticks
+		UnrealizedPnL: respPnl - (size * respEntry * BybitTakerFeeRate) - (size * respMark * BybitTakerFeeRate),
+		Leverage:      respLev,
 		MarginType:    marginType,
 	}, nil
 }
@@ -389,7 +396,7 @@ func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, er
 			return nil, fmt.Errorf("Bybit API error (GetPositions): %d - %s", result.RetCode, string(resp))
 		}
 
-		log.Printf("DEBUG: Bybit returned %d raw positions", len(result.Result.List))
+		// log.Printf("DEBUG: Bybit returned %d raw positions", len(result.Result.List))
 		for _, raw := range result.Result.List {
 			size, _ := strconv.ParseFloat(raw.Size, 64)
 			if size == 0 {
@@ -397,7 +404,7 @@ func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, er
 			}
 
 			entry, _ := strconv.ParseFloat(raw.AvgPrice, 64)
-			curr, _ := strconv.ParseFloat(raw.MarkPrice, 64)
+			mark, _ := strconv.ParseFloat(raw.MarkPrice, 64)
 			pnl, _ := strconv.ParseFloat(raw.UnrealisedPnl, 64)
 			lev, _ := strconv.Atoi(raw.Leverage)
 
@@ -417,8 +424,10 @@ func (b *BybitAdapter) GetPositions(ctx context.Context) ([]*domain.Position, er
 				Side:          side,
 				Size:          size,
 				EntryPrice:    entry,
-				CurrentPrice:  curr,
-				UnrealizedPnL: pnl,
+				MarkPrice:     mark,
+				CurrentPrice:  mark,
+				EvalPrice:     mark,
+				UnrealizedPnL: pnl - (size * entry * BybitTakerFeeRate) - (size * mark * BybitTakerFeeRate),
 				Leverage:      lev,
 				MarginType:    marginType,
 			})
@@ -462,13 +471,13 @@ func (b *BybitAdapter) PlaceOrder(ctx context.Context, order *domain.Order) (*do
 		"symbol":      order.Symbol,
 		"side":        side,
 		"orderType":   order.Type,
-		"qty":         fmt.Sprintf("%f", order.Size),
+		"qty":         strconv.FormatFloat(order.Size, 'f', -1, 64),
 		"timeInForce": tif,
 	}
 
 	// Add price for limit orders
 	if order.Type == "Limit" {
-		payload["price"] = fmt.Sprintf("%f", order.Price)
+		payload["price"] = strconv.FormatFloat(order.Price, 'f', -1, 64)
 	}
 
 	// Add reduce only flag if set
@@ -478,17 +487,17 @@ func (b *BybitAdapter) PlaceOrder(ctx context.Context, order *domain.Order) (*do
 
 	// Add Stop Loss if set
 	if order.StopLoss > 0 {
-		payload["stopLoss"] = fmt.Sprintf("%f", order.StopLoss)
+		payload["stopLoss"] = strconv.FormatFloat(order.StopLoss, 'f', -1, 64)
 	}
 
 	// Add Take Profit if set
 	if order.TakeProfit > 0 {
-		payload["takeProfit"] = fmt.Sprintf("%f", order.TakeProfit)
+		payload["takeProfit"] = strconv.FormatFloat(order.TakeProfit, 'f', -1, 64)
 	}
 
 	// Add Trigger Price if set
 	if order.TriggerPrice > 0 {
-		payload["triggerPrice"] = fmt.Sprintf("%f", order.TriggerPrice)
+		payload["triggerPrice"] = strconv.FormatFloat(order.TriggerPrice, 'f', -1, 64)
 	}
 
 	resp, err := b.sendRequest(ctx, "POST", "/v5/order/create", payload)
@@ -635,7 +644,7 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 
 	if b.wsConn != nil {
 		// Already connected, just subscribe
-		return b.subscribe(symbols)
+		return b.subscribe(symbols, "ConnectWS_Existing")
 	}
 
 	c, _, err := websocket.DefaultDialer.Dial(b.wsURL, nil)
@@ -643,7 +652,8 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 		return err
 	}
 	b.wsConn = c
-	b.pingDone = make(chan struct{})
+	done := make(chan struct{})
+	b.pingDone = done
 	b.lastMessageTime = time.Now() // Reset on connect
 
 	// Save symbols for resubscribe
@@ -660,10 +670,95 @@ func (b *BybitAdapter) ConnectWS(symbols []string) error {
 		}
 	}
 
-	go b.readLoop()
-	go b.startPingLoop()
+	go b.readLoop(done)
+	go b.startPingLoop(done)
 
-	return b.subscribe(b.subscribedSymbols)
+	return b.subscribe(b.subscribedSymbols, "ConnectWS")
+}
+
+func (b *BybitAdapter) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
+	path := "/v5/account/wallet-balance?accountType=UNIFIED"
+	respBody, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				AccountType            string `json:"accountType"`
+				TotalEquity            string `json:"totalEquity"`
+				TotalWalletBalance     string `json:"totalWalletBalance"`
+				TotalAvailable         string `json:"totalAvailableBalance"`
+				TotalMarginBalance     string `json:"totalMarginBalance"`
+				TotalInitialMargin     string `json:"totalInitialMargin"`
+				TotalMaintenanceMargin string `json:"totalMaintenanceMargin"`
+				Coin                   []struct {
+					Coin          string `json:"coin"`
+					WalletBal     string `json:"walletBalance"`
+					Available     string `json:"availableToWithdraw"`
+					UnrealisedPnl string `json:"unrealisedPnl"`
+					Equity        string `json:"equity"`
+				} `json:"coin"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("Bybit API error: %d - %s", result.RetCode, result.RetMsg)
+	}
+
+	var balances []*domain.WalletBalance
+	if len(result.Result.List) > 0 {
+		for _, account := range result.Result.List {
+			// Add Account Total (USD)
+			totalEq, _ := strconv.ParseFloat(account.TotalEquity, 64)
+			totalWal, _ := strconv.ParseFloat(account.TotalWalletBalance, 64)
+			totalAvail, _ := strconv.ParseFloat(account.TotalAvailable, 64)
+			totalMargin, _ := strconv.ParseFloat(account.TotalMarginBalance, 64)
+			totalIM, _ := strconv.ParseFloat(account.TotalInitialMargin, 64)
+			totalMM, _ := strconv.ParseFloat(account.TotalMaintenanceMargin, 64)
+
+			if totalEq > 0 || totalWal > 0 {
+				balances = append(balances, &domain.WalletBalance{
+					Coin:              "TOTAL_USD", // Synthetic coin for total account value
+					Total:             totalWal,
+					Free:              totalAvail,
+					UnrealizedPnL:     totalEq - totalWal, // Approximate Upl as diff
+					Equity:            totalEq,
+					MarginBalance:     totalMargin,
+					InitialMargin:     totalIM,
+					MaintenanceMargin: totalMM,
+					Timestamp:         time.Now(),
+				})
+			}
+
+			for _, coinData := range account.Coin {
+				total, _ := strconv.ParseFloat(coinData.WalletBal, 64)
+				free, _ := strconv.ParseFloat(coinData.Available, 64)
+				upl, _ := strconv.ParseFloat(coinData.UnrealisedPnl, 64)
+				equity, _ := strconv.ParseFloat(coinData.Equity, 64)
+
+				if total > 0 || equity > 0 {
+					balances = append(balances, &domain.WalletBalance{
+						Coin:          coinData.Coin,
+						Total:         total,
+						Free:          free,
+						UnrealizedPnL: upl,
+						Equity:        equity,
+						Timestamp:     time.Now(),
+					})
+				}
+			}
+		}
+	}
+	return balances, nil
 }
 
 func (b *BybitAdapter) GetWSStatus() domain.WSStatus {
@@ -680,9 +775,9 @@ func (b *BybitAdapter) GetWSStatus() domain.WSStatus {
 
 func (b *BybitAdapter) Subscribe(symbols []string) error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 
 	// Update list of symbols we want to stay subscribed to
+	allExist := true
 	for _, s := range symbols {
 		exists := false
 		for _, ex := range b.subscribedSymbols {
@@ -693,45 +788,62 @@ func (b *BybitAdapter) Subscribe(symbols []string) error {
 		}
 		if !exists {
 			b.subscribedSymbols = append(b.subscribedSymbols, s)
+			allExist = false
 		}
 	}
 
 	if b.wsConn == nil {
-		// Not connected yet, ConnectWS will handle it
-		// But we need to call it without locking again
+		// ConnectWS handles subscription for all subscribedSymbols
+		// We unlock before calling it because it locks internally
 		b.mu.Unlock()
-		err := b.ConnectWS(symbols)
-		b.mu.Lock()
-		return err
+		return b.ConnectWS(symbols)
 	}
-	return b.subscribe(symbols)
+
+	if allExist {
+		b.mu.Unlock()
+		return nil
+	}
+
+	b.mu.Unlock()
+
+	return b.subscribe(symbols, "Subscribe")
 }
 
-func (b *BybitAdapter) subscribe(symbols []string) error {
+func (b *BybitAdapter) subscribe(symbols []string, caller string) error {
 	if len(symbols) == 0 {
 		return nil
 	}
-	args := make([]interface{}, len(symbols))
+
+	// 1. Subscribe to Tickers
+	tickerArgs := make([]interface{}, len(symbols))
 	for i, s := range symbols {
-		args[i] = "orderbook.1." + s
+		tickerArgs[i] = "tickers." + s
 	}
-	// Also subscribe to publicTrade
+	tickerMsg := map[string]interface{}{
+		"op":   "subscribe",
+		"args": tickerArgs,
+	}
+	if err := b.wsConn.WriteJSON(tickerMsg); err != nil {
+		return err
+	}
+
+	// 2. Subscribe to PublicTrade
 	tradeArgs := make([]interface{}, len(symbols))
 	for i, s := range symbols {
 		tradeArgs[i] = "publicTrade." + s
 	}
-	args = append(args, tradeArgs...)
-
-	subMsg := map[string]interface{}{
+	tradeMsg := map[string]interface{}{
 		"op":   "subscribe",
-		"args": args,
+		"args": tradeArgs,
 	}
-	if err := b.wsConn.WriteJSON(subMsg); err != nil {
+	if err := b.wsConn.WriteJSON(tradeMsg); err != nil {
 		return err
 	}
+
 	return nil
 }
-func (b *BybitAdapter) startPingLoop() {
+
+func (b *BybitAdapter) startPingLoop(done chan struct{}) {
 	b.pingTicker = time.NewTicker(20 * time.Second)
 	defer b.pingTicker.Stop()
 
@@ -750,38 +862,47 @@ func (b *BybitAdapter) startPingLoop() {
 				log.Println("WS: Sent ping")
 			}
 			b.mu.Unlock()
-		case <-b.pingDone:
+		case <-done:
 			log.Println("WS: Ping loop stopped")
 			return
 		}
 	}
 }
 
-func (b *BybitAdapter) readLoop() {
+func (b *BybitAdapter) readLoop(done chan struct{}) {
 	defer func() {
 		// Stop ping loop
-		if b.pingDone != nil {
-			close(b.pingDone)
-		}
+		close(done)
 		if b.pingTicker != nil {
 			b.pingTicker.Stop()
 		}
 		// Close connection
-		b.wsConn.Close()
+		if b.wsConn != nil {
+			b.wsConn.Close()
+		}
 		b.mu.Lock()
 		b.wsConn = nil
 		b.mu.Unlock()
 	}()
 
 	for {
-		_, message, err := b.wsConn.ReadMessage()
-		if err != nil {
-			log.Println("WS Read error:", err)
-			close(b.wsDone)
+		// Check if done
+		select {
+		case <-done:
+			return
+		default:
+		}
+
+		if b.wsConn == nil {
 			return
 		}
 
-		// log.Printf("WS Received: %s", string(message)) // Very verbose, maybe just topic?
+		_, message, err := b.wsConn.ReadMessage()
+		if err != nil {
+			return
+		}
+
+		// // log.Printf("WS Received: %s", string(message)) // Temporary debug
 
 		b.mu.Lock()
 		b.messageCount++
@@ -820,38 +941,45 @@ func (b *BybitAdapter) readLoop() {
 
 			symbol := strings.TrimPrefix(topic, "orderbook.1.")
 
+			// Flexible Parsing: Get Best Bid and Best Ask if available
+			var bid, ask float64
+			var hasBid, hasAsk bool
+
 			// Parse Ask
-			a, ok := data["a"].([]interface{})
-			if !ok || len(a) == 0 {
-				continue
+			if a, ok := data["a"].([]interface{}); ok && len(a) > 0 {
+				if askEntry, ok := a[0].([]interface{}); ok && len(askEntry) > 0 {
+					if askStr, ok := askEntry[0].(string); ok {
+						if val, err := strconv.ParseFloat(askStr, 64); err == nil {
+							ask = val
+							hasAsk = true
+						}
+					}
+				}
 			}
-			askEntry, ok := a[0].([]interface{})
-			if !ok || len(askEntry) < 1 {
-				continue
-			}
-			askStr, ok := askEntry[0].(string)
-			if !ok {
-				continue
-			}
-			ask, _ := strconv.ParseFloat(askStr, 64)
 
 			// Parse Bid
-			bidList, ok := data["b"].([]interface{})
-			if !ok || len(bidList) == 0 {
-				continue
+			if bList, ok := data["b"].([]interface{}); ok && len(bList) > 0 {
+				if bidEntry, ok := bList[0].([]interface{}); ok && len(bidEntry) > 0 {
+					if bidStr, ok := bidEntry[0].(string); ok {
+						if val, err := strconv.ParseFloat(bidStr, 64); err == nil {
+							bid = val
+							hasBid = true
+						}
+					}
+				}
 			}
-			bidEntry, ok := bidList[0].([]interface{})
-			if !ok || len(bidEntry) < 1 {
-				continue
-			}
-			bidStr, ok := bidEntry[0].(string)
-			if !ok {
-				continue
-			}
-			bid, _ := strconv.ParseFloat(bidStr, 64)
 
-			// Use mid price
-			price := (ask + bid) / 2
+			// Calculate Price based on available data
+			var price float64
+			if hasAsk && hasBid {
+				price = (ask + bid) / 2
+			} else if hasBid {
+				price = bid
+			} else if hasAsk {
+				price = ask
+			} else {
+				continue
+			}
 
 			b.mu.Lock()
 			callbacks := make([]func(string, float64), len(b.callbacks))
@@ -861,6 +989,39 @@ func (b *BybitAdapter) readLoop() {
 			for _, cb := range callbacks {
 				cb(symbol, price)
 			}
+
+		} else if strings.HasPrefix(topic, "tickers.") {
+			// Handle Ticker Data
+			data, ok := event["data"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			symbol := strings.TrimPrefix(topic, "tickers.")
+
+			// We only care about lastPrice
+			priceStr, ok := data["lastPrice"].(string)
+			if !ok {
+				// Ticker update might not contain lastPrice if it hasn't changed (delta update)
+				// But we need price to process ticks.
+				// If it's effectively a heartbeat or other field update, we skip.
+				continue
+			}
+
+			price, err := strconv.ParseFloat(priceStr, 64)
+			if err != nil {
+				continue
+			}
+
+			b.mu.Lock()
+			callbacks := make([]func(string, float64), len(b.callbacks))
+			copy(callbacks, b.callbacks)
+			b.mu.Unlock()
+
+			for _, cb := range callbacks {
+				cb(symbol, price)
+			}
+
 		} else if strings.HasPrefix(topic, "publicTrade.") {
 			data, ok := event["data"].([]interface{})
 			if !ok {
@@ -873,7 +1034,6 @@ func (b *BybitAdapter) readLoop() {
 				if !ok {
 					continue
 				}
-
 				// Parse Trade
 				side, _ := trade["S"].(string)
 				sizeStr, _ := trade["v"].(string)
@@ -957,13 +1117,9 @@ func (b *BybitAdapter) GetCandles(ctx context.Context, symbol, interval string, 
 }
 
 func (b *BybitAdapter) GetRecentTrades(ctx context.Context, symbol string, limit int) ([]domain.PublicTrade, error) {
-	params := map[string]interface{}{
-		"category": "linear",
-		"symbol":   symbol,
-		"limit":    limit,
-	}
+	path := fmt.Sprintf("/v5/market/recent-trade?category=linear&symbol=%s&limit=%d", symbol, limit)
 
-	resp, err := b.sendRequest(ctx, "GET", "/v5/market/recent-trade", params)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1138,6 +1294,8 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 				Price24hPcnt    string `json:"price24hPcnt"`
 				Turnover24h     string `json:"turnover24h"`
 				OpenInterest    string `json:"openInterest"`
+				HighPrice24h    string `json:"highPrice24h"`
+				LowPrice24h     string `json:"lowPrice24h"`
 				FundingRate     string `json:"fundingRate"`
 				NextFundingTime string `json:"nextFundingTime"`
 			} `json:"list"`
@@ -1158,6 +1316,8 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 		price24hPcnt, _ := strconv.ParseFloat(item.Price24hPcnt, 64)
 		volume24h, _ := strconv.ParseFloat(item.Turnover24h, 64)
 		openInterest, _ := strconv.ParseFloat(item.OpenInterest, 64)
+		high24h, _ := strconv.ParseFloat(item.HighPrice24h, 64)
+		low24h, _ := strconv.ParseFloat(item.LowPrice24h, 64)
 		fundingRate, _ := strconv.ParseFloat(item.FundingRate, 64)
 		nextFundingTime, _ := strconv.ParseInt(item.NextFundingTime, 10, 64)
 
@@ -1167,10 +1327,82 @@ func (b *BybitAdapter) GetTickers(ctx context.Context, category string) ([]domai
 			Price24hPcnt:    price24hPcnt,
 			Volume24h:       volume24h,
 			OpenInterest:    openInterest,
+			High24h:         high24h,
+			Low24h:          low24h,
 			FundingRate:     fundingRate,
 			NextFundingTime: nextFundingTime,
 		})
 	}
 
 	return tickers, nil
+}
+
+func (b *BybitAdapter) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
+	path := fmt.Sprintf("/v5/position/closed-pnl?category=linear&limit=%d", limit)
+	if symbol != "" {
+		path += "&symbol=" + symbol
+	}
+
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		RetCode int    `json:"retCode"`
+		RetMsg  string `json:"retMsg"`
+		Result  struct {
+			List []struct {
+				Symbol        string `json:"symbol"`
+				OrderId       string `json:"orderId"`
+				Side          string `json:"side"` // "Buy" or "Sell"
+				Qty           string `json:"qty"`
+				OrderPrice    string `json:"orderPrice"`    // Entry Price? No, this is avgEntryPrice usually
+				AvgEntryPrice string `json:"avgEntryPrice"` // Better to use this
+				AvgExitPrice  string `json:"avgExitPrice"`
+				ClosedPnl     string `json:"closedPnl"`
+				CreatedTime   string `json:"createdTime"` // Milliseconds
+				Leverage      string `json:"leverage"`
+			} `json:"list"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	if result.RetCode != 0 {
+		return nil, fmt.Errorf("bybit closed-pnl error: %s", result.RetMsg)
+	}
+
+	var history []*domain.PositionHistory
+	for _, item := range result.Result.List {
+		size, _ := strconv.ParseFloat(item.Qty, 64)
+		entryPrice, _ := strconv.ParseFloat(item.AvgEntryPrice, 64)
+		exitPrice, _ := strconv.ParseFloat(item.AvgExitPrice, 64)
+		pnl, _ := strconv.ParseFloat(item.ClosedPnl, 64)
+		createdTime, _ := strconv.ParseInt(item.CreatedTime, 10, 64)
+		leverage, _ := strconv.Atoi(item.Leverage)
+
+		side := domain.SideLong
+		if item.Side == "Sell" {
+			side = domain.SideShort
+		}
+
+		history = append(history, &domain.PositionHistory{
+			// ID: 0, // No internal ID
+			Exchange:    "bybit",
+			Symbol:      item.Symbol,
+			Side:        side,
+			Size:        size,
+			EntryPrice:  entryPrice,
+			ExitPrice:   exitPrice,
+			RealizedPnL: pnl,
+			Leverage:    leverage,
+			MarginType:  "unknown", // Not provided in closed-pnl
+			ClosedAt:    time.Unix(createdTime/1000, 0),
+		})
+	}
+
+	return history, nil
 }

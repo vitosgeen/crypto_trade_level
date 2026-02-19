@@ -139,6 +139,37 @@
             color: var(--accent-color);
         }
 
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .section-header h2 {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .btn-danger {
+            background-color: var(--danger);
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+
+        .btn-danger:hover {
+            opacity: 0.9;
+        }
+
         /* Forms */
         input,
         select {
@@ -412,6 +443,102 @@
             padding-top: 0 !important;
             min-width: 250px;
         }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 4px;
+            border-radius: 20px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 6px 16px;
+            border-radius: 16px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-color);
+        }
+
+        .tab-btn.active {
+            background: var(--accent-color);
+            color: #000;
+            box-shadow: 0 2px 8px rgba(0, 255, 136, 0.3);
+        }
+
+        .history-card {
+            overflow: visible;
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+        }
+
+        .history-header h2 {
+            margin-bottom: 0;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background-color: var(--card-bg);
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            width: 80%;
+            max-width: 1000px;
+            border-radius: 12px;
+            position: relative;
+        }
+
+        .close-modal {
+            position: absolute;
+            right: 20px;
+            top: 15px;
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .close-modal:hover {
+            color: var(--text-color);
+        }
+
+        #historicalPnLChart {
+            width: 100%;
+            height: 400px;
+            margin-top: 20px;
+        }
     </style>
 </head>
 
@@ -423,6 +550,7 @@
             <a href="/level-bot">Level Bot</a>
             <a href="/speed-bot">Speed Bot</a>
             <a href="/funding-bot">Funding Bot</a>
+            <a href="/wallet">Wallet</a>
             <a href="/dashboard" style="color: var(--accent-color);">Dashboard</a>
         </div>
         <div id="ws-status"
@@ -436,6 +564,121 @@
     </nav>
 
     <div class="container">
+        <!-- RSI & Trend Signal Scanner -->
+        <div class="card full-width">
+            <h2>RSI & Trend Signal Scanner</h2>
+            <div style="overflow-x: auto;">
+                <table style="min-width: 600px;">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Symbol</th>
+                            <th>Interval</th>
+                            <th>RSI</th>
+                            <th>Signal</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rsi-signals-body">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 15px;">Waiting
+                                for signals...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- RSI Auto-Level Settings (Collapsible) -->
+        <div class="card full-width" style="padding: 0; margin-bottom: 20px; overflow: hidden;">
+            <details style="padding: 20px;">
+                <summary style="cursor: pointer; list-style: none; display: flex; align-items: center; gap: 15px;">
+                    <div
+                        style="width: 12px; height: 12px; background: var(--accent-color); border-radius: 50%; box-shadow: 0 0 10px var(--accent-color);">
+                    </div>
+                    <h2 style="margin: 0; border: none; flex: 1; font-size: 1.1rem; color: var(--text-color);">RSI
+                        Auto-Level Logic Settings</h2>
+                    <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: 500;">Click to configure RSI
+                        scan parameters</span>
+                </summary>
+                <div style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                    <form id="rsi-config-form">
+                        <div class="checkbox-wrapper" style="margin-bottom: 20px;">
+                            <input type="checkbox" id="rsi-enabled" name="enabled">
+                            <label for="rsi-enabled"
+                                style="margin:0; cursor:pointer; font-weight: 700; color: var(--accent-color);">Active
+                                RSI Monitor Running</label>
+                        </div>
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 25px;">
+                            <div class="flex-row">
+                                <div class="flex-1">
+                                    <label>Scan Interval (min)</label>
+                                    <input type="number" name="scan_interval_minutes" value="1"
+                                        style="margin-bottom: 0;">
+                                </div>
+                                <div class="flex-1">
+                                    <label>RSI Period</label>
+                                    <input type="number" name="period" value="14" style="margin-bottom: 0;">
+                                </div>
+                            </div>
+                            <div class="flex-row">
+                                <div class="flex-1">
+                                    <label>Oversold Threshold</label>
+                                    <input type="number" name="oversold" value="30" step="0.1">
+                                </div>
+                                <div class="flex-1">
+                                    <label>Overbought Threshold</label>
+                                    <input type="number" name="overbought" value="70" step="0.1">
+                                </div>
+                            </div>
+                            <div class="flex-row" style="margin-top: 10px;">
+                                <div class="flex-1" style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="checkbox" name="trend_break_enabled" id="trend_break_enabled"
+                                        style="width: auto; margin: 0;">
+                                    <label for="trend_break_enabled" style="margin: 0;">Enable RSI Trend Breaks</label>
+                                </div>
+                                <div class="flex-1">
+                                    <label>Trend Break Pivot Window</label>
+                                    <input type="number" name="trend_break_window" value="5" min="2" max="20">
+                                </div>
+                            </div>
+                            <div class="flex-1">
+                                <label>Target Timeframes (split by comma)</label>
+                                <input type="text" name="timeframes" value="1m,5m,15m" placeholder="1m,5m,15m"
+                                    style="margin-bottom: 0;">
+                            </div>
+                        </div>
+
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 25px; margin-top: 20px;">
+                            <div class="flex-row">
+                                <div class="flex-1">
+                                    <label>Size (USDT)</label>
+                                    <input type="number" name="size_usdt" value="100" style="margin-bottom: 0;">
+                                </div>
+                                <div class="flex-1">
+                                    <label>Leverage</label>
+                                    <input type="number" name="leverage" value="10" style="margin-bottom: 0;">
+                                </div>
+                            </div>
+                            <div class="flex-1">
+                                <label>Take Profit (%)</label>
+                                <input type="number" step="0.1" name="take_profit_pct" value="1.2"
+                                    style="margin-bottom: 0;">
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: flex-end; margin-top: 25px;">
+                            <button type="button" onclick="updateRSIConfig()"
+                                style="width: auto; min-width: 200px; background: linear-gradient(45deg, var(--secondary-color), #4e00b3); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;">
+                                Save & Apply Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </details>
+        </div>
         <!-- Left Column: Controls -->
         <div class="card">
             <h2>Add Level</h2>
@@ -463,10 +706,23 @@
                     <input type="number" name="leverage" placeholder="Lev" value="10" required style="width: 80px;">
                 </div>
 
-                <select name="margin_type">
-                    <option value="isolated">Isolated</option>
-                    <option value="cross">Cross</option>
-                </select>
+                <div class="flex-row">
+                    <div class="flex-1">
+                        <label>Margin</label>
+                        <select name="margin_type">
+                            <option value="isolated">Isolated</option>
+                            <option value="cross">Cross</option>
+                        </select>
+                    </div>
+                    <div class="flex-1">
+                        <label>Side Filter</label>
+                        <select name="side">
+                            <option value="BOTH">Both</option>
+                            <option value="LONG">Long Only</option>
+                            <option value="SHORT">Short Only</option>
+                        </select>
+                    </div>
+                </div>
 
                 <input type="number" name="cool_down_ms" placeholder="Cooldown (ms)" value="5000" required>
 
@@ -519,13 +775,13 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="base_close_cooldown_minutes">Cooldown (Minutes):</label>
-                    <input type="number" id="base_close_cooldown_minutes" name="base_close_cooldown_minutes" step="1"
-                        value="5">
+                    <label for="base_close_cooldown_ms">Cooldown (Ms):</label>
+                    <input type="number" id="base_close_cooldown_ms" name="base_close_cooldown_ms" step="1"
+                        value="300000">
                 </div>
 
                 <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px;">
-                    <input type="checkbox" name="auto_mode_enabled" id="auto_level_mode_enabled" checked>
+                    <input type="checkbox" name="auto_level_mode_enabled" id="auto_level_mode_enabled" checked>
                     <label for="auto_level_mode_enabled" style="margin: 0;">Auto-Level Mode (Recreate on
                         Failure)</label>
                 </div>
@@ -542,13 +798,20 @@
                 </select>
 
                 <div class="checkbox-wrapper">
-                    <input type="checkbox" name="disable_speed_close" id="disable-speed">
-                    <label for="disable-speed" style="margin:0; cursor:pointer;">Disable Speed-Based Close</label>
+                    <input type="checkbox" name="ignore_sentiment_filter" id="ignore-sentiment">
+                    <label for="ignore-sentiment"
+                        style="margin:0; cursor:pointer; display: flex; align-items: center; gap: 5px;">
+                        Ignore Sentiment Filter
+                        <span
+                            style="font-size: 0.7rem; background: var(--text-muted); color: var(--bg-color); width: 14px; height: 14px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold;"
+                            title="If checked, the bot will enter tiers even if market sentiment suggests it's risky (e.g. going long when sentiment is bearish).">?</span>
+                    </label>
                 </div>
 
                 <button type="submit" style="margin-top: 10px;">Add Level</button>
             </form>
         </div>
+
 
         <!-- Right Column: Market Stats & Chart -->
         <div style="display: flex; flex-direction: column; gap: 20px;">
@@ -565,7 +828,8 @@
                             style="width: auto; margin: 0; padding: 5px;">
                             <option value="" selected disabled>Select a level...</option>
                             {{range .Levels}}
-                            <option value="{{.Symbol}}-{{.LevelPrice}}">{{.Exchange}} - {{.Symbol}} - {{.LevelPrice}}
+                            <option value="{{.Symbol}}-{{.LevelPrice}}">[{{.Side}}] {{.Exchange}} - {{.Symbol}} -
+                                {{.LevelPrice}}
                             </option>
                             {{end}}
                         </select>
@@ -595,13 +859,25 @@
                     <span><span style="color: rgba(255, 68, 68, 0.5); font-weight: bold;">━</span> Conclusion
                         (10s)</span>
                 </div>
+                <div id="pnlHistoryChart" style="width: 100%; height: 200px; margin-top: 20px;"></div>
+                <div
+                    style="margin-top: 5px; font-size: 0.75rem; color: var(--text-muted); text-align: center; display: flex; justify-content: center; gap: 15px;">
+                    <span><span style="color: #ff00ff; font-weight: bold;">━</span> Unrealized PnL ($)</span>
+                </div>
             </div>
 
         </div>
 
+
         <!-- Full Width: Active Levels -->
         <div class="card full-width">
-            <h2>Active Levels</h2>
+            <div class="section-header">
+                <h2>Active Levels</h2>
+                <button class="btn-danger" hx-delete="/levels"
+                    hx-confirm="Are you sure you want to delete ALL active levels?" hx-target="#levels-table">
+                    Delete All
+                </button>
+            </div>
             <div id="levels-table" hx-get="/levels" hx-trigger="every 2s">
                 {{ template "levels_table" .Levels }}
             </div>
@@ -609,17 +885,30 @@
 
         <!-- Full Width: Active Positions -->
         <div class="card full-width">
-            <h2>Active Positions</h2>
+            <div class="section-header">
+                <h2>Active Positions</h2>
+                <button class="btn-danger" hx-delete="/positions"
+                    hx-confirm="Are you sure you want to close ALL active positions?" hx-target="#positions-table">
+                    Close All
+                </button>
+            </div>
             <div id="positions-table" hx-get="/positions" hx-trigger="load, every 5s">
                 <!-- Loaded via HTMX -->
             </div>
         </div>
 
-        <!-- Full Width: Positions History -->
-        <div class="card full-width">
-            <h2>Positions History</h2>
-            <div id="history-table" hx-get="/history" hx-trigger="load, every 10s">
-                {{ template "history_table" .History }}
+        <!-- Full Width: Positions History with Tabs -->
+        <div class="card full-width history-card">
+            <div class="history-header">
+                <h2>Positions History</h2>
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="switchHistoryTab(this, 'local')">Local</button>
+                    <button class="tab-btn" onclick="switchHistoryTab(this, 'exchange')">From Exchanger</button>
+                    <button class="tab-btn" onclick="switchHistoryTab(this, 'pnl')">Unrealized PnL</button>
+                </div>
+            </div>
+            <div id="history-table" hx-get="/history?tab=local" hx-trigger="load, every 10s">
+                {{ template "history_table" . }}
             </div>
         </div>
 
@@ -734,6 +1023,40 @@
                     <div class="gauge-value" id="obi-value" style="font-size: 0.8rem;">0.00</div>
                 </div>
 
+                <!-- Gauge 6: RSI -->
+                <div class="gauge-container">
+                    <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">RSI (1m)</h3>
+                    <div class="gauge" style="width: 80px; height: 40px;">
+                        <div class="gauge-bg"
+                            style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--danger) 0deg 54deg, var(--text-muted) 54deg 126deg, var(--success) 126deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="rsi-needle" style="height: 35px; width: 2px;"></div>
+                        <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                    </div>
+                    <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                        <span style="color: var(--danger);">OB</span>
+                        <span style="color: var(--success);">OS</span>
+                    </div>
+                    <div class="gauge-value" id="rsi-value" style="font-size: 0.8rem;">50.00</div>
+                </div>
+
+                <!-- Gauge 7: MACD -->
+                <div class="gauge-container">
+                    <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">MACD (1m)</h3>
+                    <div class="gauge" style="width: 80px; height: 40px;">
+                        <div class="gauge-bg"
+                            style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--danger) 0deg 90deg, var(--success) 90deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="macd-needle" style="height: 35px; width: 2px;"></div>
+                        <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                    </div>
+                    <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                        <span style="color: var(--danger);">Bear</span>
+                        <span style="color: var(--success);">Bull</span>
+                    </div>
+                    <div class="gauge-value" id="macd-value" style="font-size: 0.75rem;">0.00/0.00</div>
+                </div>
+
                 <!-- Gauge 6: TSI -->
                 <div class="gauge-container">
                     <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">TSI</h3>
@@ -766,6 +1089,23 @@
                         <span class="text-danger">Bear</span>
                     </div>
                     <div class="gauge-value" id="gli-value" style="font-size: 0.8rem;">0.00</div>
+                </div>
+
+                <!-- Gauge 8: RSI -->
+                <div class="gauge-container">
+                    <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px;">RSI (1m)</h3>
+                    <div class="gauge" style="width: 80px; height: 40px;">
+                        <div class="gauge-bg"
+                            style="width: 80px; height: 80px; background: conic-gradient(from 270deg, var(--success) 0deg 54deg, var(--text-muted) 54deg 126deg, var(--danger) 126deg 180deg, transparent 180deg);">
+                        </div>
+                        <div class="gauge-needle" id="rsi-gauge-needle" style="height: 35px; width: 2px;"></div>
+                        <div class="gauge-center" style="width: 8px; height: 8px; bottom: -4px;"></div>
+                    </div>
+                    <div class="gauge-labels" style="width: 80px; font-size: 0.7rem;">
+                        <span class="text-success">OS</span>
+                        <span class="text-danger">OB</span>
+                    </div>
+                    <div class="gauge-value" id="rsi-gauge-value" style="font-size: 0.8rem;">0.00</div>
                 </div>
 
                 <!-- Conclusion Indicator -->
@@ -814,10 +1154,15 @@
         let conclusionChart = null;
         let conclusionSeries = null;
         let conclusionSeries30s = null;
-        let conclusionSeries10s = null;
+        let volumeSeries = null;
         let priceChangeSeries = null;
+        let pnlHistoryChart = null;
+        let pnlHistorySeries = null;
         let selectedLevelId = null;
         let currentPriceLines = [];
+        let historicalChart = null;
+        let historicalSeries = null;
+        let historicalRSISeries = null;
         let previewPriceLines = [];
         let liquidityData = [];
         let isShiftPressed = false;
@@ -879,7 +1224,7 @@
 
             try {
                 chart = LightweightCharts.createChart(chartContainer, {
-                    width: chartContainer.clientWidth,
+                    width: chartContainer.clientWidth || 800,
                     height: 500,
                     layout: {
                         background: { type: 'solid', color: '#151632' },
@@ -995,6 +1340,44 @@
                         lineWidth: 2,
                     });
                     conclusionSeries.createPriceLine({
+                        price: 0,
+                        color: '#e0e0e0',
+                        lineWidth: 1,
+                        lineStyle: LightweightCharts.LineStyle.Dashed,
+                        axisLabelVisible: false,
+                        title: '',
+                    });
+                }
+
+                // PnL History Chart
+                const pnlContainer = document.getElementById('pnlHistoryChart');
+                if (pnlContainer) {
+                    pnlHistoryChart = LightweightCharts.createChart(pnlContainer, {
+                        width: pnlContainer.clientWidth,
+                        height: 200,
+                        layout: {
+                            background: { type: 'solid', color: '#151632' },
+                            textColor: '#e0e0e0',
+                        },
+                        grid: {
+                            vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                            horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                        },
+                        rightPriceScale: {
+                            borderColor: 'rgba(255, 255, 255, 0.1)',
+                            visible: true,
+                        },
+                        timeScale: {
+                            timeVisible: true,
+                            secondsVisible: true,
+                        },
+                    });
+
+                    pnlHistorySeries = pnlHistoryChart.addLineSeries({
+                        color: '#ff00ff',
+                        lineWidth: 2,
+                    });
+                    pnlHistorySeries.createPriceLine({
                         price: 0,
                         color: '#e0e0e0',
                         lineWidth: 1,
@@ -1199,6 +1582,16 @@
             addPreviewLine(shortTier3, 'S-T3', 'rgba(220, 53, 69, 0.5)');
         }
 
+        function switchHistoryTab(btn, tab) {
+            const table = document.getElementById('history-table');
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            table.setAttribute('hx-get', `/history?tab=${tab}`);
+            htmx.process(table); // Re-process for hx-get change
+            htmx.trigger(table, 'load'); // Immediate refresh
+        }
+
         function changeLevel() {
             const selector = document.getElementById('level-selector');
             selectedLevelId = selector.value;
@@ -1233,17 +1626,18 @@
 
             rows.forEach((row) => {
                 const cells = row.querySelectorAll('td');
-                if (cells.length < 3) return;
+                if (cells.length < 5) return;
                 const symbol = cells[1].textContent.trim();
                 const levelPrice = parseFloat(cells[3].textContent);
+                const sideText = cells[4].textContent.trim();
                 const id = `${symbol}-${levelPrice}`;
                 activeIds.push(id);
-                availableLevels.push({ id, text: `${symbol} @ ${levelPrice}` });
+                availableLevels.push({ id, text: `[${sideText}] ${symbol} @ ${levelPrice}` });
 
                 if (!currentOptions.includes(id)) {
                     const option = document.createElement('option');
                     option.value = id;
-                    option.text = `${symbol} @ ${levelPrice}`;
+                    option.text = `[${sideText}] ${symbol} @ ${levelPrice}`;
                     selector.appendChild(option);
                 }
             });
@@ -1322,19 +1716,36 @@
             }
 
             // Tiers
-            const tierCell = cells[5];
+            const sideText = cells[4].textContent.trim().toUpperCase();
+            const tierCell = cells[7]; // Exchange(0), Symbol(1), Mode(2), LvlPrice(3), Side(4), Price(5), RSI(6), Tiers(7)
             let longTier1, longTier2, longTier3, shortTier1, shortTier2, shortTier3;
 
-            // Parse from the div/span structure
-            // Structure:
-            // div (grid)
-            //   span (LONG)
-            //   div (flex) -> span (T1), span (T2), span (T3)
-            //   span (SHORT)
-            //   div (flex) -> span (T1), span (T2), span (T3)
+            // Structure in cell[7]:
+            // <div (grid)>
+            //   <div (perc-header)>...</div>  [Index 0]
+            //   <span>LONG</span>
+            //   <div (long-flex)>...</div>    [Index 1]
+            //   <span>SHORT</span>
+            //   <div (short-flex)>...</div>   [Index 2]
+            // </div>
+            const tierDivs = tierCell.querySelectorAll('div > div');
+            if (tierDivs.length >= 3) {
+                // New structure with percentages div at [0]
+                const longSpans = tierDivs[1].querySelectorAll('span');
+                if (longSpans.length >= 3) {
+                    longTier1 = parseFloat(longSpans[0].textContent);
+                    longTier2 = parseFloat(longSpans[1].textContent);
+                    longTier3 = parseFloat(longSpans[2].textContent);
+                }
 
-            const tierDivs = tierCell.querySelectorAll('div > div'); // The two flex divs
-            if (tierDivs.length >= 2) {
+                const shortSpans = tierDivs[2].querySelectorAll('span');
+                if (shortSpans.length >= 3) {
+                    shortTier1 = parseFloat(shortSpans[0].textContent);
+                    shortTier2 = parseFloat(shortSpans[1].textContent);
+                    shortTier3 = parseFloat(shortSpans[2].textContent);
+                }
+            } else if (tierDivs.length === 2) {
+                // Old structure
                 const longSpans = tierDivs[0].querySelectorAll('span');
                 if (longSpans.length >= 3) {
                     longTier1 = parseFloat(longSpans[0].textContent);
@@ -1392,13 +1803,17 @@
                     }));
                 };
 
-                addTierLine(longTier1, 'L-T1', '#00ff88');
-                addTierLine(longTier2, 'L-T2', '#00ff88');
-                addTierLine(longTier3, 'L-T3', '#00ff88');
+                if (sideText === 'BOTH' || sideText === 'LONG') {
+                    addTierLine(longTier1, 'L-T1', '#00ff88');
+                    addTierLine(longTier2, 'L-T2', '#00ff88');
+                    addTierLine(longTier3, 'L-T3', '#00ff88');
+                }
 
-                addTierLine(shortTier1, 'S-T1', '#dc3545');
-                addTierLine(shortTier2, 'S-T2', '#dc3545');
-                addTierLine(shortTier3, 'S-T3', '#dc3545');
+                if (sideText === 'BOTH' || sideText === 'SHORT') {
+                    addTierLine(shortTier1, 'S-T1', '#dc3545');
+                    addTierLine(shortTier2, 'S-T2', '#dc3545');
+                    addTierLine(shortTier3, 'S-T3', '#dc3545');
+                }
 
                 window.lastLevelDetails = levelDetailsJson;
             }
@@ -1618,7 +2033,41 @@
                 const gliValue = document.getElementById('gli-value');
                 if (gliValue) gliValue.textContent = stats.gli.toFixed(2);
 
-                // 8. Conclusion Calculation
+                // 8. RSI
+                if (typeof stats.rsi !== 'undefined' && stats.rsi !== null) {
+                    const rsiDeg = (stats.rsi * 1.8) - 90; // Map 0->100 to -90->90
+                    const rsiNeedle = document.getElementById('rsi-gauge-needle'); // Fix ID
+                    if (rsiNeedle) rsiNeedle.style.transform = `rotate(${rsiDeg}deg)`;
+                    const rsiVal = document.getElementById('rsi-gauge-value'); // Fix ID
+                    if (rsiVal) {
+                        rsiVal.textContent = stats.rsi.toFixed(2);
+                        if (stats.rsi < 30) rsiVal.style.color = 'var(--success)';
+                        else if (stats.rsi > 70) rsiVal.style.color = 'var(--danger)';
+                        else rsiVal.style.color = 'var(--text-color)';
+                    }
+                }
+
+                // 8b. MACD
+                if (typeof stats.macd !== 'undefined' && stats.macd !== null) {
+                    const macdNeedle = document.getElementById('macd-needle');
+                    const macdVal = document.getElementById('macd-value');
+                    if (macdNeedle) {
+                        // Map MACD Hist to -90 to 90
+                        // Since MACD Hist values are small, let's amplify them for the gauge
+                        let hist = stats.macd_hist || 0;
+                        let ratio = hist * 10; // Simple amplification
+                        if (ratio > 1) ratio = 1;
+                        if (ratio < -1) ratio = -1;
+                        const macdDeg = ratio * 90;
+                        macdNeedle.style.transform = `rotate(${macdDeg}deg)`;
+                    }
+                    if (macdVal) {
+                        macdVal.textContent = `${stats.macd.toFixed(4)}/${stats.macd_hist.toFixed(4)}`;
+                        macdVal.style.color = stats.macd_hist >= 0 ? 'var(--success)' : 'var(--danger)';
+                    }
+                }
+
+                // 9. Conclusion Calculation
                 // Normalize all signals to -1 (Bear) to 1 (Bull)
 
                 // Weighted Average - Using backend calculated scores
@@ -1666,11 +2115,19 @@
                             value: finalScore10s
                         });
                     }
-                    if (priceChangeSeries) {
-                        priceChangeSeries.update({
-                            time: now,
-                            value: stats.price_change_10s
-                        });
+                }
+
+                // Update RSI Gauge
+                if (stats.rsi !== undefined) {
+                    const rsiNeedle = document.getElementById('rsi-needle');
+                    const rsiValue = document.getElementById('rsi-value');
+                    if (rsiNeedle) {
+                        const rsiDeg = (stats.rsi / 100 * 180) - 90;
+                        rsiNeedle.style.transform = `rotate(${rsiDeg}deg)`;
+                    }
+                    if (rsiValue) {
+                        rsiValue.textContent = stats.rsi.toFixed(2);
+                        rsiValue.style.color = stats.rsi >= 70 ? 'var(--danger)' : (stats.rsi <= 30 ? 'var(--success)' : 'var(--text-color)');
                     }
                 }
 
@@ -1708,6 +2165,31 @@
                 // Note: The main candle chart updates via selecting a level, which calls updateChart(). 
                 // There isn't a live candle data stream here for the main chart, so we don't need to update
                 // the volume series in this loop. It's updated when `updateChart()` is called.
+
+                // Update PnL History Chart
+                if (pnlHistorySeries) {
+                    const pnlResp = await fetch(`/api/position-pnl-history?symbol=${symbol}&limit=300`);
+                    if (pnlResp.ok) {
+                        const pnlHistory = await pnlResp.json();
+                        if (pnlHistory && pnlHistory.length > 0) {
+                            const pnlData = pnlHistory.map(h => ({
+                                time: Math.floor(new Date(h.timestamp).getTime() / 1000),
+                                value: h.unrealized_pnl
+                            })).sort((a, b) => a.time - b.time);
+
+                            // Filter out duplicate timestamps which Lightweight Charts doesn't like
+                            const uniquePnlData = [];
+                            const seenTimes = new Set();
+                            for (const d of pnlData) {
+                                if (!seenTimes.has(d.time)) {
+                                    seenTimes.add(d.time);
+                                    uniquePnlData.push(d);
+                                }
+                            }
+                            pnlHistorySeries.setData(uniquePnlData);
+                        }
+                    }
+                }
 
             } catch (e) {
                 console.error("Failed to fetch market stats", e);
@@ -1780,7 +2262,398 @@
                 }
             }
         }
+
+        async function quickOpen(symbol, type) {
+            let side = 'LONG';
+            if (type.includes('Bearish') || type === 'OB') {
+                side = 'SHORT';
+            }
+
+            try {
+                const resp = await fetch(`/api/rsi/quick-open?symbol=${symbol}&side=${side}&reason=${type}`, {
+                    method: 'POST'
+                });
+                if (resp.ok) {
+                    showNotification(`Quick Level created for ${symbol} (${side})`, 'success');
+                    // Refresh levels table if HTMX is used elsewhere
+                    if (typeof htmx !== 'undefined') {
+                        htmx.trigger('#levels-table', 'refresh');
+                    }
+                } else {
+                    const error = await resp.text();
+                    showNotification(`Failed: ${error}`, 'error');
+                }
+            } catch (e) {
+                console.error("Quick open failed", e);
+                showNotification("Network error executing quick open", 'error');
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            const container = document.getElementById('notification-container') || createNotificationContainer();
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.style.cssText = `
+                background: ${type === 'success' ? 'rgba(0, 255, 157, 0.9)' : (type === 'error' ? 'rgba(255, 78, 107, 0.9)' : 'rgba(0, 123, 255, 0.9)')};
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                margin-bottom: 10px;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+                font-weight: 600;
+                transform: translateX(120%);
+                transition: transform 0.3s ease-out;
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255,255,255,0.2);
+            `;
+            notification.textContent = message;
+            container.appendChild(notification);
+
+            // Animate in
+            setTimeout(() => notification.style.transform = 'translateX(0)', 10);
+
+            // Animate out and remove
+            setTimeout(() => {
+                notification.style.transform = 'translateX(120%)';
+                setTimeout(() => notification.remove(), 300);
+            }, 5000);
+        }
+
+        function createNotificationContainer() {
+            const container = document.createElement('div');
+            container.id = 'notification-container';
+            container.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+            `;
+            document.body.appendChild(container);
+            return container;
+        }
+
+        async function loadRSIConfig() {
+            try {
+                const resp = await fetch('/api/rsi/config');
+                if (resp.ok) {
+                    const config = await resp.json();
+                    const form = document.getElementById('rsi-config-form');
+                    form.enabled.checked = config.enabled;
+                    form.scan_interval_minutes.value = config.scan_interval_minutes;
+                    form.period.value = config.period;
+                    form.oversold.value = config.oversold;
+                    form.overbought.value = config.overbought;
+                    form.timeframes.value = config.timeframes.join(',');
+                    form.size_usdt.value = config.size_usdt || 100;
+                    form.leverage.value = config.leverage || 10;
+                    form.take_profit_pct.value = (config.take_profit_pct * 100) || 1.2;
+                    form.trend_break_enabled.checked = config.trend_break_enabled || false;
+                    form.trend_break_window.value = config.trend_break_window || 5;
+                }
+            } catch (e) {
+                console.error("Failed to load RSI config", e);
+            }
+        }
+
+        async function updateRSIConfig() {
+            const form = document.getElementById('rsi-config-form');
+            const config = {
+                enabled: form.enabled.checked,
+                scan_interval_minutes: parseInt(form.scan_interval_minutes.value),
+                period: parseInt(form.period.value),
+                oversold: parseFloat(form.oversold.value),
+                overbought: parseFloat(form.overbought.value),
+                timeframes: form.timeframes.value.split(',').map(s => s.trim()),
+                size_usdt: parseFloat(form.size_usdt.value),
+                leverage: parseInt(form.leverage.value),
+                take_profit_pct: parseFloat(form.take_profit_pct.value) / 100,
+                trend_break_enabled: form.trend_break_enabled.checked,
+                trend_break_window: parseInt(form.trend_break_window.value)
+            };
+
+            try {
+                const resp = await fetch('/api/rsi/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                if (resp.ok) {
+                    alert("RSI Configuration updated successfully!");
+                } else {
+                    alert("Failed to update RSI configuration.");
+                }
+            } catch (e) {
+                console.error("Failed to update RSI config", e);
+            }
+        }
+
+        async function refreshRSISignals() {
+            try {
+                const resp = await fetch('/api/rsi/signals');
+                if (resp.ok) {
+                    const signals = await resp.json();
+                    const body = document.getElementById('rsi-signals-body');
+                    if (!body) return;
+
+                    if (!signals || signals.length === 0) {
+                        body.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 15px;">No signals detected yet.</td></tr>';
+                        return;
+                    }
+
+                    body.innerHTML = signals.slice().reverse().slice(0, 10).map(s => `
+                        <tr>
+                            <td class="text-muted">${new Date(s.timestamp).toLocaleTimeString()}</td>
+                            <td><strong style="color: var(--accent-color);">${s.symbol}</strong></td>
+                            <td>${s.interval}m</td>
+                            <td style="font-family: monospace; font-weight: 700; color: ${s.rsi >= 70 ? 'var(--danger)' : (s.rsi <= 30 ? 'var(--success)' : 'var(--text-color)')}">${s.rsi.toFixed(2)}</td>
+                            <td>
+                                <span class="badge" style="background: ${s.type.includes('Bull') || s.type === 'OS' ? 'rgba(0, 255, 157, 0.1)' : 'rgba(255, 78, 107, 0.1)'}; color: ${s.type.includes('Bull') || s.type === 'OS' ? '#00ffa7' : '#ff4e6b'}; border: 1px solid ${s.type.includes('Bull') || s.type === 'OS' ? '#00ffa7' : '#ff4e6b'}; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;">
+                                    ${s.type}
+                                </span>
+                            </td>
+                            <td>
+                                <div style="display: flex; gap: 5px;">
+                                    <button class="cta-button" style="font-size: 0.75rem; padding: 4px 12px; background: var(--secondary-color);" onclick="openLevelFromSignal('${s.symbol}', '${s.type}')">Open Level</button>
+                                    <button class="cta-button" style="font-size: 0.75rem; padding: 4px 12px; background: var(--success);" onclick="quickOpen('${s.symbol}', '${s.type}')">Quick Open</button>
+                                </div>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error("Failed to refresh RSI signals", e);
+            }
+        }
+
+        function openLevelFromSignal(symbol, type) {
+            const symbolInput = document.querySelector('input[name="symbol"]');
+            const sideSelect = document.querySelector('select[name="side"]');
+
+            if (symbolInput) {
+                symbolInput.value = symbol;
+                // Trigger events
+                symbolInput.dispatchEvent(new Event('input'));
+                symbolInput.dispatchEvent(new Event('change'));
+            }
+
+            if (sideSelect) {
+                if (type.includes('Bullish') || type === 'OS') {
+                    sideSelect.value = 'LONG';
+                } else if (type.includes('Bearish') || type === 'OB') {
+                    sideSelect.value = 'SHORT';
+                }
+            }
+
+            // Scroll to the Add Level card
+            for (const el of addLevelElements) {
+                if (el.textContent.includes('Add Level')) {
+                    const card = el.closest('.card');
+                    if (card) {
+                        card.scrollIntoView({ behavior: 'smooth' });
+                        card.style.outline = '2px solid var(--accent-color)';
+                        setTimeout(() => card.style.outline = 'none', 2000);
+                        break;
+                    }
+                }
+            }
+        }
+
+
+        function showHistoricalPnLChart(symbol, start, end) {
+            console.log("Showing historical chart for", symbol, start, end);
+            const modal = document.getElementById('pnlModal');
+            const title = document.getElementById('modalTitle');
+            const details = document.getElementById('modalDetails');
+            const container = document.getElementById('historicalPnLChart');
+
+            if (!modal || !container) return;
+
+            modal.style.display = 'block';
+            title.textContent = `Historical PnL: ${symbol}`;
+            details.textContent = `From ${new Date(start).toLocaleString()} to ${new Date(end).toLocaleString()}`;
+
+            if (!historicalChart) {
+                historicalChart = LightweightCharts.createChart(container, {
+                    width: container.clientWidth,
+                    height: 400,
+                    layout: {
+                        background: { type: 'solid', color: '#151632' },
+                        textColor: '#e0e0e0',
+                    },
+                    grid: {
+                        vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                        horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                    },
+                    timeScale: {
+                        timeVisible: true,
+                        secondsVisible: true,
+                    },
+                    rightPriceScale: {
+                        scaleMargins: {
+                            top: 0.1,
+                            bottom: 0.3,
+                        },
+                    },
+                });
+
+                // PnL Histogram Series
+                historicalSeries = historicalChart.addHistogramSeries({
+                    color: '#ff00ff',
+                    priceFormat: {
+                        type: 'volume',
+                    },
+                    priceScaleId: 'right',
+                });
+
+                historicalSeries.createPriceLine({
+                    price: 0,
+                    color: '#e0e0e0',
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    axisLabelVisible: false,
+                    title: '',
+                });
+
+                // RSI Series
+                historicalRSISeries = historicalChart.addLineSeries({
+                    color: '#9c27b0',
+                    lineWidth: 2,
+                    priceScaleId: 'rsi',
+                    scaleMargins: {
+                        top: 0.75,
+                        bottom: 0.05,
+                    },
+                });
+                historicalRSISeries.createPriceLine({
+                    price: 70,
+                    color: '#9c27b0',
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Dotted,
+                    axisLabelVisible: false,
+                    title: '',
+                });
+                historicalRSISeries.createPriceLine({
+                    price: 30,
+                    color: '#9c27b0',
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Dotted,
+                    axisLabelVisible: false,
+                    title: '',
+                });
+
+            } else {
+                historicalSeries.setData([]);
+                if (historicalRSISeries) historicalRSISeries.setData([]);
+            }
+
+            fetch(`/api/position-pnl-history?symbol=${symbol}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`)
+                .then(resp => resp.json())
+                .then(data => {
+                    if (data && data.length > 0) {
+                        const pnlData = data.map(h => ({
+                            time: Math.floor(new Date(h.timestamp).getTime() / 1000),
+                            value: h.unrealized_pnl,
+                            color: h.unrealized_pnl >= 0 ? '#00ff88' : '#dc3545',
+                        })).sort((a, b) => a.time - b.time);
+
+                        const rsiData = data.map(h => ({
+                            time: Math.floor(new Date(h.timestamp).getTime() / 1000),
+                            value: h.rsi
+                        })).sort((a, b) => a.time - b.time);
+
+                        const uniquePnlData = [];
+                        const uniqueRsiData = [];
+                        const seenTimes = new Set();
+                        for (let i = 0; i < pnlData.length; i++) {
+                            const d = pnlData[i];
+                            const r = rsiData[i];
+                            if (!seenTimes.has(d.time)) {
+                                seenTimes.add(d.time);
+                                uniquePnlData.push(d);
+                                uniqueRsiData.push(r);
+                            }
+                        }
+                        historicalSeries.setData(uniquePnlData);
+                        if (historicalRSISeries) historicalRSISeries.setData(uniqueRsiData);
+                        historicalChart.timeScale().fitContent();
+                    } else {
+                        console.warn("No historical PnL data found for this range.");
+                    }
+                })
+                .catch(err => console.error("Failed to fetch historical PnL", err));
+        }
+
+        function closePnlModal() {
+            const modal = document.getElementById('pnlModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        window.onclick = function (event) {
+            const modal = document.getElementById('pnlModal');
+            if (event.target == modal) {
+                closePnlModal();
+            }
+        }
+
+        function showAnalysis(jsonStr) {
+            try {
+                const data = JSON.parse(jsonStr);
+                let content = '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.9rem;">';
+                for (const [key, value] of Object.entries(data)) {
+                    let val = value;
+                    if (typeof value === 'number') val = value.toFixed(4);
+                    content += `<div><strong style="color: var(--accent-color);">${key}:</strong></div><div>${val}</div>`;
+                }
+                content += '</div>';
+
+                // Create a temporary modal or alert
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    background: var(--card-bg); padding: 25px; border-radius: 12px;
+                    border: 2px solid var(--accent-color); z-index: 10001; 
+                    box-shadow: 0 0 30px rgba(0,0,0,0.8); max-width: 400px; width: 90%;
+                `;
+                modal.innerHTML = `
+                    <h3 style="margin-top:0; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; color: var(--accent-color);">Market Snapshot at Entry</h3>
+                    ${content}
+                    <button class="cta-button" style="width:100%; margin-top:20px;" onclick="this.parentElement.remove()">Close</button>
+                `;
+
+                const backdrop = document.createElement('div');
+                backdrop.style.cssText = 'position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:10000;';
+                backdrop.onclick = () => { modal.remove(); backdrop.remove(); };
+
+                document.body.appendChild(backdrop);
+                document.body.appendChild(modal);
+            } catch (e) {
+                console.error("Failed to parse analysis JSON", e);
+                alert("Could not load analysis data");
+            }
+        }
+
+        setInterval(refreshRSISignals, 3000);
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            loadRSIConfig();
+            refreshRSISignals();
+        });
     </script>
+    <!-- Historical PnL Modal -->
+    <div id="pnlModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closePnlModal()">&times;</span>
+            <h3 id="modalTitle">Historical PnL Chart</h3>
+            <div id="historicalPnLChart"></div>
+            <div style="margin-top: 10px; font-size: 0.8rem; color: var(--text-muted); text-align: center;">
+                <span id="modalDetails"></span>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>
@@ -1793,13 +2666,16 @@
             <th>Symbol</th>
             <th>Mode</th>
             <th>Level Price</th>
-            <th>Current Price</th>
+            <th>Side</th>
+            <th>Price</th>
+            <th>RSI (1m)</th>
             <th>Zone/Tiers</th>
             <th>Size</th>
             <th>Closes</th>
             <th>Lev</th>
             <th>Margin</th>
             <th>Cooldown</th>
+            <th>SL @ Base</th>
             <th>Action</th>
         </tr>
     </thead>
@@ -1819,11 +2695,35 @@
                 {{end}}
             </td>
             <td>{{ printf "%.6f" .LevelPrice }}</td>
+            <td>
+                {{if eq .Side "BOTH"}}
+                <span class="badge"
+                    style="background: rgba(255, 255, 255, 0.1); color: var(--text-color); border: 1px solid var(--border-color);">Both</span>
+                {{else if eq .Side "LONG"}}
+                <span class="badge bg-success-subtle text-success" style="border: 1px solid var(--success);">Long</span>
+                {{else if eq .Side "SHORT"}}
+                <span class="badge bg-danger-subtle text-danger" style="border: 1px solid var(--danger);">Short</span>
+                {{else}}
+                <span class="badge"
+                    style="background: rgba(255, 255, 255, 0.1); color: var(--text-color); border: 1px solid var(--border-color);">{{.Side}}</span>
+                {{end}}
+            </td>
             <td>{{ printf "%.6f" .CurrentPrice }}</td>
+            <td
+                style="font-family: monospace; font-weight: 700; color: {{if ge .RSI 70.0}}var(--danger){{else if le .RSI 30.0}}var(--success){{else}}var(--text-color){{end}}">
+                {{printf "%.2f" .RSI}}
+            </td>
             <td>
                 <div style="font-size: 0.85em; display: grid; grid-template-columns: auto 1fr; gap: 5px;">
-                    <span class="text-success" style="font-weight: bold;">LONG</span>
-                    <div style="display: flex; gap: 5px;">
+                    <div
+                        style="grid-column: 1 / -1; display: flex; justify-content: space-around; font-size: 0.8em; color: var(--text-muted); border-bottom: 1px dotted var(--border-color); margin-bottom: 2px;">
+                        <span>{{printf "%.2f%%" (mul .UsedTier1Pct 100)}}</span>
+                        <span>{{printf "%.2f%%" (mul .UsedTier2Pct 100)}}</span>
+                        <span>{{printf "%.2f%%" (mul .UsedTier3Pct 100)}}</span>
+                    </div>
+                    <span class="{{if eq .ZoneSide " LONG"}}text-success{{else}}text-muted{{end}}"
+                        style="font-weight: bold;">LONG</span>
+                    <div style="display: flex; gap: 5px; opacity: {{if eq .ZoneSide " LONG"}}1{{else}}0.5{{end}};">
                         <span class="bg-success-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
                             (index .LongTiers 0) }}</span>
                         <span class="bg-success-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
@@ -1831,8 +2731,9 @@
                         <span class="bg-success-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
                             (index .LongTiers 2) }}</span>
                     </div>
-                    <span class="text-danger" style="font-weight: bold;">SHORT</span>
-                    <div style="display: flex; gap: 5px;">
+                    <span class="{{if eq .ZoneSide " SHORT"}}text-danger{{else}}text-muted{{end}}"
+                        style="font-weight: bold;">SHORT</span>
+                    <div style="display: flex; gap: 5px; opacity: {{if eq .ZoneSide " SHORT"}}1{{else}}0.5{{end}};">
                         <span class="bg-danger-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
                             (index .ShortTiers 0) }}</span>
                         <span class="bg-danger-subtle" style="padding: 0 4px; border-radius: 2px;">{{ printf "%.6f"
@@ -1841,6 +2742,7 @@
                             (index .ShortTiers 2) }}</span>
                     </div>
                 </div>
+
             </td>
             <td>{{ .BaseSize }}</td>
             <td>
@@ -1894,16 +2796,17 @@
             <td>{{ .Symbol }}</td>
             <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }};">{{ .Side }}</td>
             <td>{{ if eq .Size 0.0 }}-{{ else }}{{ .Size }}{{ end }}</td>
-            <td>{{ printf "%.2f" .Price }}</td>
+            <td>{{ printf "%.6f" .Price }}</td>
             <td
                 style="color: {{ if gt .RealizedPnL 0.0 }}var(--success){{ else if lt .RealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
-                {{ if ne .RealizedPnL 0.0 }}{{ printf "%.4f" .RealizedPnL }}{{ else }}-{{ end }}
+                {{ if ne .RealizedPnL 0.0 }}{{ printf "%.6f" .RealizedPnL }}{{ else }}-{{ end }}
             </td>
         </tr>
         {{ end }}
     </tbody>
 </table>
 {{ end }}
+
 
 {{ define "positions_table" }}
 <table>
@@ -1912,8 +2815,10 @@
             <th>Symbol</th>
             <th>Side</th>
             <th>Size</th>
-            <th>Entry Price</th>
+            <th>Entry</th>
             <th>Mark Price</th>
+            <th>Eval Price</th>
+            <th>RSI (1m)</th>
             <th>Unrealized PnL</th>
             <th>Lev</th>
             <th>Margin</th>
@@ -1929,14 +2834,18 @@
                 bold;">{{ .Side }}</td>
             <td>{{ .Size }}</td>
             <td>{{ printf "%.6f" .EntryPrice }}</td>
-            <td>{{ printf "%.6f" .CurrentPrice }}</td>
+            <td class="text-muted">{{ printf "%.6f" .MarkPrice }}</td>
+            <td style="font-weight: bold; color: var(--accent-color);">{{ printf "%.6f" .EvalPrice }}</td>
             <td
-                style="color: {{ if gt .UnrealizedPnL 0.0 }}var(--success){{ else }}var(--danger){{ end }}; font-weight: bold;">
+                style="font-family: monospace; font-weight: 700; color: {{if ge .RSI 70.0}}var(--danger){{else if le .RSI 30.0}}var(--success){{else}}var(--text-color){{end}}">
+                {{printf "%.2f" .RSI}}
+            </td>
+            <td
+                style="color: {{ if gt .UnrealizedPnL 0.0 }}var(--success){{ else if lt .UnrealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
                 {{ printf "%.6f" .UnrealizedPnL }}</td>
-            <td>{{ .Leverage }}</td>
+            <td>{{ .Leverage }}x</td>
             <td style="color: {{ if eq .MarginType " isolated" }}var(--info){{ else }}var(--text-muted){{ end }};
-                font-weight: bold;">
-                {{ .MarginType }}</td>
+                font-weight: bold;">{{ .MarginType }}</td>
             <td>
                 <button class="delete-btn" hx-delete="/positions/{{ .Symbol }}" hx-target="#positions-table"
                     hx-confirm="Are you sure you want to close this position?">Close</button>
@@ -1953,12 +2862,22 @@
 </table>
 {{ end }}
 
+
 {{ define "history_table" }}
+<div
+    style="padding: 10px 15px; border-bottom: 2px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.1); margin-bottom: 1px;">
+    <span style="font-weight: 600; color: var(--text-muted); font-size: 0.9rem;">Total Realized PnL:</span>
+    <span
+        style="font-size: 1.1rem; font-weight: bold; font-family: 'Inter', monospace; color: {{ if gt .TotalPnL 0.0 }}var(--success){{ else if lt .TotalPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }};">
+        {{ printf "$%.2f" .TotalPnL }}
+    </span>
+</div>
 <table>
     <thead>
         <tr>
             <th>Time</th>
             <th>Symbol</th>
+            <th>Source</th>
             <th>Side</th>
             <th>Size</th>
             <th>Entry</th>
@@ -1966,34 +2885,97 @@
             <th>PnL</th>
             <th>Lev</th>
             <th>Margin</th>
+            <th>Chart</th>
+            <th>Snapshot</th>
         </tr>
     </thead>
     <tbody>
-        {{ if . }}
-        {{ range . }}
+        {{ if .History }}
+        {{ range .History }}
         <tr>
             <td class="text-muted">{{ .ClosedAt.Format "15:04:05" }}</td>
             <td><strong>{{ .Symbol }}</strong></td>
-            <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
+            <td><span class="badge badge-blue">{{ .Source }}</span></td>
+            <td style="color: {{ if eq .Side " SHORT" }}var(--danger){{ else }}var(--success){{ end }}; font-weight:
                 bold;">{{ .Side }}</td>
             <td>{{ .Size }}</td>
             <td>{{ printf "%.6f" .EntryPrice }}</td>
             <td>{{ printf "%.6f" .ExitPrice }}</td>
             <td
                 style="color: {{ if gt .RealizedPnL 0.0 }}var(--success){{ else if lt .RealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
-                {{ printf "%.4f" .RealizedPnL }}
+                {{ printf "%.6f" .RealizedPnL }}
             </td>
             <td>{{ .Leverage }}x</td>
             <td>{{ .MarginType }}</td>
+            <td>
+                {{ if not .OpenedAt.IsZero }}
+                <button class="cta-button"
+                    style="font-size: 0.7rem; padding: 2px 6px; background: var(--secondary-color);"
+                    onclick="showHistoricalPnLChart('{{ .Symbol }}', '{{ .OpenedAt.Format " 2006-01-02T15:04:05Z"
+                    }}', '{{ .ClosedAt.Format "2006-01-02T15:04:05Z" }}' )">
+                    📊 Chart
+                </button>
+                {{ else }}
+                <span class="text-muted">-</span>
+                {{ end }}
+            </td>
+            <td>
+                {{ if .AnalysisJSON }}
+                <button class="cta-button"
+                    style="font-size: 0.7rem; padding: 2px 6px; background: var(--secondary-color);"
+                    onclick="showAnalysis('{{ .AnalysisJSON }}')">📜 View</button>
+                {{ else }}
+                <span class="text-muted">-</span>
+                {{ end }}
+            </td>
         </tr>
         {{ end }}
         {{ else }}
         <tr>
-            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 20px;">No history available
+            <td colspan="12" style="text-align: center; color: var(--text-muted); padding: 20px;">No history available
             </td>
         </tr>
         {{ end }}
     </tbody>
 </table>
 {{ end }}
-```
+
+{{ define "pnl_history_table" }}
+<table>
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Size</th>
+            <th>Entry Price</th>
+            <th>Mark Price</th>
+            <th>Unrealized PnL</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{ if . }}
+        {{ range . }}
+        <tr>
+            <td class="text-muted">{{ .Timestamp.Format "15:04:05" }}</td>
+            <td><strong>{{ .Symbol }}</strong></td>
+            <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
+                bold;">{{ .Side }}</td>
+            <td>{{ printf "%.4f" .Size }}</td>
+            <td>{{ printf "%.6f" .EntryPrice }}</td>
+            <td>{{ printf "%.6f" .MarkPrice }}</td>
+            <td
+                style="color: {{ if gt .UnrealizedPnL 0.0 }}var(--success){{ else if lt .UnrealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">
+                {{ printf "%.6f" .UnrealizedPnL }}
+            </td>
+        </tr>
+        {{ end }}
+        {{ else }}
+        <tr>
+            <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">No PnL history
+                available</td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>
+{{ end }}

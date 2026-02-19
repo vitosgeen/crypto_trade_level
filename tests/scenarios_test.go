@@ -668,6 +668,9 @@ func TestScenario_H2_Multiplier_Double_OnProfit(t *testing.T) {
 	h.AssertLastTrade(domain.SideShort, 0) // Close
 
 	// 4. Re-Open Short T1
+	// Re-setup level since it was deleted after profit
+	h.SetupLevel(10000, true)
+
 	// Now we expect size to be DOUBLED (0.2) because we "won" the last trade.
 	h.Tick(9900)                             // Reset to below T1
 	h.Tick(9960)                             // Cross T1 Up -> Open
