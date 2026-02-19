@@ -676,8 +676,12 @@ func (s *Server) handleBiggestOrderBook(w http.ResponseWriter, r *http.Request) 
 
 	price, err := s.marketService.GetBiggestOrderBookPrice(r.Context(), symbol, currentPrice)
 	if err != nil {
-		s.logger.Error("Failed to get biggest order book price", zap.String("symbol", symbol), zap.Error(err))
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.logger.Warn("Failed to get biggest order book price", zap.String("symbol", symbol), zap.Error(err))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity) // 422
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
 		return
 	}
 

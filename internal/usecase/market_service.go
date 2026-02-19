@@ -1118,39 +1118,46 @@ func (s *MarketService) GetBiggestOrderBookPrice(ctx context.Context, symbol str
 		return 0, err
 	}
 
-	var bestPrice float64
-	var maxVol float64
-
-	for _, c := range clusters {
-		// Distance in percentage
-		dist := math.Abs(c.Price-currentPrice) / currentPrice
-
-		// Filter: Near but not too close
-		// Near: 2%
-		// Too close: 0.15% (to avoid immediate entry/noise)
-		if dist >= 0.0015 && dist <= 0.02 {
-			if c.Volume > maxVol {
-				maxVol = c.Volume
-				bestPrice = c.Price
-			}
-		}
-	}
-
-	if bestPrice == 0 {
-		// Fallback: try a wider range if nothing found in 2%
+	findIn := func(limit float64) (float64, float64, float64, int) {
+		var mVol, bPrice, sVol float64
+		var cnt int
 		for _, c := range clusters {
+			// Distance in percentage
 			dist := math.Abs(c.Price-currentPrice) / currentPrice
-			if dist >= 0.0015 && dist <= 0.05 {
-				if c.Volume > maxVol {
-					maxVol = c.Volume
-					bestPrice = c.Price
+
+			// Filter: Near but not too close
+			// Near: limit (2% or 5%)
+			// Too close: 0.15% (to avoid immediate entry/noise)
+			if dist >= 0.0015 && dist <= limit {
+				sVol += c.Volume
+				cnt++
+				if c.Volume > mVol {
+					mVol = c.Volume
+					bPrice = c.Price
 				}
 			}
 		}
+		return bPrice, mVol, sVol, cnt
+	}
+
+	bestPrice, maxVol, sumVol, count := findIn(0.02)
+	if bestPrice == 0 {
+		// Fallback: try a wider range if nothing found in 2%
+		bestPrice, maxVol, sumVol, count = findIn(0.05)
 	}
 
 	if bestPrice == 0 {
 		return 0, fmt.Errorf("no suitable order book level found for %s", symbol)
+	}
+
+	// Structure Check: "No structure in the book"
+	// Ensure the biggest wall is distinctively larger than the average noise.
+	if count > 1 {
+		avgOthers := (sumVol - maxVol) / float64(count-1)
+		// Threshold: Max must be at least 30% larger than the average of the rest
+		if maxVol < avgOthers*1.3 {
+			return 0, fmt.Errorf("No structure in the book")
+		}
 	}
 
 	return bestPrice, nil

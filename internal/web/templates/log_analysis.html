@@ -400,6 +400,12 @@
                                 style="width: 18px; height: 18px;">
                             <span style="color: var(--warning);">Ignore Sentiment</span>
                         </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 10px; cursor: pointer; margin-left: 20px;"
+                            title="Skip if RSI is between 45 and 55">
+                            <input type="checkbox" id="avoidChopToggle" style="width: 18px; height: 18px;">
+                            <span style="color: var(--text-muted);">Avoid Chop</span>
+                        </label>
                     </div>
                     <div id="lastCheckTime" style="font-size: 0.8rem; color: var(--text-muted);"></div>
                 </div>
@@ -833,6 +839,7 @@
             const autoLevelTier3 = parseFloat(document.getElementById('autoLevelTier3').value) || 0.15;
             const minConsistent = parseInt(document.getElementById('monitorConsistent').value) || 0;
             const ignoreSentiment = document.getElementById('ignoreSentimentToggle').checked;
+            const avoidChop = document.getElementById('avoidChopToggle').checked;
             const tpByExchange = document.getElementById('tpByExchangeToggle').checked;
 
             console.log("Auto Level Size: " + autoLevelSize);
@@ -879,6 +886,15 @@
                 // Check Consistency Condition
                 const consistentCount = row.querySelectorAll('.badge-consistent').length;
                 if (consistentCount < minConsistent) continue;
+
+                // Check Chop Condition (RSI)
+                if (avoidChop) {
+                    const rsiVal = parseFloat(row.cells[9].getAttribute('data-val')) || 0;
+                    // Standard Chop Range: 45 - 55
+                    if (rsiVal >= 45 && rsiVal <= 55) {
+                        continue;
+                    }
+                }
 
                 if (!cell) continue;
 
@@ -955,7 +971,11 @@
                                         targetPrice = data.price;
                                         console.log(`Found biggest order book level for ${symbol}: ${targetPrice}`);
                                     } else {
-                                        console.error(`Failed to fetch biggest order book for ${symbol}`);
+                                        const errData = await resp.json().catch(() => ({}));
+                                        if (resp.status === 422 && errData.error === "No structure in the book") {
+                                            anomalies.push(`${symbol}: Level Declined - No structure in book`);
+                                        }
+                                        console.error(`Failed to fetch biggest order book for ${symbol}: ${errData.error || resp.statusText}`);
                                     }
                                 } catch (err) {
                                     console.error(`Error fetching biggest order book for ${symbol}:`, err);
@@ -1181,9 +1201,15 @@
                     if (resp.ok) {
                         const data = await resp.json();
                         price = data.price;
+                    } else {
+                        const errData = await resp.json().catch(() => ({}));
+                        alert(`Cannot create level: ${errData.error || "Failed to fetch order book data"}`);
+                        return;
                     }
                 } catch (err) {
                     console.error("Failed to fetch biggest OB", err);
+                    alert("Error fetching order book data");
+                    return;
                 }
             } else if (mode === 'local_high_low') {
                 if (realPcntChange < 0) {
