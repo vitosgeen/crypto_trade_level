@@ -85,19 +85,7 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 	}
 	defer file.Close()
 
-	// Map symbol -> list of (Time, OI)
-	type Point struct {
-		Time       time.Time
-		OI         float64
-		Price      float64
-		Volume     float64
-		RSI        float64
-		MACD       float64
-		MACDHist   float64
-		ShadowPcnt float64
-	}
-	history := make(map[string][]Point)
-
+	var entries []LogEntry
 	decoder := json.NewDecoder(file)
 	for decoder.More() {
 		var entry LogEntry
@@ -105,9 +93,32 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 			s.logger.Error("Decode error", zap.Error(err))
 			continue
 		}
+		entries = append(entries, entry)
+	}
 
+	return s.AnalyzeEntries(entries), nil
+}
+
+type LogPoint struct {
+	Time       time.Time
+	OI         float64
+	Price      float64
+	Volume     float64
+	RSI        float64
+	MACD       float64
+	MACDHist   float64
+	ShadowPcnt float64
+}
+
+func (s *LogAnalyzerService) AnalyzeEntries(entries []LogEntry) []AnalysisResult {
+	if len(entries) < 2 {
+		return nil
+	}
+
+	history := make(map[string][]LogPoint)
+	for _, entry := range entries {
 		for _, coin := range entry.Data {
-			history[coin.Symbol] = append(history[coin.Symbol], Point{
+			history[coin.Symbol] = append(history[coin.Symbol], LogPoint{
 				Time:       entry.Time,
 				OI:         coin.OpenInterest,
 				Price:      coin.LastPrice,
@@ -120,11 +131,14 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 		}
 	}
 
-	var results []AnalysisResult
+	return s.AnalyzeMap(history)
+}
 
-	// Check for dated futures (e.g. "SYMBOL-27FEB26")
-	// The pattern is typically a hyphen followed by some characters.
-	// User specifically asked to ignore "coins like this 27FEB26", which appear as "DOGEUSDT-27FEB26".
+func (s *LogAnalyzerService) AnalyzeMap(history map[string][]LogPoint) []AnalysisResult {
+	if len(history) == 0 {
+		return nil
+	}
+	var results []AnalysisResult
 	datedFuturePattern := regexp.MustCompile(`-[0-9]{2}[A-Z]{3}[0-9]{2}`)
 
 	for symbol, points := range history {
@@ -132,53 +146,34 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 			continue
 		}
 
-		// Skip dated futures
 		if datedFuturePattern.MatchString(symbol) {
 			continue
 		}
 
-		// Skip "PERP" coins (e.g. FILPERP) which are usually redundant or deprecated on some exchanges vs linear perp with USDT
 		if strings.HasSuffix(symbol, "PERP") {
 			continue
 		}
 
-		// We assume points are sorted by time (since we read log in order)
 		current := points[len(points)-1]
 		endOI := current.OI
 		endVol := current.Volume
-		startOI := points[0].OI // Just for reference of total span
+		startOI := points[0].OI
 
-		// Helper to calculate change for a duration
 		calcChange := func(duration time.Duration) TimeframeChange {
 			targetTime := current.Time.Add(-duration)
 
-			// Find point closest to targetTime (but not after it if possible, or interpolation)
-			// Simple approach: find first point >= targetTime
-			// Since points are sorted, we can use binary search or simple scan (scan is fine for log files per symbol)
-			// But for simplicity, let's just reverse scan until we hit it
-
-			var startPoint Point
+			var startPoint LogPoint
 			found := false
 
 			for i := len(points) - 1; i >= 0; i-- {
 				if points[i].Time.Before(targetTime) || points[i].Time.Equal(targetTime) {
 					startPoint = points[i]
-					// We want the one just before or at target time.
-					// Actually, if we have points at T, T-1m, T-2m...
-					// T-10m might correspond exactly.
 					found = true
 					break
 				}
 			}
 
-			// If we didn't find a point far back enough, use the detailed oldest point?
-			// Or should we return 0?
-			// If dataset < duration, we can't calculate accurate duration change.
 			if !found {
-				// use earliest available if requested duration > available history?
-				// User wants "changes by time frames". If we only have 1 hour of logs, 24h change should probably be the 1h change or marked N/A.
-				// Let's use 0 if not enough data, to distinguish "no change" from "insufficient data" (though struct is float).
-				// Let's just return empty.
 				return TimeframeChange{}
 			}
 
@@ -188,8 +183,6 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 
 			changePcnt := ((endOI - startPoint.OI) / startPoint.OI) * 100
 
-			// Calculate consistency in the range [startPoint index ... end]
-			// We need index of startPoint
 			startIndex := -1
 			for i := 0; i < len(points); i++ {
 				if points[i].Time == startPoint.Time {
@@ -285,12 +278,11 @@ func (s *LogAnalyzerService) AnalyzeLatestLogs() ([]AnalysisResult, error) {
 		}
 	}
 
-	// Sort by 1h absolute change percentage (default sort)
 	sort.Slice(results, func(i, j int) bool {
 		return math.Abs(results[i].Change1h.ChangePcnt) > math.Abs(results[j].Change1h.ChangePcnt)
 	})
 
-	return results, nil
+	return results
 }
 
 type ChartPoint struct {

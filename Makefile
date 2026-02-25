@@ -43,6 +43,8 @@ stop:
 
 restart: stop start
 
+force-restart: force-stop start
+
 force-stop:
 	@echo "Force stopping all bot processes..."
 	@# Kill process holding the port first
@@ -55,5 +57,5 @@ force-stop:
 	@rm -f bot.pid
 	@echo "All bot processes stopped and port 8078 freed."
 
-analyze:
-	@go run cmd/analyzer/main.go
+
+

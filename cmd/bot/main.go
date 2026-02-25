@@ -27,7 +27,8 @@ type Config struct {
 		RESTEndpoint string `yaml:"rest_endpoint"`
 	} `yaml:"exchanges"`
 	Polling struct {
-		LevelsReloadMs int `yaml:"levels_reload_ms"`
+		LevelsReloadMs         int `yaml:"levels_reload_ms"`
+		AnalysisRefreshSeconds int `yaml:"analysis_refresh_seconds"`
 	} `yaml:"polling"`
 	Logging struct {
 		Level string `yaml:"level"`
@@ -228,7 +229,19 @@ func main() {
 	rsiMonitorService := usecase.NewRSIMonitorService(marketService, svc, log, rsiConfig)
 	go rsiMonitorService.Start(context.Background())
 
-	server := web.NewServer(port, store, store, store, svc, marketService, speedBotService, fundingBotService, rsiMonitorService, log)
+	server := web.NewServer(
+		port,
+		store,
+		store,
+		store,
+		svc,
+		marketService,
+		speedBotService,
+		fundingBotService,
+		rsiMonitorService,
+		log,
+		time.Duration(cfg.Polling.AnalysisRefreshSeconds)*time.Second,
+	)
 
 	// 8. Start Server
 	go func() {

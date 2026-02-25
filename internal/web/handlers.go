@@ -691,10 +691,50 @@ func (s *Server) handleBiggestOrderBook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"symbol": symbol,
+		"price":  price,
+	})
+}
+
+func (s *Server) handleStrongSideOrderBook(w http.ResponseWriter, r *http.Request) {
+	symbol := r.URL.Query().Get("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	currentPriceStr := r.URL.Query().Get("price")
+	var currentPrice float64
+	if currentPriceStr != "" {
+		currentPrice, _ = strconv.ParseFloat(currentPriceStr, 64)
+	}
+
+	if currentPrice == 0 {
+		currentPrice = s.service.GetLatestPrice(symbol)
+	}
+
+	if currentPrice == 0 {
+		http.Error(w, "Could not determine current price", http.StatusInternalServerError)
+		return
+	}
+
+	price, side, err := s.marketService.GetStrongSidePrice(r.Context(), symbol, currentPrice)
+	if err != nil {
+		s.logger.Warn("Failed to get strong side order book price", zap.String("symbol", symbol), zap.Error(err))
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity) // 422
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"symbol": symbol,
 		"price":  price,
+		"side":   side,
 	})
 }
 
@@ -988,16 +1028,11 @@ func (s *Server) handleFundingCoinDetail(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) handleLogAnalysis(w http.ResponseWriter, r *http.Request) {
-	analyzer := usecase.NewLogAnalyzerService(s.logger)
-	results, err := analyzer.AnalyzeLatestLogs()
-	if err != nil {
-		s.logger.Error("Failed to analyze logs", zap.Error(err))
-		http.Error(w, fmt.Sprintf("Analysis failed: %v", err), http.StatusInternalServerError)
-		return
-	}
+	results := s.levelBotWorker.GetAnalysisResults()
 
 	data := map[string]interface{}{
-		"Results": results,
+		"Results":         results,
+		"RefreshInterval": int(s.levelBotWorker.GetRefreshInterval().Seconds()),
 	}
 
 	if r.URL.Query().Get("partial") == "true" {

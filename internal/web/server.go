@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/vitos/crypto_trade_level/internal/domain"
 	"github.com/vitos/crypto_trade_level/internal/usecase"
@@ -36,6 +37,7 @@ func NewServer(
 	fundingBotService *usecase.FundingBotService,
 	rsiMonitorService *usecase.RSIMonitorService,
 	logger *zap.Logger,
+	analysisRefreshInterval time.Duration,
 ) *Server {
 	s := &Server{
 		router:            http.NewServeMux(),
@@ -46,7 +48,7 @@ func NewServer(
 		marketService:     marketService,
 		speedBotService:   speedBotService,
 		fundingBotService: fundingBotService,
-		levelBotWorker:    usecase.NewLevelBotWorker(service, logger),
+		levelBotWorker:    usecase.NewLevelBotWorker(service, logger, analysisRefreshInterval),
 		rsiMonitorService: rsiMonitorService,
 		logger:            logger,
 	}
@@ -92,6 +94,7 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /api/liquidity", s.handleLiquidity)
 	s.router.HandleFunc("GET /api/liquidity-history", s.handleLiquidityHistory)
 	s.router.HandleFunc("GET /api/orderbook/biggest", s.handleBiggestOrderBook)
+	s.router.HandleFunc("GET /api/orderbook/strong-side", s.handleStrongSideOrderBook)
 	s.router.HandleFunc("GET /api/orderbook/analyze-imbalance", s.handleAnalyzeLiquidityImbalance)
 
 	// Status

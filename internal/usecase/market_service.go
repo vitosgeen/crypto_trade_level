@@ -1168,6 +1168,36 @@ func (s *MarketService) GetBiggestOrderBookPrice(ctx context.Context, symbol str
 	return bestPrice, nil
 }
 
+func (s *MarketService) GetStrongSidePrice(ctx context.Context, symbol string, currentPrice float64) (float64, string, error) {
+	clusters, err := s.GetLiquidityClusters(ctx, symbol)
+	if err != nil {
+		return 0, "", err
+	}
+
+	// Determine strong side in 2% range
+	rangeLimit := 0.02
+	var bidVol, askVol float64
+	for _, c := range clusters {
+		dist := math.Abs(c.Price-currentPrice) / currentPrice
+		if dist <= rangeLimit {
+			if c.Type == "bid" {
+				bidVol += c.Volume
+			} else {
+				askVol += c.Volume
+			}
+		}
+	}
+
+	strongSide := "bid"
+	if askVol > bidVol {
+		strongSide = "ask"
+	}
+
+	// Use GetBiggestOrderBookPrice but force the side to strongSide
+	price, err := s.GetBiggestOrderBookPrice(ctx, symbol, currentPrice, strongSide)
+	return price, strongSide, err
+}
+
 func (s *MarketService) HasNearbySignificantWall(ctx context.Context, symbol string, targetPrice float64, maxDevPct float64) (float64, bool, error) {
 	clusters, err := s.GetLiquidityClusters(ctx, symbol)
 	if err != nil {

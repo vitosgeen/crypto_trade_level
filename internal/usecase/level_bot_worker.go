@@ -17,24 +17,38 @@ import (
 )
 
 type LevelBotWorker struct {
-	service *LevelService
-	logger  *zap.Logger
+	service         *LevelService
+	logger          *zap.Logger
+	refreshInterval time.Duration
 
-	mu         sync.RWMutex
-	cached     []domain.CoinData
-	lastUpdate time.Time
+	mu              sync.RWMutex
+	cached          []domain.CoinData
+	lastUpdate      time.Time
+	history         map[string][]LogPoint
+	analysisResults []AnalysisResult
+	analyzer        *LogAnalyzerService
 }
 
-func NewLevelBotWorker(service *LevelService, logger *zap.Logger) *LevelBotWorker {
+func NewLevelBotWorker(service *LevelService, logger *zap.Logger, refreshInterval time.Duration) *LevelBotWorker {
+	if refreshInterval <= 0 {
+		refreshInterval = 1 * time.Minute
+	}
 	return &LevelBotWorker{
-		service: service,
-		logger:  logger,
+		service:         service,
+		logger:          logger,
+		refreshInterval: refreshInterval,
+		history:         make(map[string][]LogPoint),
+		analyzer:        NewLogAnalyzerService(logger),
 	}
 }
 
 func (w *LevelBotWorker) Start(ctx context.Context) {
-	w.logger.Info("Starting Level Bot Worker")
-	ticker := time.NewTicker(1 * time.Minute)
+	w.logger.Info("Starting Level Bot Worker", zap.Duration("refresh_interval", w.refreshInterval))
+
+	// Prime history from file
+	w.primeHistory()
+
+	ticker := time.NewTicker(w.refreshInterval)
 
 	// Run immediately first time
 	go w.collectData(ctx)
@@ -48,22 +62,65 @@ func (w *LevelBotWorker) Start(ctx context.Context) {
 			case <-ticker.C:
 				w.collectData(ctx)
 			}
-			// Run cleanup periodically
-			go func() {
-				cleanupTicker := time.NewTicker(1 * time.Hour)
-				defer cleanupTicker.Stop()
-				w.cleanupLogs() // Run immediately
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case <-cleanupTicker.C:
-						w.cleanupLogs()
-					}
-				}
-			}()
 		}
 	}()
+
+	// Run cleanup periodically
+	go func() {
+		cleanupTicker := time.NewTicker(1 * time.Hour)
+		defer cleanupTicker.Stop()
+		w.cleanupLogs() // Run immediately
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-cleanupTicker.C:
+				w.cleanupLogs()
+			}
+		}
+	}()
+}
+
+func (w *LevelBotWorker) primeHistory() {
+	allResults, err := w.analyzer.AnalyzeLatestLogs()
+	if err == nil {
+		w.mu.Lock()
+		w.analysisResults = allResults
+		// Also try to load entries for continuous history
+		logDir := "logs/level_bot"
+		files, _ := os.ReadDir(logDir)
+		var latestFile string
+		for _, f := range files {
+			if filepath.Ext(f.Name()) == ".jsonl" {
+				latestFile = filepath.Join(logDir, f.Name())
+			}
+		}
+		if latestFile != "" {
+			file, err := os.Open(latestFile)
+			if err == nil {
+				defer file.Close()
+				decoder := json.NewDecoder(file)
+				for decoder.More() {
+					var entry LogEntry
+					if err := decoder.Decode(&entry); err == nil {
+						for _, coin := range entry.Data {
+							w.history[coin.Symbol] = append(w.history[coin.Symbol], LogPoint{
+								Time:       entry.Time,
+								OI:         coin.OpenInterest,
+								Price:      coin.LastPrice,
+								Volume:     coin.Volume24h,
+								RSI:        coin.RSI,
+								MACD:       coin.MACD,
+								MACDHist:   coin.MACDHist,
+								ShadowPcnt: coin.ShadowPcnt,
+							})
+						}
+					}
+				}
+			}
+		}
+		w.mu.Unlock()
+	}
 }
 
 func (w *LevelBotWorker) GetData() []domain.CoinData {
@@ -75,9 +132,18 @@ func (w *LevelBotWorker) GetData() []domain.CoinData {
 	return result
 }
 
+func (w *LevelBotWorker) GetRefreshInterval() time.Duration {
+	return w.refreshInterval
+}
+
+func (w *LevelBotWorker) GetAnalysisResults() []AnalysisResult {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.analysisResults
+}
+
 func (w *LevelBotWorker) collectData(ctx context.Context) {
 	start := time.Now()
-	// w.logger.Info("Worker: Collecting Level Bot data...")
 
 	instruments, err := w.service.GetExchange().GetInstruments(ctx, "linear")
 	if err != nil {
@@ -158,19 +224,10 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 		return allCoins[i].OpenInterestValue > allCoins[j].OpenInterestValue
 	})
 
-	// Take top coins to calculate range (increased limit to 200 for better market coverage)
 	limit := 200
 	if len(allCoins) < limit {
 		limit = len(allCoins)
 	}
-
-	// We only want to process the top 'limit' coins, but we want to return all coins?
-	// The original code only processed the top 60, but passed `allCoins` (which contains ALL coins) to `allCoins[idx]`.
-	// Wait, strictly `allCoins` in the original code had size of all instruments.
-	// The loop `for i := 0; i < limit; i++` only processed the top 60.
-	// The template iterates over `Instruments`, which is passed `allCoins`.
-	// So only the top 60 have the detailed candle data (`Range10m` etc), others have 0.
-	// That's fine, we replicate that.
 
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, 10) // Concurrency limit
@@ -183,32 +240,24 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 			defer func() { <-semaphore }()
 
 			symbol := allCoins[idx].Symbol
-			// 4. RSI & MACD (1m)
-			// We fetch 100 candles once and use them for both RSI and MACD
 			candles1m, err := w.service.GetExchange().GetCandles(ctx, symbol, "1", 100)
 			if err == nil && len(candles1m) >= 34 {
-				// Calculate RSI
 				rsi := w.service.market.CalculateRSI(candles1m, 14)
 				if len(rsi) > 0 {
 					allCoins[idx].RSI = rsi[len(rsi)-1]
 				}
-
-				// Calculate MACD
 				macd, signal, hist := w.service.market.CalculateMACD(candles1m, 12, 26, 9)
 				if len(macd) > 0 {
 					allCoins[idx].MACD = macd[len(macd)-1]
 					allCoins[idx].MACDSignal = signal[len(signal)-1]
 					allCoins[idx].MACDHist = hist[len(hist)-1]
 				}
-
-				// Calculate Average Shadow % (Wickiness) over last 60 candles
 				count := 0
 				totalShadowPcnt := 0.0
 				limitShadow := 60
 				if len(candles1m) < limitShadow {
 					limitShadow = len(candles1m)
 				}
-				// Use most recent candles
 				for j := len(candles1m) - limitShadow; j < len(candles1m); j++ {
 					c := candles1m[j]
 					rng := c.High - c.Low
@@ -224,7 +273,6 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 				}
 			}
 
-			// Range 10m: use the candles we already fetched (candles1m)
 			if len(candles1m) >= 10 {
 				last10 := candles1m[len(candles1m)-10:]
 				minL, maxH := last10[0].Low, last10[0].High
@@ -240,7 +288,6 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 					allCoins[idx].Range10m = ((maxH - minL) / minL) * 100
 					allCoins[idx].Max10m = maxH
 					allCoins[idx].Min10m = minL
-					// Trend: Current vs Start of range
 					startPrice := last10[0].Open
 					if allCoins[idx].LastPrice > startPrice {
 						allCoins[idx].Trend10m = "up"
@@ -250,7 +297,6 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 				}
 			}
 
-			// Range 1h: use the candles we already fetched (candles1m)
 			if len(candles1m) >= 60 {
 				last60 := candles1m[len(candles1m)-60:]
 				minL, maxH := last60[0].Low, last60[0].High
@@ -266,7 +312,6 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 					allCoins[idx].Range1h = ((maxH - minL) / minL) * 100
 					allCoins[idx].Max1h = maxH
 					allCoins[idx].Min1h = minL
-					// Trend: Current vs Start of range
 					startPrice := last60[0].Open
 					if allCoins[idx].LastPrice > startPrice {
 						allCoins[idx].Trend1h = "up"
@@ -274,12 +319,8 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 						allCoins[idx].Trend1h = "down"
 					}
 				}
-			} else {
-				// Fallback if not enough 1m candles for 1h range directly from this fetch
-				// but we fetched 100, so 60 should be there.
 			}
 
-			// Range 4h: 4 x 60m candles (last 4 hours)
 			candles4h, _ := w.service.GetExchange().GetCandles(ctx, symbol, "60", 4)
 			if len(candles4h) > 0 {
 				minL, maxH := candles4h[0].Low, candles4h[0].High
@@ -295,7 +336,6 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 					allCoins[idx].Range4h = ((maxH - minL) / minL) * 100
 					allCoins[idx].Max4h = maxH
 					allCoins[idx].Min4h = minL
-					// Trend: Current vs Start of range
 					startPrice := candles4h[0].Open
 					if allCoins[idx].LastPrice > startPrice {
 						allCoins[idx].Trend4h = "up"
@@ -304,49 +344,6 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 					}
 				}
 			}
-
-			// Re-calculate highlights because Max/Min might have changed from candles?
-			// The original code calculated highlights based on Ticker High/Low 24h, AND 4h/1h/24h.
-			// Wait, the original code had:
-			// if t.Low24h > 0 {
-			//    ...
-			//    // Highlight logic
-			//    if coin.Max4h > 0 ...
-			// }
-			// NOTE: In the original loop, coin.Max4h was 0 when created from Ticker.
-			// However, coin is a COPY in the loop? `coin := CoinData{...}`.
-			// No, `allCoins` is a slice of structs.
-			// Inside the Goroutine, `allCoins[idx]` is modified.
-			// In the original Ticker loop, `coin.Max4h` is NOT set yet.
-			// So `coin.Near4hMax` would be false initially.
-			// BUT, the original code had `if t.Low24h > 0` block where it did highlight logic.
-			// At that point `coin.Max4h` etc are 0.
-			// So `coin.Max4h > 0` checks would fail.
-			// Thus, `Near4hMax` etc were effectively mostly false unless I missed something.
-			// Wait, `Max24h` IS set fromTicker. `Next24hMax` is checked.
-			// But `Max4h` is zero.
-			// So `Near4hMax` was likely broken in the original code logic order?
-			// Or maybe I missed where `Max4h` was set before highlight logic?
-			// `coin.Max4h` is set in the goroutine later.
-			// So initially `Near4hMax` is false.
-			// The goroutine sets `Max4h` but does NOT update `Near4hMax`.
-			// So `Near4hMax` was probably never true in the original code?
-
-			// Let's re-read the original ViewCodeItem.
-			/*
-			   if t.Low24h > 0 {
-			       coin.Range24h = ...
-			       coin.Max24h = t.High24h
-			       ...
-			       if coin.Max4h > 0 && ... // This is inside the initial loop. coin.Max4h IS 0 here.
-			   }
-			   allCoins = append(allCoins, coin)
-			*/
-			// Yes, checks for Max4h > 0 inside the first loop are futile.
-			// Max24h IS set. So at least Near24hMax works.
-
-			// I should probably fix this opportunity to update the highlight logic AFTER setting the candles.
-			// I will add highlight logic inside the goroutine after setting Max4h/Min4h.
 
 			threshold := 0.001
 			if allCoins[idx].Max4h > 0 && math.Abs(allCoins[idx].LastPrice-allCoins[idx].Max4h)/allCoins[idx].Max4h <= threshold {
@@ -373,6 +370,34 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 	w.mu.Lock()
 	w.cached = allCoins
 	w.lastUpdate = time.Now()
+
+	// Update History (Compact)
+	maxHistoryPoints := int(24 * time.Hour / w.refreshInterval)
+	if maxHistoryPoints < 100 {
+		maxHistoryPoints = 100
+	}
+
+	for _, coin := range allCoins {
+		point := LogPoint{
+			Time:       w.lastUpdate,
+			OI:         coin.OpenInterest,
+			Price:      coin.LastPrice,
+			Volume:     coin.Volume24h,
+			RSI:        coin.RSI,
+			MACD:       coin.MACD,
+			MACDHist:   coin.MACDHist,
+			ShadowPcnt: coin.ShadowPcnt,
+		}
+		w.history[coin.Symbol] = append(w.history[coin.Symbol], point)
+
+		// Prune
+		if len(w.history[coin.Symbol]) > maxHistoryPoints {
+			w.history[coin.Symbol] = w.history[coin.Symbol][len(w.history[coin.Symbol])-maxHistoryPoints:]
+		}
+	}
+
+	// Run Analysis in memory
+	w.analysisResults = w.analyzer.AnalyzeMap(w.history)
 	w.mu.Unlock()
 
 	w.logData(allCoins)
@@ -434,18 +459,12 @@ func (w *LevelBotWorker) cleanupLogs() {
 			continue
 		}
 
-		// Parse date from filename: data_2006-01-02.jsonl
 		dateStr := strings.TrimSuffix(strings.TrimPrefix(entry.Name(), "data_"), ".jsonl")
 		date, err := time.Parse("2006-01-02", dateStr)
 		if err != nil {
-			continue // Skip files with unexpected formats
+			continue
 		}
 
-		// Check if the file's date is before the cutoff (comparing dates effectively)
-		// Since filenames are dates (00:00:00), if the date is before cutoff (e.g. 3 days ago), delete it.
-		// Example: Today is 23rd. Cutoff (3 days ago) is 20th.
-		// file 19th -> 19 < 20 -> Delete.
-		// file 20th -> 20 == 20 -> Keep (maybe).
 		if date.Before(cutoff) {
 			fullPath := filepath.Join(dir, entry.Name())
 			if err := os.Remove(fullPath); err != nil {

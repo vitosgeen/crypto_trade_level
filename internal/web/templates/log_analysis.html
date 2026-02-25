@@ -366,6 +366,7 @@
                         <option value="extremes" selected>Extremes (Standard)</option>
                         <option value="extremes_opposite">Extremes (Opposite)</option>
                         <option value="biggest_order_book">Biggest Order Book</option>
+                        <option value="strong_side">Strong Side</option>
                         <option value="local_high_low">Local High / Local Low</option>
                     </select>
                 </div>
@@ -469,7 +470,7 @@
                         onclick="clearLog()">Clear</button>
                 </div>
                 <div id="alertLog"
-                    style="margin-top: 5px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; font-family: monospace; font-size: 0.85rem; max-height: 150px; overflow-y: auto; display: none;">
+                    style="margin-top: 5px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 6px; font-family: monospace; font-size: 0.85rem; max-height: 250px; overflow-y: auto; display: none;">
                 </div>
             </div>
         </div>
@@ -802,9 +803,22 @@
             rows.forEach(row => tbody.appendChild(row));
         }
 
-        // --- Alert System ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         let alertedHistory = new Map(); // Key: Symbol-Timeframe, Value: Timestamp
+
+        function appendToLog(entry) {
+            const logDiv = document.getElementById('alertLog');
+            if (!logDiv) return;
+
+            logDiv.appendChild(entry);
+            logDiv.style.display = 'block';
+
+            // Limit log entries to 100 to prevent memory bloat
+            while (logDiv.children.length > 100) {
+                logDiv.removeChild(logDiv.firstChild);
+            }
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
 
         function playAlertSound() {
             if (!document.getElementById('soundToggle').checked) return;
@@ -969,16 +983,13 @@
 
                     if (isChop) {
                         if (isAnomaly) {
-                            const logDiv = document.getElementById('alertLog');
-                            logDiv.style.display = 'block';
                             const entry = document.createElement('div');
                             entry.style.color = isHighConfidence ? 'var(--warning)' : 'var(--text-muted)';
                             entry.style.fontSize = '0.8rem';
                             let label = isHighConfidence ? "HIGH CONFIDENCE CHOP" : "CHOP";
                             let reason = isRSIZone ? "RSI Zone" : "Low Consistency";
                             entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol} Ignored (${label}): ${reason} (${rsiVal.toFixed(1)} RSI, ${(consistencyRatio * 100).toFixed(0)}% C, ${(netProgress * 100).toFixed(0)}% Prog)`;
-                            logDiv.appendChild(entry);
-                            logDiv.scrollTop = logDiv.scrollHeight;
+                            appendToLog(entry);
                         }
                         continue;
                     }
@@ -1027,19 +1038,18 @@
                                     await fetch(`/levels/${oldLevel.ID}`, { method: 'DELETE' });
                                     activeSymbols.delete(symbol);
 
-                                    const logDiv = document.getElementById('alertLog');
-                                    logDiv.style.display = 'block';
                                     const entry = document.createElement('div');
                                     entry.style.color = 'var(--warning)';
                                     entry.style.fontSize = '0.8rem';
                                     entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Existing level deleted (no position) for recreation.`;
-                                    logDiv.appendChild(entry);
+                                    appendToLog(entry);
                                 }
                             }
                         }
 
                         if (!activeSymbols.has(symbol)) {
                             let targetPrice = 0;
+                            let currentLevelSide = 'BOTH';
                             const priceText = row.cells[1].innerText;
                             const priceMatch = priceText.match(/\$([0-9.]+)/);
                             const currentPrice = priceMatch ? priceMatch[1] : 0;
@@ -1092,6 +1102,24 @@
                                 } catch (err) {
                                     console.error(`Error fetching biggest order book for ${symbol}:`, err);
                                 }
+                            } else if (mode === 'strong_side') {
+                                try {
+                                    const resp = await fetch(`/api/orderbook/strong-side?symbol=${symbol}&price=${currentPrice}`);
+                                    if (resp.ok) {
+                                        const data = await resp.json();
+                                        targetPrice = data.price;
+                                        currentLevelSide = data.side === 'bid' ? 'LONG' : 'SHORT';
+                                        console.log(`Found strong side level for ${symbol} (${data.side}): ${targetPrice}`);
+                                    } else {
+                                        const errData = await resp.json().catch(() => ({}));
+                                        if (resp.status === 422 && errData.error === "No structure in the book") {
+                                            anomalies.push(`${symbol}: Level Declined - No structure in book`);
+                                        }
+                                        console.error(`Failed to fetch strong side for ${symbol}: ${errData.error || resp.statusText}`);
+                                    }
+                                } catch (err) {
+                                    console.error(`Error fetching strong side for ${symbol}:`, err);
+                                }
                             } else if (mode === 'local_high_low') {
                                 if (realPcntChange < 0) {
                                     // Price Down -> Target Low
@@ -1115,14 +1143,11 @@
                                             liAnalysis = await liResp.json();
                                             if (!liAnalysis.is_imbalanced) {
                                                 console.log(`Liquidity Check Failed for ${symbol}: ${liAnalysis.reason}`);
-                                                const logDiv = document.getElementById('alertLog');
-                                                logDiv.style.display = 'block';
                                                 const entry = document.createElement('div');
                                                 entry.style.color = 'var(--text-muted)';
                                                 entry.style.fontSize = '0.8rem';
                                                 entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Liquidity Declined - ${liAnalysis.reason}`;
-                                                logDiv.appendChild(entry);
-                                                logDiv.scrollTop = logDiv.scrollHeight;
+                                                appendToLog(entry);
                                                 continue; // Skip this level
                                             }
                                             console.log(`Liquidity Check Passed for ${symbol}: ${liAnalysis.reason}`);
@@ -1164,14 +1189,11 @@
                             }
                         } else {
                             console.log(`Skipping auto-create for ${symbol}: Active level with position already exists.`);
-                            const logDiv = document.getElementById('alertLog');
-                            logDiv.style.display = 'block';
                             const entry = document.createElement('div');
                             entry.style.color = 'var(--text-muted)';
                             entry.style.fontSize = '0.8rem';
                             entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Skipping auto-level - Active position already exists.`;
-                            logDiv.appendChild(entry);
-                            logDiv.scrollTop = logDiv.scrollHeight;
+                            appendToLog(entry);
                         }
                     }
                 }
@@ -1200,8 +1222,7 @@
                 logEntry.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
                 logEntry.style.paddingBottom = "4px";
                 logEntry.innerText = `[${new Date().toLocaleTimeString()}] Found ${anomalies.length} new anomalies: ` + anomalies.join(", ");
-                logDiv.appendChild(logEntry);
-                logDiv.scrollTop = logDiv.scrollHeight;
+                appendToLog(logEntry);
 
                 if (document.getElementById('autoLevelToggle').checked) {
                     if (levelRequests.length > 0) {
@@ -1234,12 +1255,10 @@
                                 // Close Position
                                 await fetch(`/positions/${level.Symbol}`, { method: 'DELETE' });
 
-                                logDiv.style.display = 'block';
                                 const entry = document.createElement('div');
                                 entry.style.color = 'var(--danger)';
                                 entry.innerText = `>>> Auto Closed ${level.Symbol}: No significant walls found near $${level.LevelPrice} (+/- ${maxDev}%)`;
-                                logDiv.appendChild(entry);
-                                logDiv.scrollTop = logDiv.scrollHeight;
+                                appendToLog(entry);
 
                                 playAlertSound();
                                 if (document.getElementById('pushToggle').checked && Notification.permission === "granted") {
@@ -1318,7 +1337,6 @@
                 if (response.ok) {
                     const actionType = isAuto ? "Auto-created" : "Manually created";
                     console.log(`${actionType} level for ${symbol} at ${price} side ${side}`);
-                    const logDiv = document.getElementById('alertLog');
                     const entry = document.createElement('div');
                     entry.style.color = 'var(--accent-color)';
                     let liInfo = "";
@@ -1329,8 +1347,7 @@
                     const volPcntInfo = analysisData && analysisData.vol_pcnt_change != undefined ? ` (V: ${analysisData.vol_pcnt_change.toFixed(1)}%)` : "";
 
                     entry.innerText = `>>> ${actionType} level for ${symbol} @ $${price} (${side}) | Δ ${parseFloat(analysisData?.pcnt_change || 0).toFixed(2)}%${volPcntInfo} | RSI: ${parseFloat(rsi).toFixed(1)}${liInfo} | Range [${timeframe}]: $${min} - $${max}`;
-                    logDiv.appendChild(entry);
-                    logDiv.scrollTop = logDiv.scrollHeight;
+                    appendToLog(entry);
 
                     // Trigger Alerts for Auto-creation (only if auto)
                     if (isAuto) {
@@ -1351,43 +1368,59 @@
         }
 
         // Auto Refresh  
-        let countdownSecs = 10;
+        let refreshIntervalSecs = {{.RefreshInterval }};
+        if (!refreshIntervalSecs || refreshIntervalSecs <= 0) refreshIntervalSecs = 10;
+
+        let countdownSecs = refreshIntervalSecs;
         setInterval(() => {
             if (countdownSecs > 0) countdownSecs--;
             const el = document.getElementById('updateCountdown');
             if (el) el.innerText = `(Next in ${countdownSecs}s)`;
         }, 1000);
 
-        setInterval(() => {
-            countdownSecs = 10;
-            fetch(window.location.pathname + "?partial=true")
-                .then(response => response.text())
-                .then(html => {
-                    const tbody = document.querySelector("#analysisTable tbody");
-                    if (tbody && html.trim().length > 0) {
-                        tbody.innerHTML = html;
-                        document.getElementById('analysisUpdateTime').innerText = new Date().toLocaleTimeString();
+        let isRefreshing = false;
+        async function refreshData() {
+            if (isRefreshing) return;
+            isRefreshing = true;
 
-                        // Re-apply sort if active
-                        // Only sort if we have a valid interactive column active
-                        if (currentSortColumn !== -1) {
-                            // Keep current direction (don't toggle)
-                            // We need to pass the CURRENT active direction.
-                            // In sortTable logic above: `direction = sortDirection[columnIndex]` is used if force undefined.
-                            // But if force is defined, it uses it.
-                            // Our `sortDirection` array actually holds the *next* direction to toggle to. 
-                            // So the current one is `sortDirection[columnIndex] * -1`.
-                            const activeDir = sortDirection[currentSortColumn] * -1;
-                            sortTable(currentSortColumn, activeDir);
-                        }
-                        // Re-apply highlights if any match logic (no, checking alerts does that)
+            countdownSecs = refreshIntervalSecs;
+            try {
+                const response = await fetch(window.location.pathname + "?partial=true");
+                const html = await response.text();
 
-                        // Check alerts
-                        checkAlerts();
+                const tbody = document.querySelector("#analysisTable tbody");
+                if (tbody && html.trim().length > 0) {
+                    tbody.innerHTML = html;
+                    document.getElementById('analysisUpdateTime').innerText = new Date().toLocaleTimeString();
+
+                    // Re-apply sort if active
+                    if (currentSortColumn !== -1) {
+                        const activeDir = sortDirection[currentSortColumn] * -1;
+                        sortTable(currentSortColumn, activeDir);
                     }
-                })
-                .catch(err => console.error("Auto-refresh failed", err));
-        }, 10000); // 1 minute
+                    // Prune alerted history if too large
+                    if (alertedHistory.size > 2000) {
+                        const now = Date.now();
+                        for (const [key, timestamp] of alertedHistory.entries()) {
+                            if (now - timestamp > 30 * 60 * 1000) { // Clear older than 30 mins
+                                alertedHistory.delete(key);
+                            }
+                        }
+                    }
+
+                    // Check alerts
+                    await checkAlerts();
+                }
+            } catch (err) {
+                console.error("Auto-refresh failed", err);
+            } finally {
+                isRefreshing = false;
+                setTimeout(refreshData, refreshIntervalSecs * 1000);
+            }
+        }
+
+        // Start the refresh cycle
+        setTimeout(refreshData, refreshIntervalSecs * 1000);
         async function manualCreateLevel(event, symbol, currentPrice) {
             event.stopPropagation();
 
@@ -1427,6 +1460,23 @@
                 } catch (err) {
                     console.error("Failed to fetch biggest OB", err);
                     alert("Error fetching order book data");
+                    return;
+                }
+            } else if (mode === 'strong_side') {
+                try {
+                    const resp = await fetch(`/api/orderbook/strong-side?symbol=${symbol}&price=${currentPrice}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        price = data.price;
+                        levelSide = data.side === 'bid' ? 'LONG' : 'SHORT';
+                    } else {
+                        const errData = await resp.json().catch(() => ({}));
+                        alert(`Cannot create level: ${errData.error || "Failed to fetch strong side data"}`);
+                        return;
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch strong side OB", err);
+                    alert("Error fetching strong side data");
                     return;
                 }
             } else if (mode === 'local_high_low') {
