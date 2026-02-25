@@ -367,6 +367,7 @@
                         <option value="extremes_opposite">Extremes (Opposite)</option>
                         <option value="biggest_order_book">Biggest Order Book</option>
                         <option value="strong_side">Strong Side</option>
+                        <option value="strong_side_opposite">Strong Side opposite</option>
                         <option value="local_high_low">Local High / Local Low</option>
                     </select>
                 </div>
@@ -1102,14 +1103,29 @@
                                 } catch (err) {
                                     console.error(`Error fetching biggest order book for ${symbol}:`, err);
                                 }
-                            } else if (mode === 'strong_side') {
+                            } else if (mode === 'strong_side' || mode === 'strong_side_opposite') {
                                 try {
                                     const resp = await fetch(`/api/orderbook/strong-side?symbol=${symbol}&price=${currentPrice}`);
                                     if (resp.ok) {
                                         const data = await resp.json();
-                                        targetPrice = data.price;
-                                        currentLevelSide = data.side === 'bid' ? 'LONG' : 'SHORT';
-                                        console.log(`Found strong side level for ${symbol} (${data.side}): ${targetPrice}`);
+                                        let finalSide = data.side;
+                                        if (mode === 'strong_side_opposite') {
+                                            finalSide = data.side === 'bid' ? 'ask' : 'bid';
+                                            // Since we flipped the side, we need to fetch the biggest wall on the OTHER side
+                                            const biggestResp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${finalSide}`);
+                                            if (biggestResp.ok) {
+                                                const biggestData = await biggestResp.json();
+                                                targetPrice = biggestData.price;
+                                            } else {
+                                                const errData = await biggestResp.json().catch(() => ({}));
+                                                console.error(`Failed to fetch opposite side biggest wall for ${symbol}: ${errData.error || biggestResp.statusText}`);
+                                                continue;
+                                            }
+                                        } else {
+                                            targetPrice = data.price;
+                                        }
+                                        currentLevelSide = finalSide === 'bid' ? 'LONG' : 'SHORT';
+                                        console.log(`Found ${mode} level for ${symbol} (${finalSide}): ${targetPrice}`);
                                     } else {
                                         const errData = await resp.json().catch(() => ({}));
                                         if (resp.status === 422 && errData.error === "No structure in the book") {
@@ -1462,13 +1478,27 @@
                     alert("Error fetching order book data");
                     return;
                 }
-            } else if (mode === 'strong_side') {
+            } else if (mode === 'strong_side' || mode === 'strong_side_opposite') {
                 try {
                     const resp = await fetch(`/api/orderbook/strong-side?symbol=${symbol}&price=${currentPrice}`);
                     if (resp.ok) {
                         const data = await resp.json();
-                        price = data.price;
-                        levelSide = data.side === 'bid' ? 'LONG' : 'SHORT';
+                        let finalSide = data.side;
+                        if (mode === 'strong_side_opposite') {
+                            finalSide = data.side === 'bid' ? 'ask' : 'bid';
+                            const biggestResp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${finalSide}`);
+                            if (biggestResp.ok) {
+                                const biggestData = await biggestResp.json();
+                                price = biggestData.price;
+                            } else {
+                                const errData = await biggestResp.json().catch(() => ({}));
+                                alert(`Cannot create level: ${errData.error || "Failed to fetch opposite side biggest wall"}`);
+                                return;
+                            }
+                        } else {
+                            price = data.price;
+                        }
+                        levelSide = finalSide === 'bid' ? 'LONG' : 'SHORT';
                     } else {
                         const errData = await resp.json().catch(() => ({}));
                         alert(`Cannot create level: ${errData.error || "Failed to fetch strong side data"}`);

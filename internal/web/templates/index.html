@@ -2405,7 +2405,7 @@
 
                     body.innerHTML = signals.slice().reverse().slice(0, 10).map(s => `
                         <tr>
-                            <td class="text-muted">${new Date(s.timestamp).toLocaleTimeString()}</td>
+                            <td class="text-muted">${new Date(s.timestamp).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/\//g, '-').replace(',', '')}</td>
                             <td><strong style="color: var(--accent-color);">${s.symbol}</strong></td>
                             <td>${s.interval}m</td>
                             <td style="font-family: monospace; font-weight: 700; color: ${s.rsi >= 70 ? 'var(--danger)' : (s.rsi <= 30 ? 'var(--success)' : 'var(--text-color)')}">${s.rsi.toFixed(2)}</td>
@@ -2792,7 +2792,7 @@
     <tbody>
         {{ range . }}
         <tr>
-            <td class="text-muted">{{ .CreatedAt.Format "15:04:05" }}</td>
+            <td class="text-muted">{{ .CreatedAt.Format "2006-01-02 15:04:05" }}</td>
             <td>{{ .Symbol }}</td>
             <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }};">{{ .Side }}</td>
             <td>{{ if eq .Size 0.0 }}-{{ else }}{{ .Size }}{{ end }}</td>
@@ -2893,7 +2893,7 @@
         {{ if .History }}
         {{ range .History }}
         <tr>
-            <td class="text-muted">{{ .ClosedAt.Format "15:04:05" }}</td>
+            <td class="text-muted">{{ .ClosedAt.Format "2006-01-02 15:04:05" }}</td>
             <td><strong>{{ .Symbol }}</strong></td>
             <td><span class="badge badge-blue">{{ .Source }}</span></td>
             <td style="color: {{ if eq .Side " SHORT" }}var(--danger){{ else }}var(--success){{ end }}; font-weight:
@@ -2957,7 +2957,7 @@
         {{ if . }}
         {{ range . }}
         <tr>
-            <td class="text-muted">{{ .Timestamp.Format "15:04:05" }}</td>
+            <td class="text-muted">{{ .Timestamp.Format "2006-01-02 15:04:05" }}</td>
             <td><strong>{{ .Symbol }}</strong></td>
             <td style="color: {{ if eq .Side " LONG" }}var(--success){{ else }}var(--danger){{ end }}; font-weight:
                 bold;">{{ .Side }}</td>
