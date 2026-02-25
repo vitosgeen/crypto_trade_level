@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Level Trader Bot - Research</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0a0b1e;
+            --text-color: #e0e0e0;
+            --text-muted: #a0a0a0;
+            --accent-color: #00ff88;
+            --accent-hover: #00cc6a;
+            --secondary-color: #7000ff;
+            --card-bg: #151632;
+            --nav-bg: rgba(10, 11, 30, 0.95);
+            --border-color: rgba(255, 255, 255, 0.05);
+            --input-bg: #0f1025;
+            --success: #28a745;
+            --danger: #dc3545;
+            --warning: #ffc107;
+            --info: #007bff;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            padding-top: 80px;
+        }
+
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            padding: 1rem 2rem;
+            background: var(--nav-bg);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 1000;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+
+        .nav-links a {
+            color: var(--text-color);
+            text-decoration: none;
+            margin-left: 2rem;
+            font-weight: 500;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 2rem;
+            height: calc(100vh - 80px);
+        }
+
+        .sidebar {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 1.5rem;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+        }
+
+        .main-content {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 1.5rem;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            position: relative;
+        }
+
+        h2 {
+            margin-bottom: 1.5rem;
+            color: var(--accent-color);
+        }
+
+        .file-list {
+            list-style: none;
+        }
+
+        .file-item {
+            padding: 0.8rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .file-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .file-item.active {
+            border-left: 3px solid var(--accent-color);
+            background: rgba(0, 255, 136, 0.1);
+        }
+
+        .file-symbol {
+            font-weight: 700;
+            color: var(--accent-color);
+            font-size: 0.9rem;
+        }
+
+        .file-name {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.2rem;
+        }
+
+        .log-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+
+        .log-table th {
+            text-align: left;
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--accent-color);
+            position: sticky;
+            top: 0;
+            background: var(--card-bg);
+        }
+
+        .log-table td {
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+        }
+
+        .controls {
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        button {
+            background: var(--input-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1.2rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        button.active {
+            background: var(--accent-color);
+            color: #000;
+            font-weight: 700;
+        }
+
+        .chart-container {
+            background: #151632;
+            border-radius: 8px;
+            padding: 1rem;
+            border: 1px solid var(--border-color);
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-title {
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: var(--accent-color);
+            margin-bottom: 10px;
+        }
+
+        .text-buy {
+            color: var(--success);
+            font-weight: bold;
+        }
+
+        .text-sell {
+            color: var(--danger);
+            font-weight: bold;
+        }
+
+        .text-info {
+            color: var(--info);
+        }
+
+        .text-warning {
+            color: var(--warning);
+        }
+
+        .metric-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 15px;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: var(--card-bg);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .metric-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .metric-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        .metric-value {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            font-family: 'JetBrains Mono', 'Monaco', monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <nav>
+        <a href="/" class="logo">LEVEL BOT</a>
+        <div class="nav-links">
+            <a href="/dashboard">Dashboard</a>
+            <a href="/analysis">Analysis</a>
+            <a href="/research" style="color: var(--accent-color);">Research</a>
+            <a href="/wallet">Wallet</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="sidebar">
+            <h2>Logs</h2>
+            <div id="file-list" class="file-list">
+                <!-- Loaded via JS -->
+            </div>
+        </div>
+        <div class="main-content">
+            <div class="controls">
+                <h2 id="current-file" style="margin: 0;">Select a log file</h2>
+                <div style="display: flex; gap: 10px;">
+                    <button id="view-table-btn" class="active" onclick="switchView('table')">Table</button>
+                    <button id="view-charts-btn" onclick="switchView('charts')">Charts</button>
+                    <button onclick="loadFiles()">Refresh List</button>
+                </div>
+            </div>
+
+            <div id="table-view">
+                <table class="log-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Price</th>
+                            <th>RSI</th>
+                            <th>Ratio</th>
+                            <th>Clusters</th>
+                            <th>Wall%</th>
+                            <th>PnL</th>
+                            <th>GLI</th>
+                            <th>Vol(60s)</th>
+                            <th>Depth (B/A)</th>
+                            <th>Chg(60s)</th>
+                            <th>OBI</th>
+                            <th>MACD</th>
+                            <th>TSI</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-body">
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="charts-view" style="display: none; flex-direction: column;">
+                <div id="metric-bar" class="metric-bar">
+                    <div class="metric-item">
+                        <span class="metric-label">Time</span>
+                        <span id="m-time" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Price</span>
+                        <span id="m-price" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">PnL</span>
+                        <span id="m-pnl" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">RSI</span>
+                        <span id="m-rsi" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Ratio</span>
+                        <span id="m-ratio" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Wall%</span>
+                        <span id="m-wall" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">Vol</span>
+                        <span id="m-vol" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">OBI</span>
+                        <span id="m-obi" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">MACD</span>
+                        <span id="m-macd" class="metric-value">--</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-label">TSI</span>
+                        <span id="m-tsi" class="metric-value">--</span>
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 600px;">
+                    <div id="main-chart" style="height: 100%;"></div>
+                </div>
+                <div id="chart-legend"
+                    style="display: flex; flex-wrap: wrap; gap: 20px; margin-top: 10px; font-size: 0.85rem; padding: 12px; background: var(--input-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" checked onchange="toggleSeries('pnl', this.checked)">
+                        <span style="width: 12px; height: 12px; background: #00ff88; border-radius: 2px;"></span> PnL
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" checked onchange="toggleSeries('price', this.checked)">
+                        <span style="width: 12px; height: 12px; background: #2196f3; border-radius: 2px;"></span> Price
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" checked onchange="toggleSeries('rsi', this.checked)">
+                        <span style="width: 12px; height: 12px; background: #ffc107; border-radius: 2px;"></span> RSI
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" checked onchange="toggleSeries('wall', this.checked)">
+                        <span style="width: 12px; height: 12px; background: #00bcd4; border-radius: 2px;"></span> Wall%
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" checked onchange="toggleSeries('ratio', this.checked)">
+                        <span style="width: 12px; height: 12px; background: #ff5722; border-radius: 2px;"></span> Ratio
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" checked onchange="toggleSeries('gli', this.checked)">
+                        <span style="width: 12px; height: 12px; background: #9c27b0; border-radius: 2px;"></span> GLI
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" checked onchange="toggleSeries('vol', this.checked)">
+                        <span style="width: 12px; height: 12px; background: #e91e63; border-radius: 2px;"></span> Vol
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" checked onchange="toggleSeries('obi', this.checked)">
+                        <span style="width: 12px; height: 12px; background: #cddc39; border-radius: 2px;"></span> OBI
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" checked onchange="toggleSeries('macd', this.checked)">
+                        <span style="width: 12px; height: 12px; background: #607d8b; border-radius: 2px;"></span> MACD
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" checked onchange="toggleSeries('tsi', this.checked)">
+                        <span style="width: 12px; height: 12px; background: #ff9800; border-radius: 2px;"></span> TSI
+                    </label>
+                </div>
+            </div>
+
+            <div id="loading" class="loading">Loading...</div>
+        </div>
+    </div>
+
+    <script>
+        let currentData = [];
+        let chartInstance = null;
+        let seriesObjects = {};
+        let seriesVisibility = {
+            pnl: true,
+            price: true,
+            rsi: true,
+            wall: true,
+            ratio: true,
+            gli: true,
+            vol: true,
+            obi: true,
+            macd: true,
+            tsi: true
+        };
+
+        function toggleSeries(name, visible) {
+            seriesVisibility[name] = visible;
+            if (seriesObjects[name]) {
+                seriesObjects[name].applyOptions({ visible: visible });
+            }
+        }
+
+        function switchView(view) {
+            const tableView = document.getElementById('table-view');
+            const chartsView = document.getElementById('charts-view');
+            const tableBtn = document.getElementById('view-table-btn');
+            const chartsBtn = document.getElementById('view-charts-btn');
+
+            if (view === 'table') {
+                tableView.style.display = 'block';
+                chartsView.style.display = 'none';
+                tableBtn.classList.add('active');
+                chartsBtn.classList.remove('active');
+            } else {
+                tableView.style.display = 'none';
+                chartsView.style.display = 'flex';
+                tableBtn.classList.remove('active');
+                chartsBtn.classList.add('active');
+                if (currentData.length > 0) {
+                    setTimeout(renderCharts, 100);
+                }
+            }
+        }
+
+        async function loadFiles() {
+            try {
+                const resp = await fetch('/api/research/files');
+                const files = await resp.json();
+                const list = document.getElementById('file-list');
+                list.innerHTML = '';
+                files.forEach(f => {
+                    const item = document.createElement('div');
+                    item.className = 'file-item';
+                    item.innerHTML = `<span class="file-symbol">${f.symbol}</span><span class="file-name">${f.file_name}</span>`;
+                    item.onclick = () => viewFile(f.path, f.symbol + ' / ' + f.file_name, item);
+                    list.appendChild(item);
+                });
+            } catch (e) {
+                console.error("Load files error:", e);
+            }
+        }
+
+        async function viewFile(path, label, element) {
+            document.querySelectorAll('.file-item').forEach(i => i.classList.remove('active'));
+            element.classList.add('active');
+            document.getElementById('current-file').innerText = label;
+            document.getElementById('loading').style.display = 'block';
+
+            try {
+                // Parse date from filename: 20260225-15.log
+                const fileName = label.split(' / ')[1];
+                const dateParts = fileName.split('-')[0];
+                const year = dateParts.substring(0, 4);
+                const month = dateParts.substring(4, 6);
+                const day = dateParts.substring(6, 8);
+                const baseDate = `${year}-${month}-${day}`;
+
+                const resp = await fetch('/api/research/files/content?path=' + encodeURIComponent(path));
+                const content = await resp.text();
+                const lines = content.trim().split('\n');
+                currentData = [];
+                const tbody = document.getElementById('log-body');
+                tbody.innerHTML = '';
+
+                let lastTimestamp = 0;
+
+                lines.forEach((line, index) => {
+                    const parts = line.split(' | ');
+                    if (parts.length < 10) return;
+
+                    const timeStr = parts[0].trim();
+                    const side = parts[2].trim();
+                    const priceVal = parseFloat(parts[3]);
+                    const rsiVal = parseFloat(parts[4]);
+                    const ratioVal = parseFloat(parts[5]);
+                    const clustersVal = parts[6];
+                    const wallVal = parseFloat(parts[7].replace('%', ''));
+                    const pnlVal = parseFloat(parts[8]);
+                    const gliVal = parseFloat(parts[9]);
+
+                    // Extended metrics (only if exists)
+                    const volVal = parts.length > 10 ? parts[10] : '--';
+                    const depthVal = parts.length > 11 ? parts[11] : '--';
+                    const chgVal = parts.length > 12 ? parts[12] : '--';
+                    const obiVal = parts.length > 13 ? parts[13] : '--';
+                    const macdVal = parts.length > 14 ? parts[14] : '--';
+                    const tsiVal = parts.length > 15 ? parts[15] : '--';
+
+                    // Create timestamp
+                    const dt = new Date(`${baseDate}T${timeStr}`);
+                    let timestamp = Math.floor(dt.getTime() / 1000);
+
+                    // Ensure unique increasing timestamps for chart
+                    if (timestamp <= lastTimestamp) {
+                        timestamp = lastTimestamp + 1;
+                    }
+                    lastTimestamp = timestamp;
+
+                    currentData.push({
+                        time: timestamp,
+                        price: priceVal,
+                        rsi: rsiVal,
+                        ratio: ratioVal,
+                        wall: wallVal,
+                        pnl: pnlVal,
+                        gli: gliVal,
+                        vol: parseFloat(volVal) || 0,
+                        chg: parseFloat(chgVal) || 0,
+                        obi: parseFloat(obiVal) || 0,
+                        macd: parseFloat(macdVal.split('(')[0]) || 0,
+                        macdHist: parseFloat(macdVal.split('(')[1] ? macdVal.split('(')[1].replace(')', '') : 0) || 0,
+                        tsi: parseFloat(tsiVal) || 0,
+                        side: side
+                    });
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="text-muted">${parts[0]}</td>
+                        <td style="color: var(--accent-color); font-weight: bold;">${parts[1]}</td>
+                        <td class="${side === 'LONG' ? 'text-buy' : (side === 'SHORT' ? 'text-sell' : 'text-info')}">${side}</td>
+                        <td>${parts[3]}</td>
+                        <td>${parts[4]}</td>
+                        <td>${parts[5]}</td>
+                        <td>${parts[6]}</td>
+                        <td>${parts[7]}</td>
+                        <td style="color: ${pnlVal >= 0 ? 'var(--success)' : 'var(--danger)'}; font-weight: bold;">${pnlVal.toFixed(4)}</td>
+                        <td>${parts[9]}</td>
+                        <td>${volVal}</td>
+                        <td class="text-muted">${depthVal}</td>
+                        <td class="${parseFloat(chgVal) >= 0 ? 'text-buy' : 'text-sell'}">${chgVal}</td>
+                        <td class="${parseFloat(obiVal) > 0.2 ? 'text-buy' : (parseFloat(obiVal) < -0.2 ? 'text-sell' : '')}">${obiVal}</td>
+                        <td>${macdVal}</td>
+                        <td>${tsiVal}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                if (document.getElementById('charts-view').style.display !== 'none') {
+                    renderCharts();
+                }
+            } catch (e) {
+                console.error("View file error:", e);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function renderCharts() {
+            if (!currentData.length) return;
+
+            const container = document.getElementById('main-chart');
+            if (!container) return;
+
+            if (chartInstance) {
+                try {
+                    chartInstance.remove();
+                } catch (e) { }
+            }
+            container.innerHTML = '';
+            seriesObjects = {};
+
+            if (container.clientWidth === 0) return;
+
+            const chart = LightweightCharts.createChart(container, {
+                layout: { background: { color: '#151632' }, textColor: '#d1d1d1' },
+                grid: { vertLines: { color: 'rgba(255, 255, 255, 0.05)' }, horzLines: { color: 'rgba(255, 255, 255, 0.05)' } },
+                timeScale: {
+                    visible: true,
+                    timeVisible: true,
+                    secondsVisible: true,
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                },
+                rightPriceScale: {
+                    visible: true,
+                    scaleMargins: { top: 0.1, bottom: 0.45 },
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                },
+                leftPriceScale: {
+                    visible: true,
+                    scaleMargins: { top: 0.1, bottom: 0.45 },
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                }
+            });
+            chartInstance = chart;
+
+            // Price (Right)
+            seriesObjects.price = chart.addLineSeries({
+                color: '#2196f3',
+                lineWidth: 2,
+                priceScaleId: 'right',
+                visible: seriesVisibility.price,
+                title: 'Price'
+            });
+            seriesObjects.price.setData(currentData.map(d => ({ time: d.time, value: d.price })));
+
+            // Add markers for Side change
+            const markers = [];
+            let lastSide = null;
+            currentData.forEach(d => {
+                if (d.side !== lastSide) {
+                    markers.push({
+                        time: d.time,
+                        position: d.side === 'LONG' ? 'belowBar' : 'aboveBar',
+                        color: d.side === 'LONG' ? '#00ff88' : '#dc3545',
+                        shape: d.side === 'LONG' ? 'arrowUp' : 'arrowDown',
+                        text: d.side
+                    });
+                    lastSide = d.side;
+                }
+            });
+            seriesObjects.price.setMarkers(markers);
+
+            // PnL (Left)
+            seriesObjects.pnl = chart.addAreaSeries({
+                lineColor: '#00ff88',
+                topColor: 'rgba(0, 255, 136, 0.3)',
+                bottomColor: 'rgba(0, 255, 136, 0)',
+                priceScaleId: 'left',
+                visible: seriesVisibility.pnl,
+                title: 'PnL'
+            });
+            seriesObjects.pnl.setData(currentData.map(d => ({ time: d.time, value: d.pnl })));
+
+            // RSI
+            chart.priceScale('rsi').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.75, bottom: 0.05 },
+            });
+            seriesObjects.rsi = chart.addLineSeries({
+                color: '#ffc107',
+                lineWidth: 1,
+                priceScaleId: 'rsi',
+                visible: seriesVisibility.rsi,
+                title: 'RSI'
+            });
+            seriesObjects.rsi.setData(currentData.map(d => ({ time: d.time, value: d.rsi })));
+
+            // Wall
+            chart.priceScale('wall').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.55, bottom: 0.25 },
+            });
+            seriesObjects.wall = chart.addAreaSeries({
+                lineColor: '#00bcd4',
+                topColor: 'rgba(0, 188, 212, 0.1)',
+                bottomColor: 'rgba(0, 188, 212, 0)',
+                priceScaleId: 'wall',
+                visible: seriesVisibility.wall,
+                title: 'Wall'
+            });
+            seriesObjects.wall.setData(currentData.map(d => ({ time: d.time, value: d.wall })));
+
+            // Liq
+            chart.priceScale('liq').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.35, bottom: 0.45 },
+            });
+            seriesObjects.ratio = chart.addLineSeries({
+                color: '#ff5722',
+                lineWidth: 1,
+                priceScaleId: 'liq',
+                visible: seriesVisibility.ratio,
+                title: 'Ratio'
+            });
+            seriesObjects.ratio.setData(currentData.map(d => ({ time: d.time, value: d.ratio })));
+
+            seriesObjects.gli = chart.addAreaSeries({
+                lineColor: '#9c27b0',
+                topColor: 'rgba(156, 39, 176, 0.1)',
+                bottomColor: 'rgba(156, 39, 176, 0)',
+                priceScaleId: 'liq',
+                visible: seriesVisibility.gli,
+                title: 'GLI'
+            });
+            seriesObjects.gli.setData(currentData.map(d => ({ time: d.time, value: d.gli })));
+
+            // Vol
+            chart.priceScale('vol').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.85, bottom: 0.0 },
+            });
+            seriesObjects.vol = chart.addHistogramSeries({
+                color: '#e91e63',
+                priceScaleId: 'vol',
+                visible: seriesVisibility.vol,
+                title: 'Volume'
+            });
+            seriesObjects.vol.setData(currentData.map(d => ({
+                time: d.time,
+                value: d.vol,
+                color: d.chg >= 0 ? 'rgba(0, 255, 136, 0.5)' : 'rgba(255, 82, 82, 0.5)'
+            })));
+
+            // OBI
+            chart.priceScale('obi').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.45, bottom: 0.35 },
+            });
+            seriesObjects.obi = chart.addLineSeries({
+                color: '#cddc39',
+                lineWidth: 1,
+                priceScaleId: 'obi',
+                visible: seriesVisibility.obi,
+                title: 'OBI'
+            });
+            seriesObjects.obi.setData(currentData.map(d => ({ time: d.time, value: d.obi })));
+
+            // MACD
+            chart.priceScale('macd').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.65, bottom: 0.15 },
+            });
+            seriesObjects.macd = chart.addLineSeries({
+                color: '#607d8b',
+                lineWidth: 1,
+                priceScaleId: 'macd',
+                visible: seriesVisibility.macd,
+                title: 'MACD'
+            });
+            seriesObjects.macd.setData(currentData.map(d => ({ time: d.time, value: d.macd })));
+
+            seriesObjects.macdHist = chart.addHistogramSeries({
+                priceScaleId: 'macd',
+                visible: seriesVisibility.macd,
+            });
+            seriesObjects.macdHist.setData(currentData.map(d => ({
+                time: d.time,
+                value: d.macdHist,
+                color: d.macdHist >= 0 ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 82, 82, 0.3)'
+            })));
+
+            // TSI
+            chart.priceScale('tsi').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.25, bottom: 0.55 },
+            });
+            seriesObjects.tsi = chart.addLineSeries({
+                color: '#ff9800',
+                lineWidth: 1,
+                priceScaleId: 'tsi',
+                visible: seriesVisibility.tsi,
+                title: 'TSI'
+            });
+            seriesObjects.tsi.setData(currentData.map(d => ({ time: d.time, value: d.tsi })));
+
+            chart.timeScale().fitContent();
+
+            // --- Crosshair Synchronization ---
+            chart.subscribeCrosshairMove(param => {
+                if (!param.time || param.point.x < 0 || param.point.y < 0) {
+                    return;
+                }
+
+                // Find the data point in currentData
+                const point = currentData.find(d => d.time === param.time);
+                if (!point) return;
+
+                // Update Metric Bar
+                const dt = new Date(point.time * 1000);
+                document.getElementById('m-time').textContent = dt.toTimeString().split(' ')[0];
+                document.getElementById('m-price').textContent = point.price.toFixed(2);
+
+                const pnlEl = document.getElementById('m-pnl');
+                pnlEl.textContent = point.pnl.toFixed(4);
+                pnlEl.style.color = point.pnl >= 0 ? 'var(--success)' : 'var(--danger)';
+
+                const rsiEl = document.getElementById('m-rsi');
+                rsiEl.textContent = point.rsi.toFixed(2);
+                rsiEl.style.color = point.rsi > 70 ? 'var(--danger)' : (point.rsi < 30 ? 'var(--success)' : 'inherit');
+
+                document.getElementById('m-ratio').textContent = point.ratio.toFixed(2);
+                document.getElementById('m-wall').textContent = point.wall.toFixed(1) + '%';
+                document.getElementById('m-vol').textContent = (point.vol / 1000).toFixed(1) + 'k';
+
+                const obiEl = document.getElementById('m-obi');
+                obiEl.textContent = point.obi.toFixed(3);
+                obiEl.style.color = point.obi > 0.2 ? 'var(--success)' : (point.obi < -0.2 ? 'var(--danger)' : 'inherit');
+
+                const macdEl = document.getElementById('m-macd');
+                macdEl.textContent = `${point.macd.toFixed(6)} (${point.macdHist.toFixed(6)})`;
+                macdEl.style.color = point.macdHist >= 0 ? 'var(--success)' : 'var(--danger)';
+
+                document.getElementById('m-tsi').textContent = point.tsi.toFixed(2);
+            });
+        }
+
+        window.onload = loadFiles;
+    </script>
+</body>
+
+</html>

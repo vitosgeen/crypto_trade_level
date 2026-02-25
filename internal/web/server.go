@@ -145,6 +145,11 @@ func (s *Server) routes() {
 	s.router.HandleFunc("POST /api/rsi/config", s.handleUpdateRSIConfig)
 	s.router.HandleFunc("GET /api/rsi/signals", s.handleGetRSISignals)
 	s.router.HandleFunc("POST /api/rsi/quick-open", s.handleQuickOpenLevel)
+
+	// Research
+	s.router.HandleFunc("GET /research", s.handleResearchPage)
+	s.router.HandleFunc("GET /api/research/files", s.handleListResearchFiles)
+	s.router.HandleFunc("GET /api/research/files/content", s.handleGetResearchFileContent)
 }
 
 func (s *Server) Start() error {

@@ -135,7 +135,50 @@
 
         <div class="card">
             <h2>Price Chart</h2>
-            <div id="levelChart" style="width: 100%; height: 400px;"></div>
+            <div id="levelChart" style="width: 100%; height: 500px;"></div>
+            <div id="chart-legend"
+                style="display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px; font-size: 0.8rem; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border-color);">
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('price', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #2196f3; border-radius: 2px;"></span> Price
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('rsi', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #9c27b0; border-radius: 2px;"></span> RSI
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('vol', this.checked)">
+                    <span
+                        style="width: 10px; height: 10px; background: rgba(0, 150, 136, 0.5); border-radius: 2px;"></span>
+                    Vol
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('ratio', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #ff5722; border-radius: 2px;"></span> Ratio
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('wall', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #00bcd4; border-radius: 2px;"></span> Wall%
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('obi', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #cddc39; border-radius: 2px;"></span> OBI
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('macd', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #607d8b; border-radius: 2px;"></span> MACD
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('gli', this.checked)">
+                    <span
+                        style="width: 10px; height: 10px; background: #9c27b0; border-radius: 2px; border: 1px solid #fff;"></span>
+                    GLI
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('tsi', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #ff9800; border-radius: 2px;"></span> TSI
+                </label>
+            </div>
         </div>
 
         <div class="card">
@@ -442,8 +485,45 @@
         let candleSeries = null;
         let liquiditySeries = null;
         let rsiSeries = null;
+        let volumeSeries = null;
+        let ratioSeries = null;
+        let wallSeries = null;
+        let obiSeries = null;
+        let macdSeries = null;
+        let macdHistSeries = null;
+        let gliSeries = null;
+        let tsiSeries = null;
+
         let currentLiquidityLines = [];
         let lastCandle = null;
+
+        let seriesVisibility = {
+            price: true,
+            rsi: true,
+            vol: true,
+            ratio: true,
+            wall: true,
+            obi: true,
+            macd: true,
+            gli: true,
+            tsi: true
+        };
+
+        function toggleSeries(name, visible) {
+            seriesVisibility[name] = visible;
+            if (name === 'price' && candleSeries) candleSeries.applyOptions({ visible });
+            if (name === 'rsi' && rsiSeries) rsiSeries.applyOptions({ visible });
+            if (name === 'vol' && volumeSeries) volumeSeries.applyOptions({ visible });
+            if (name === 'ratio' && ratioSeries) ratioSeries.applyOptions({ visible });
+            if (name === 'wall' && wallSeries) wallSeries.applyOptions({ visible });
+            if (name === 'obi' && obiSeries) obiSeries.applyOptions({ visible });
+            if (name === 'macd' && macdSeries) {
+                macdSeries.applyOptions({ visible });
+                macdHistSeries.applyOptions({ visible });
+            }
+            if (name === 'gli' && gliSeries) gliSeries.applyOptions({ visible });
+            if (name === 'tsi' && tsiSeries) tsiSeries.applyOptions({ visible });
+        }
 
         // Conclusion Chart
         let conclusionChart = null;
@@ -576,6 +656,84 @@
                 title: '',
             });
 
+            // Volume Series
+            volumeSeries = chart.addHistogramSeries({
+                priceFormat: { type: 'volume' },
+                priceScaleId: 'volume',
+                scaleMargins: { top: 0.85, bottom: 0.0 },
+            });
+
+            // Ratio Series
+            chart.priceScale('ratio').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.45, bottom: 0.45 },
+            });
+            ratioSeries = chart.addLineSeries({
+                color: '#ff5722',
+                lineWidth: 1,
+                priceScaleId: 'ratio',
+                title: 'Ratio'
+            });
+
+            // Wall Series
+            chart.priceScale('wall').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.55, bottom: 0.35 },
+            });
+            wallSeries = chart.addAreaSeries({
+                lineColor: '#00bcd4',
+                topColor: 'rgba(0, 188, 212, 0.1)',
+                bottomColor: 'rgba(0, 188, 212, 0)',
+                priceScaleId: 'wall',
+                title: 'Wall%'
+            });
+
+            // OBI Series
+            chart.priceScale('obi').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.35, bottom: 0.55 },
+            });
+            obiSeries = chart.addLineSeries({
+                color: '#cddc39',
+                lineWidth: 1,
+                priceScaleId: 'obi',
+                title: 'OBI'
+            });
+
+            // MACD Series
+            chart.priceScale('macd').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.65, bottom: 0.15 },
+            });
+            macdSeries = chart.addLineSeries({
+                color: '#607d8b',
+                lineWidth: 1,
+                priceScaleId: 'macd',
+                title: 'MACD'
+            });
+            macdHistSeries = chart.addHistogramSeries({ priceScaleId: 'macd' });
+
+            // GLI Series
+            gliSeries = chart.addAreaSeries({
+                lineColor: '#9c27b0',
+                topColor: 'rgba(156, 39, 176, 0.1)',
+                bottomColor: 'rgba(156, 39, 176, 0)',
+                priceScaleId: 'ratio',
+                title: 'GLI'
+            });
+
+            // TSI Series
+            chart.priceScale('tsi').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.25, bottom: 0.75 },
+            });
+            tsiSeries = chart.addLineSeries({
+                color: '#ff9800',
+                lineWidth: 1,
+                priceScaleId: 'tsi',
+                title: 'TSI'
+            });
+
             // --- Conclusion Chart ---
             // Create container dynamically if not exists (or assume user adds it to HTML, but let's append it for now)
             // Actually, let's insert it after the main chart
@@ -654,6 +812,14 @@
                     const rsiData = calculateRSI(candles);
                     rsiSeries.setData(rsiData);
 
+                    // Update Volume
+                    const volumeData = candles.map(c => ({
+                        time: c.time,
+                        value: c.volume,
+                        color: c.close >= c.open ? 'rgba(0, 150, 136, 0.5)' : 'rgba(255, 82, 82, 0.5)',
+                    }));
+                    volumeSeries.setData(volumeData);
+
                     chart.timeScale().fitContent();
 
                     // Store last candle for updates
@@ -730,6 +896,15 @@
                     if (rsiData && rsiData.length > 0) {
                         const lastRSI = rsiData[rsiData.length - 1];
                         rsiSeries.update(lastRSI);
+                    }
+
+                    // Update Volume
+                    if (latestCandle) {
+                        volumeSeries.update({
+                            time: latestCandle.time,
+                            value: latestCandle.volume,
+                            color: latestCandle.close >= latestCandle.open ? 'rgba(0, 150, 136, 0.5)' : 'rgba(255, 82, 82, 0.5)',
+                        });
                     }
                 }
 
@@ -877,7 +1052,29 @@
                 const gliNeedle = document.getElementById('gli-needle');
                 if (gliNeedle) gliNeedle.style.transform = `rotate(${gliDeg}deg)`;
                 const gliValue = document.getElementById('gli-value');
-                if (gliValue) gliValue.textContent = stats.gli.toFixed(2);
+                if (gliValue) gliValue.textContent = stats.gli.toFixed(4);
+
+                // --- Update Chart with Stats ---
+                if (lastCandle) {
+                    const now = Math.floor(Date.now() / 1000);
+                    const time = Math.max(now, lastCandle.time);
+
+                    if (obiSeries) obiSeries.update({ time, value: stats.obi || 0 });
+                    if (macdSeries) {
+                        macdSeries.update({ time, value: stats.macd || 0 });
+                        macdHistSeries.update({
+                            time,
+                            value: stats.macd_hist || 0,
+                            color: (stats.macd_hist || 0) >= 0 ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 82, 82, 0.3)'
+                        });
+                    }
+                    if (tsiSeries) tsiSeries.update({ time, value: stats.tsi || 0 });
+                    if (gliSeries) gliSeries.update({ time, value: stats.gli || 0 });
+
+                    // Fetch ratio and wall from imbalance API for charting if needed
+                    // Or just use what we have. Speed bot detail doesn't currently poll imbalance API?
+                    // Let's check.
+                }
 
                 // Conclusion Calculation
                 // Speed: -1 to 1
@@ -944,6 +1141,62 @@
             } catch (e) {
                 console.error("Failed to fetch market stats", e);
             }
+        }
+
+        async function loadResearchHistory() {
+            try {
+                const resp = await fetch('/api/research/files');
+                const allFiles = await resp.json();
+                const myFiles = allFiles.filter(f => f.symbol === symbol);
+                if (myFiles.length === 0) return;
+
+                const latest = myFiles[0];
+                const contentResp = await fetch('/api/research/files/content?path=' + encodeURIComponent(latest.path));
+                const content = await contentResp.text();
+                const lines = content.trim().split('\n');
+
+                const fileName = latest.file_name;
+                const dateParts = fileName.split('-')[0];
+                const baseDate = `${dateParts.substring(0, 4)}-${dateParts.substring(4, 6)}-${dateParts.substring(6, 8)}`;
+
+                let histOBI = [], histRatio = [], histWall = [], histMACD = [], histMACDHist = [], histGLI = [], histTSI = [];
+                let lastTimestamp = 0;
+
+                lines.forEach(line => {
+                    const parts = line.split(' | ');
+                    if (parts.length < 10) return;
+                    const timeStr = parts[0].trim();
+                    const ratioVal = parseFloat(parts[5]);
+                    const wallVal = parseFloat(parts[7].replace('%', ''));
+                    const gliVal = parseFloat(parts[9]);
+                    const obiVal = parts.length > 13 ? parseFloat(parts[13]) : 0;
+                    const macdValStr = parts.length > 14 ? parts[14] : '0(0)';
+                    const macdVal = parseFloat(macdValStr.split('(')[0]) || 0;
+                    const macdHistVal = parseFloat(macdValStr.split('(')[1]?.replace(')', '')) || 0;
+                    const tsiVal = parts.length > 15 ? parseFloat(parts[15]) : 0;
+
+                    const dt = new Date(`${baseDate}T${timeStr}`);
+                    let timestamp = Math.floor(dt.getTime() / 1000);
+                    if (timestamp <= lastTimestamp) timestamp = lastTimestamp + 1;
+                    lastTimestamp = timestamp;
+
+                    histRatio.push({ time: timestamp, value: ratioVal });
+                    histWall.push({ time: timestamp, value: wallVal });
+                    histOBI.push({ time: timestamp, value: obiVal });
+                    histMACD.push({ time: timestamp, value: macdVal });
+                    histMACDHist.push({ time: timestamp, value: macdHistVal, color: macdHistVal >= 0 ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 82, 82, 0.3)' });
+                    histGLI.push({ time: timestamp, value: gliVal });
+                    histTSI.push({ time: timestamp, value: tsiVal });
+                });
+
+                if (ratioSeries) ratioSeries.setData(histRatio);
+                if (wallSeries) wallSeries.setData(histWall);
+                if (obiSeries) obiSeries.setData(histOBI);
+                if (macdSeries) macdSeries.setData(histMACD);
+                if (macdHistSeries) macdHistSeries.setData(histMACDHist);
+                if (gliSeries) gliSeries.setData(histGLI);
+                if (tsiSeries) tsiSeries.setData(histTSI);
+            } catch (e) { console.error(e); }
         }
 
         // Speed Bot Configuration
@@ -1102,9 +1355,11 @@
         }
 
         // Initialize
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', async function () {
             initChart();
-            updateMarketStats();
+            loadResearchHistory(); // Load historical data for new series
+
+            updateMarketStats(); // Initial call to update market stats
 
             // Button handlers
             document.getElementById('start-bot-btn').addEventListener('click', startBot);

@@ -12,18 +12,36 @@ const (
 
 // Position represents an open position on the exchange.
 type Position struct {
-	Exchange      string
-	Symbol        string
-	Side          Side
-	Size          float64
-	EntryPrice    float64
-	MarkPrice     float64
-	CurrentPrice  float64 // Legacy support, maps to EvalPrice or MarkPrice
-	EvalPrice     float64 // The price used for bot evaluation (Last/Mid)
-	RSI           float64
-	UnrealizedPnL float64
-	Leverage      int
-	MarginType    string
+	Exchange          string
+	Symbol            string
+	Side              Side
+	Size              float64
+	EntryPrice        float64
+	MarkPrice         float64
+	CurrentPrice      float64 // Legacy support, maps to EvalPrice or MarkPrice
+	EvalPrice         float64 // The price used for bot evaluation (Last/Mid)
+	RSI               float64
+	UnrealizedPnL     float64
+	Leverage          int
+	MarginType        string
+	LevelID           string  // Linked level ID
+	LevelPrice        float64 // Linked level price for display
+	LiquidityRatio    float64
+	LiquidityClusters int // Legacy/Weak side
+	BidClusters       int
+	AskClusters       int
+	LiquidityWallPct  float64
+	GLI               float64
+	DominantSide      string // "bid" or "ask"
+	Volume60s         float64
+	DepthBid          float64
+	DepthAsk          float64
+	PriceChange60s    float64
+	OBI               float64
+	MACD              float64
+	MACDSignal        float64
+	MACDHist          float64
+	TSI               float64
 }
 
 // Order represents a trade executed by the bot.
@@ -68,15 +86,29 @@ type PositionHistory struct {
 }
 
 type PositionPnLHistory struct {
-	ID            int64     `json:"id"`
-	Symbol        string    `json:"symbol"`
-	Side          Side      `json:"side"`
-	Size          float64   `json:"size"`
-	EntryPrice    float64   `json:"entry_price"`
-	MarkPrice     float64   `json:"mark_price"`
-	UnrealizedPnL float64   `json:"unrealized_pnl"`
-	RSI           float64   `json:"rsi"`
-	Timestamp     time.Time `json:"timestamp"`
+	ID               int64     `json:"id"`
+	Symbol           string    `json:"symbol"`
+	Side             Side      `json:"side"`
+	Size             float64   `json:"size"`
+	EntryPrice       float64   `json:"entry_price"`
+	MarkPrice        float64   `json:"mark_price"`
+	UnrealizedPnL    float64   `json:"unrealized_pnl"`
+	RSI              float64   `json:"rsi"`
+	LiquidityRatio   float64   `json:"liquidity_ratio"`
+	BidClusters      int       `json:"bid_clusters"`
+	AskClusters      int       `json:"ask_clusters"`
+	LiquidityWallPct float64   `json:"liquidity_wall_pct"`
+	GLI              float64   `json:"gli"`
+	Volume60s        float64   `json:"volume_60s"`
+	DepthBid         float64   `json:"depth_bid"`
+	DepthAsk         float64   `json:"depth_ask"`
+	PriceChange60s   float64   `json:"price_change_60s"`
+	OBI              float64   `json:"obi"`
+	MACD             float64   `json:"macd"`
+	MACDSignal       float64   `json:"macd_signal"`
+	MACDHist         float64   `json:"macd_hist"`
+	TSI              float64   `json:"tsi"`
+	Timestamp        time.Time `json:"timestamp"`
 }
 
 type TickData struct {

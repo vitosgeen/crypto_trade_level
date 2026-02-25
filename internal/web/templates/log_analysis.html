@@ -368,6 +368,8 @@
                         <option value="biggest_order_book">Biggest Order Book</option>
                         <option value="strong_side">Strong Side</option>
                         <option value="strong_side_opposite">Strong Side opposite</option>
+                        <option value="strong_side_both">Strong Side Double (Both Prices)</option>
+                        <option value="trend_mirror_ob">Trend Mirror (Order Book)</option>
                         <option value="local_high_low">Local High / Local Low</option>
                     </select>
                 </div>
@@ -1049,7 +1051,7 @@
                         }
 
                         if (!activeSymbols.has(symbol)) {
-                            let targetPrice = 0;
+                            let targetPrices = [];
                             let currentLevelSide = 'BOTH';
                             const priceText = row.cells[1].innerText;
                             const priceMatch = priceText.match(/\$([0-9.]+)/);
@@ -1064,35 +1066,27 @@
                             const rsi = row.cells[8].getAttribute('data-val') || 0;
 
                             if (mode === 'current') {
-                                targetPrice = currentPrice;
+                                targetPrices.push(currentPrice);
                             } else if (mode === 'extremes') {
                                 if (realPcntChange < 0) {
-                                    // change - : highest price
-                                    targetPrice = maxPrice;
+                                    targetPrices.push(maxPrice);
                                 } else {
-                                    // change + : lowest price
-                                    targetPrice = minPrice;
+                                    targetPrices.push(minPrice);
                                 }
                             } else if (mode === 'extremes_opposite') {
                                 if (realPcntChange < 0) {
-                                    // change - : lowest price
-                                    targetPrice = minPrice;
+                                    targetPrices.push(minPrice);
                                 } else {
-                                    // change + : highest price
-                                    targetPrice = maxPrice;
+                                    targetPrices.push(maxPrice);
                                 }
                             } else if (mode === 'biggest_order_book') {
                                 try {
                                     const sideParam = realPcntChange < 0 ? 'bid' : 'ask';
-                                    const levelSide = realPcntChange < 0 ? 'LONG' : 'SHORT';
                                     const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${sideParam}`);
                                     if (resp.ok) {
                                         const data = await resp.json();
-                                        targetPrice = data.price;
-                                        console.log(`Found biggest order book level for ${symbol} (${sideParam}): ${targetPrice}`);
-
-                                        // Override default BOTH if we found a specific side level
-                                        currentLevelSide = levelSide;
+                                        targetPrices.push(data.price);
+                                        console.log(`Found biggest order book level for ${symbol} (${sideParam}): ${data.price}`);
                                     } else {
                                         const errData = await resp.json().catch(() => ({}));
                                         if (resp.status === 422 && errData.error === "No structure in the book") {
@@ -1103,29 +1097,44 @@
                                 } catch (err) {
                                     console.error(`Error fetching biggest order book for ${symbol}:`, err);
                                 }
-                            } else if (mode === 'strong_side' || mode === 'strong_side_opposite') {
+                            } else if (mode === 'trend_mirror_ob') {
+                                try {
+                                    const sideParam = realPcntChange > 0 ? 'bid' : 'ask';
+                                    const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${sideParam}`);
+                                    if (resp.ok) {
+                                        const data = await resp.json();
+                                        targetPrices.push(data.price);
+                                        console.log(`Found trend mirror OB level for ${symbol} (${sideParam}): ${data.price}`);
+                                    } else {
+                                        const errData = await resp.json().catch(() => ({}));
+                                        console.error(`Failed to fetch trend mirror OB for ${symbol}: ${errData.error || resp.statusText}`);
+                                    }
+                                } catch (err) {
+                                    console.error(`Error fetching trend mirror OB for ${symbol}:`, err);
+                                }
+                            } else if (mode === 'strong_side' || mode === 'strong_side_opposite' || mode === 'strong_side_both') {
                                 try {
                                     const resp = await fetch(`/api/orderbook/strong-side?symbol=${symbol}&price=${currentPrice}`);
                                     if (resp.ok) {
                                         const data = await resp.json();
-                                        let finalSide = data.side;
-                                        if (mode === 'strong_side_opposite') {
-                                            finalSide = data.side === 'bid' ? 'ask' : 'bid';
-                                            // Since we flipped the side, we need to fetch the biggest wall on the OTHER side
+
+                                        if (mode === 'strong_side' || mode === 'strong_side_both') {
+                                            targetPrices.push(data.price);
+                                            console.log(`Found strong side level for ${symbol} (${data.side}): ${data.price}`);
+                                        }
+
+                                        if (mode === 'strong_side_opposite' || mode === 'strong_side_both') {
+                                            const finalSide = data.side === 'bid' ? 'ask' : 'bid';
                                             const biggestResp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${finalSide}`);
                                             if (biggestResp.ok) {
                                                 const biggestData = await biggestResp.json();
-                                                targetPrice = biggestData.price;
+                                                targetPrices.push(biggestData.price);
+                                                console.log(`Found strong side opposite level for ${symbol} (${finalSide}): ${biggestData.price}`);
                                             } else {
                                                 const errData = await biggestResp.json().catch(() => ({}));
                                                 console.error(`Failed to fetch opposite side biggest wall for ${symbol}: ${errData.error || biggestResp.statusText}`);
-                                                continue;
                                             }
-                                        } else {
-                                            targetPrice = data.price;
                                         }
-                                        currentLevelSide = finalSide === 'bid' ? 'LONG' : 'SHORT';
-                                        console.log(`Found ${mode} level for ${symbol} (${finalSide}): ${targetPrice}`);
                                     } else {
                                         const errData = await resp.json().catch(() => ({}));
                                         if (resp.status === 422 && errData.error === "No structure in the book") {
@@ -1138,15 +1147,13 @@
                                 }
                             } else if (mode === 'local_high_low') {
                                 if (realPcntChange < 0) {
-                                    // Price Down -> Target Low
-                                    targetPrice = minPrice;
+                                    targetPrices.push(minPrice);
                                 } else {
-                                    // Price Up -> Target High
-                                    targetPrice = maxPrice;
+                                    targetPrices.push(maxPrice);
                                 }
                             }
 
-                            if (targetPrice) {
+                            for (const targetPrice of targetPrices) {
                                 let liAnalysis = null;
                                 if (document.getElementById('verifyLiquidityToggle').checked) {
                                     try {
@@ -1162,7 +1169,7 @@
                                                 const entry = document.createElement('div');
                                                 entry.style.color = 'var(--text-muted)';
                                                 entry.style.fontSize = '0.8rem';
-                                                entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Liquidity Declined - ${liAnalysis.reason}`;
+                                                entry.innerText = `[${new Date().toLocaleTimeString()}] ${symbol}: Liquidity Declined - ${liAnalysis.reason} (Ratio: ${liAnalysis.ratio.toFixed(1)}, Clusters: ${liAnalysis.clusters}, Wall: ${liAnalysis.wall_pct.toFixed(0)}%)`;
                                                 appendToLog(entry);
                                                 continue; // Skip this level
                                             }
@@ -1200,7 +1207,7 @@
                                     }
                                 });
                             }
-                            else {
+                            if (targetPrices.length === 0) {
                                 console.warn(`Could not determine target price for ${symbol} with mode ${mode}`);
                             }
                         } else {
@@ -1358,7 +1365,7 @@
                     let liInfo = "";
                     if (analysisData && analysisData.liquidity) {
                         const li = analysisData.liquidity;
-                        liInfo = ` | Liq: ${li.ratio.toFixed(1)} (${li.weak_side})`;
+                        liInfo = ` | Ratio: ${li.ratio.toFixed(1)} | Clusters: ${li.clusters} | Wall: ${li.wall_pct.toFixed(0)}%`;
                     }
                     const volPcntInfo = analysisData && analysisData.vol_pcnt_change != undefined ? ` (V: ${analysisData.vol_pcnt_change.toFixed(1)}%)` : "";
 
@@ -1446,28 +1453,29 @@
             const realPcntChange = parseFloat(cell.getAttribute('data-val')) || 0;
             const mode = document.getElementById('autoPriceMode').value;
 
-            let price = currentPrice;
+            let prices = [];
             let levelSide = 'BOTH';
-            if (mode === 'extremes') {
+            if (mode === 'current') {
+                prices.push(currentPrice);
+            } else if (mode === 'extremes') {
                 if (realPcntChange < 0) {
-                    price = cell.getAttribute('data-max-price') || currentPrice;
+                    prices.push(cell.getAttribute('data-max-price') || currentPrice);
                 } else if (realPcntChange > 0) {
-                    price = cell.getAttribute('data-min-price') || currentPrice;
+                    prices.push(cell.getAttribute('data-min-price') || currentPrice);
                 }
             } else if (mode === 'extremes_opposite') {
                 if (realPcntChange < 0) {
-                    price = cell.getAttribute('data-min-price') || currentPrice;
+                    prices.push(cell.getAttribute('data-min-price') || currentPrice);
                 } else if (realPcntChange > 0) {
-                    price = cell.getAttribute('data-max-price') || currentPrice;
+                    prices.push(cell.getAttribute('data-max-price') || currentPrice);
                 }
             } else if (mode === 'biggest_order_book') {
                 try {
                     const sideParam = realPcntChange < 0 ? 'bid' : 'ask';
-                    levelSide = realPcntChange < 0 ? 'LONG' : 'SHORT';
                     const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${sideParam}`);
                     if (resp.ok) {
                         const data = await resp.json();
-                        price = data.price;
+                        prices.push(data.price);
                     } else {
                         const errData = await resp.json().catch(() => ({}));
                         alert(`Cannot create level: ${errData.error || "Failed to fetch order book data"}`);
@@ -1478,27 +1486,45 @@
                     alert("Error fetching order book data");
                     return;
                 }
-            } else if (mode === 'strong_side' || mode === 'strong_side_opposite') {
+            } else if (mode === 'trend_mirror_ob') {
+                try {
+                    const sideParam = realPcntChange > 0 ? 'bid' : 'ask';
+                    const resp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${sideParam}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        prices.push(data.price);
+                    } else {
+                        const errData = await resp.json().catch(() => ({}));
+                        alert(`Cannot create level: ${errData.error || "Failed to fetch trend mirror OB data"}`);
+                        return;
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch trend mirror OB", err);
+                    alert("Error fetching trend mirror OB data");
+                    return;
+                }
+            } else if (mode === 'strong_side' || mode === 'strong_side_opposite' || mode === 'strong_side_both') {
                 try {
                     const resp = await fetch(`/api/orderbook/strong-side?symbol=${symbol}&price=${currentPrice}`);
                     if (resp.ok) {
                         const data = await resp.json();
-                        let finalSide = data.side;
-                        if (mode === 'strong_side_opposite') {
-                            finalSide = data.side === 'bid' ? 'ask' : 'bid';
+
+                        if (mode === 'strong_side' || mode === 'strong_side_both') {
+                            prices.push(data.price);
+                        }
+
+                        if (mode === 'strong_side_opposite' || mode === 'strong_side_both') {
+                            const finalSide = data.side === 'bid' ? 'ask' : 'bid';
                             const biggestResp = await fetch(`/api/orderbook/biggest?symbol=${symbol}&price=${currentPrice}&side=${finalSide}`);
                             if (biggestResp.ok) {
                                 const biggestData = await biggestResp.json();
-                                price = biggestData.price;
+                                prices.push(biggestData.price);
                             } else {
                                 const errData = await biggestResp.json().catch(() => ({}));
                                 alert(`Cannot create level: ${errData.error || "Failed to fetch opposite side biggest wall"}`);
                                 return;
                             }
-                        } else {
-                            price = data.price;
                         }
-                        levelSide = finalSide === 'bid' ? 'LONG' : 'SHORT';
                     } else {
                         const errData = await resp.json().catch(() => ({}));
                         alert(`Cannot create level: ${errData.error || "Failed to fetch strong side data"}`);
@@ -1511,47 +1537,49 @@
                 }
             } else if (mode === 'local_high_low') {
                 if (realPcntChange < 0) {
-                    price = cell.getAttribute('data-min-price') || currentPrice;
+                    prices.push(cell.getAttribute('data-min-price') || currentPrice);
                 } else {
-                    price = cell.getAttribute('data-max-price') || currentPrice;
+                    prices.push(cell.getAttribute('data-max-price') || currentPrice);
                 }
             }
 
-            if (!confirm(`Create level for ${symbol} at $${price}? (Mode: ${mode}, Side: ${levelSide})`)) return;
+            for (const price of prices) {
+                if (!confirm(`Create level for ${symbol} at $${price}? (Mode: ${mode}, Side: ${levelSide})`)) continue;
 
-            const size = document.getElementById('autoLevelSize').value;
-            const tp = document.getElementById('autoLevelTP').value;
-            const lev = document.getElementById('autoLevelLev').value;
-            const cool = document.getElementById('autoLevelCool').value;
-            const tier1 = document.getElementById('autoLevelTier1').value;
-            const tier2 = document.getElementById('autoLevelTier2').value;
-            const tier3 = document.getElementById('autoLevelTier3').value;
-            const ignoreSentiment = document.getElementById('ignoreSentimentToggle').checked;
-            const tpByExchange = document.getElementById('tpByExchangeToggle').checked;
+                const size = document.getElementById('autoLevelSize').value;
+                const tp = document.getElementById('autoLevelTP').value;
+                const lev = document.getElementById('autoLevelLev').value;
+                const cool = document.getElementById('autoLevelCool').value;
+                const tier1 = document.getElementById('autoLevelTier1').value;
+                const tier2 = document.getElementById('autoLevelTier2').value;
+                const tier3 = document.getElementById('autoLevelTier3').value;
+                const ignoreSentiment = document.getElementById('ignoreSentimentToggle').checked;
+                const tpByExchange = document.getElementById('tpByExchangeToggle').checked;
 
-            const minPrice = cell.getAttribute('data-min-price');
-            const maxPrice = cell.getAttribute('data-max-price');
-            const timeframeName = document.getElementById('monitorTimeframe').options[document.getElementById('monitorTimeframe').selectedIndex].text;
-            const rsi = row.cells[8].getAttribute('data-val') || 0;
+                const minPrice = cell.getAttribute('data-min-price');
+                const maxPrice = cell.getAttribute('data-max-price');
+                const timeframeName = document.getElementById('monitorTimeframe').options[document.getElementById('monitorTimeframe').selectedIndex].text;
+                const rsi = row.cells[8].getAttribute('data-val') || 0;
 
-            const volPcntChange = parseFloat(cell.getAttribute('data-vol-pcnt')) || 0;
+                const volPcntChange = parseFloat(cell.getAttribute('data-vol-pcnt')) || 0;
 
-            const analysisData = {
-                symbol: symbol,
-                price: currentPrice,
-                oi: parseFloat(row.cells[1].getAttribute('data-val')),
-                vol24h: parseFloat(row.cells[2].getAttribute('data-val')),
-                pcnt_change: realPcntChange,
-                vol_pcnt_change: volPcntChange,
-                value_change: parseFloat(cell.getAttribute('data-val-raw')),
-                timeframe: timeframeName,
-                min_price: minPrice,
-                max_price: maxPrice,
-                rsi: rsi,
-                macd: row.cells[9].getAttribute('data-val') || 0
-            };
+                const analysisData = {
+                    symbol: symbol,
+                    price: currentPrice,
+                    oi: parseFloat(row.cells[1].getAttribute('data-val')),
+                    vol24h: parseFloat(row.cells[2].getAttribute('data-val')),
+                    pcnt_change: realPcntChange,
+                    vol_pcnt_change: volPcntChange,
+                    value_change: parseFloat(cell.getAttribute('data-val-raw')),
+                    timeframe: timeframeName,
+                    min_price: minPrice,
+                    max_price: maxPrice,
+                    rsi: rsi,
+                    macd: row.cells[9].getAttribute('data-val') || 0
+                };
 
-            createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi, analysisData, ignoreSentiment, tpByExchange, levelSide, false);
+                createLevel(symbol, price, size, tp, lev, cool, tier1, tier2, tier3, minPrice, maxPrice, timeframeName, rsi, analysisData, ignoreSentiment, tpByExchange, levelSide, false);
+            }
         }
 
         // Set initial time

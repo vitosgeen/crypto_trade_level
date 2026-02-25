@@ -111,6 +111,60 @@
             border-color: var(--accent-color) !important;
             outline: none;
         }
+
+        /* Monitor Grid Styling */
+        .monitor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 12px;
+            margin-bottom: 25px;
+        }
+
+        .monitor-tile {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px 10px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            text-align: center;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-height: 80px;
+        }
+
+        .monitor-tile:hover {
+            border-color: var(--accent-color);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .monitor-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
+        .monitor-value {
+            font-size: 16px;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', 'Roboto Mono', monospace;
+            color: var(--text-color);
+        }
+
+        .monitor-value.up {
+            color: #00ff88;
+        }
+
+        .monitor-value.down {
+            color: #ff5252;
+        }
+
+        .monitor-value.warn {
+            color: #ffeb3b;
+        }
     </style>
 </head>
 
@@ -137,6 +191,48 @@
         <div class="card">
             <h2>Price Chart</h2>
             <div id="levelChart" style="width: 100%; height: 500px;"></div>
+            <div id="chart-legend"
+                style="display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px; font-size: 0.8rem; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border-color);">
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('price', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #26a69a; border-radius: 2px;"></span> Price
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('rsi', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #9c27b0; border-radius: 2px;"></span> RSI
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('vol', this.checked)">
+                    <span
+                        style="width: 10px; height: 10px; background: rgba(0, 150, 136, 0.8); border-radius: 2px;"></span>
+                    Vol
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('ratio', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #ff5722; border-radius: 2px;"></span> Ratio
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('wall', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #00bcd4; border-radius: 2px;"></span> Wall%
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('obi', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #cddc39; border-radius: 2px;"></span> OBI
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('macd', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #607d8b; border-radius: 2px;"></span> MACD
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('gli', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #e91e63; border-radius: 2px;"></span>
+                    GLI
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" checked onchange="toggleSeries('tsi', this.checked)">
+                    <span style="width: 10px; height: 10px; background: #ff9800; border-radius: 2px;"></span> TSI
+                </label>
+            </div>
         </div>
 
         <div class="card" style="margin-top: 20px;">
@@ -184,6 +280,53 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="monitor-grid">
+                <div class="monitor-tile">
+                    <div class="monitor-label">RSI (1m)</div>
+                    <div id="val-rsi" class="monitor-value">--</div>
+                </div>
+                <div class="monitor-tile">
+                    <div class="monitor-label">LI Ratio</div>
+                    <div id="val-li-ratio" class="monitor-value">--</div>
+                </div>
+                <div class="monitor-tile">
+                    <div class="monitor-label">LI Clusters</div>
+                    <div id="val-li-clusters" class="monitor-value">--</div>
+                </div>
+                <div class="monitor-tile">
+                    <div class="monitor-label">LI Wall Pct</div>
+                    <div id="val-li-wall" class="monitor-value">--</div>
+                </div>
+                <div class="monitor-tile">
+                    <div class="monitor-label">Vol (60s)</div>
+                    <div id="val-vol" class="monitor-value">--</div>
+                </div>
+                <div class="monitor-tile">
+                    <div class="monitor-label">Depth (B/A)</div>
+                    <div id="val-depth" class="monitor-value">--</div>
+                </div>
+                <div class="monitor-tile">
+                    <div class="monitor-label">Change (60s)</div>
+                    <div id="val-change" class="monitor-value">--</div>
+                </div>
+                <div class="monitor-tile">
+                    <div class="monitor-label">OBI</div>
+                    <div id="val-obi" class="monitor-value">--</div>
+                </div>
+                <div class="monitor-tile">
+                    <div class="monitor-label">MACD</div>
+                    <div id="val-macd" class="monitor-value">--</div>
+                </div>
+                <div class="monitor-tile">
+                    <div class="monitor-label">TSI</div>
+                    <div id="val-tsi" class="monitor-value">--</div>
+                </div>
+                <div class="monitor-tile">
+                    <div class="monitor-label">GLI</div>
+                    <div id="val-gli" class="monitor-value">--</div>
                 </div>
             </div>
 
@@ -362,8 +505,45 @@
         let liquiditySeries = null;
         let heatmapSeries = null;
         let rsiSeries = null;
+        let volumeSeries = null;
+        let ratioSeries = null;
+        let wallSeries = null;
+        let obiSeries = null;
+        let macdSeries = null;
+        let macdHistSeries = null;
+        let gliSeries = null;
+        let tsiSeries = null;
+
         let currentLiquidityLines = [];
         let lastCandle = null;
+
+        let seriesVisibility = {
+            price: true,
+            rsi: true,
+            vol: true,
+            ratio: true,
+            wall: true,
+            obi: true,
+            macd: true,
+            gli: true,
+            tsi: true
+        };
+
+        function toggleSeries(name, visible) {
+            seriesVisibility[name] = visible;
+            if (name === 'price' && candleSeries) candleSeries.applyOptions({ visible });
+            if (name === 'rsi' && rsiSeries) rsiSeries.applyOptions({ visible });
+            if (name === 'vol' && volumeSeries) volumeSeries.applyOptions({ visible });
+            if (name === 'ratio' && ratioSeries) ratioSeries.applyOptions({ visible });
+            if (name === 'wall' && wallSeries) wallSeries.applyOptions({ visible });
+            if (name === 'obi' && obiSeries) obiSeries.applyOptions({ visible });
+            if (name === 'macd' && macdSeries) {
+                macdSeries.applyOptions({ visible });
+                macdHistSeries.applyOptions({ visible });
+            }
+            if (name === 'gli' && gliSeries) gliSeries.applyOptions({ visible });
+            if (name === 'tsi' && tsiSeries) tsiSeries.applyOptions({ visible });
+        }
 
         // --- Heatmap Implementation ---
         class HeatmapRenderer {
@@ -562,44 +742,114 @@
             });
 
             // RSI Series
+            chart.priceScale('rsi').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.8, bottom: 0.05 },
+            });
             rsiSeries = chart.addLineSeries({
-                color: '#9c27b0', // Purple
+                color: '#9c27b0',
                 lineWidth: 2,
-                priceScaleId: 'rsi', // Separate scale
-                scaleMargins: {
-                    top: 0.8, // Position at bottom
-                    bottom: 0.05,
-                },
+                priceScaleId: 'rsi',
+                title: 'RSI'
             });
 
             // Volume Series
+            chart.priceScale('volume').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.85, bottom: 0.0 },
+            });
             volumeSeries = chart.addHistogramSeries({
-                priceFormat: {
-                    type: 'volume',
-                },
-                priceScaleId: 'volume', // Separate scale
-                scaleMargins: {
-                    top: 0.7, // Position below price, overlapping slightly with bottom or separate
-                    bottom: 0.0,
-                },
+                priceFormat: { type: 'volume' },
+                priceScaleId: 'volume',
+            });
+
+            // Ratio Series
+            chart.priceScale('ratio').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.45, bottom: 0.45 },
+            });
+            ratioSeries = chart.addLineSeries({
+                color: '#ff5722',
+                lineWidth: 1,
+                priceScaleId: 'ratio',
+                title: 'Ratio'
+            });
+
+            // Wall Series
+            chart.priceScale('wall').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.55, bottom: 0.35 },
+            });
+            wallSeries = chart.addAreaSeries({
+                lineColor: '#00bcd4',
+                topColor: 'rgba(0, 188, 212, 0.1)',
+                bottomColor: 'rgba(0, 188, 212, 0)',
+                priceScaleId: 'wall',
+                title: 'Wall%'
+            });
+
+            // OBI Series
+            chart.priceScale('obi').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.35, bottom: 0.55 },
+            });
+            obiSeries = chart.addLineSeries({
+                color: '#cddc39',
+                lineWidth: 1,
+                priceScaleId: 'obi',
+                title: 'OBI'
+            });
+
+            // MACD Series
+            chart.priceScale('macd').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.65, bottom: 0.25 },
+            });
+            macdSeries = chart.addLineSeries({
+                color: '#607d8b',
+                lineWidth: 1,
+                priceScaleId: 'macd',
+                title: 'MACD'
+            });
+            macdHistSeries = chart.addHistogramSeries({
+                priceScaleId: 'macd',
+            });
+
+            // GLI Series (Shares scale with Ratio)
+            gliSeries = chart.addAreaSeries({
+                lineColor: '#e91e63',
+                topColor: 'rgba(233, 30, 99, 0.1)',
+                bottomColor: 'rgba(233, 30, 99, 0)',
+                priceScaleId: 'ratio',
+                title: 'GLI'
+            });
+
+            // TSI Series
+            chart.priceScale('tsi').applyOptions({
+                visible: false,
+                scaleMargins: { top: 0.25, bottom: 0.65 },
+            });
+            tsiSeries = chart.addLineSeries({
+                color: '#ff9800',
+                lineWidth: 1,
+                priceScaleId: 'tsi',
+                title: 'TSI'
             });
 
             // RSI Levels
             rsiSeries.createPriceLine({
                 price: 70,
-                color: '#9c27b0',
+                color: 'rgba(156, 39, 176, 0.5)',
                 lineWidth: 1,
                 lineStyle: LightweightCharts.LineStyle.Dotted,
                 axisLabelVisible: false,
-                title: '',
             });
             rsiSeries.createPriceLine({
                 price: 30,
-                color: '#9c27b0',
+                color: 'rgba(156, 39, 176, 0.5)',
                 lineWidth: 1,
                 lineStyle: LightweightCharts.LineStyle.Dotted,
                 axisLabelVisible: false,
-                title: '',
             });
 
             window.addEventListener('resize', () => {
@@ -730,11 +980,11 @@
                             ? `rgba(0, 255, 136, ${opacity.toFixed(2)})`
                             : `rgba(255, 82, 82, ${opacity.toFixed(2)})`;
 
-                        // RESTORED: Show current levels as lines for visibility
+                        // Show current levels as lines for visibility
                         currentLiquidityLines.push(liquiditySeries.createPriceLine({
                             price: c.price,
                             color: color,
-                            lineWidth: 2,
+                            lineWidth: 1,
                             lineStyle: LightweightCharts.LineStyle.Solid,
                             axisLabelVisible: false,
                             title: '',
@@ -813,6 +1063,184 @@
                 }
             } catch (e) {
                 console.error("Failed to update chart", e);
+            }
+        }
+
+        async function updateMarketMonitor() {
+            try {
+                // 1. Fetch Market Stats
+                const statsResp = await fetch(`/api/market-stats?symbol=${symbol}`);
+                if (statsResp.ok) {
+                    const stats = await statsResp.json();
+
+                    const rsiEl = document.getElementById('val-rsi');
+                    if (rsiEl) {
+                        rsiEl.textContent = (stats.rsi || 0).toFixed(2);
+                        rsiEl.className = 'monitor-value ' + (stats.rsi > 70 ? 'down' : (stats.rsi < 30 ? 'up' : ''));
+                    }
+
+                    const volEl = document.getElementById('val-vol');
+                    if (volEl) {
+                        const totalVol = ((stats.speed_buy || 0) + (stats.speed_sell || 0)) / 1000;
+                        volEl.textContent = totalVol.toFixed(1) + 'k';
+                    }
+
+                    const depthEl = document.getElementById('val-depth');
+                    if (depthEl) {
+                        depthEl.textContent = ((stats.depth_bid || 0) / 1000).toFixed(0) + 'k / ' + ((stats.depth_ask || 0) / 1000).toFixed(0) + 'k';
+                    }
+
+                    const changeEl = document.getElementById('val-change');
+                    if (changeEl) {
+                        const chg = stats.price_change_60s || 0;
+                        changeEl.textContent = (chg > 0 ? '+' : '') + chg.toFixed(2) + '%';
+                        changeEl.className = 'monitor-value ' + (chg > 0 ? 'up' : (chg < 0 ? 'down' : ''));
+                    }
+
+                    const obiEl = document.getElementById('val-obi');
+                    if (obiEl) {
+                        obiEl.textContent = (stats.obi || 0).toFixed(3);
+                        obiEl.className = 'monitor-value ' + (stats.obi > 0.2 ? 'up' : (stats.obi < -0.2 ? 'down' : ''));
+                    }
+
+                    const macdEl = document.getElementById('val-macd');
+                    if (macdEl) {
+                        macdEl.textContent = (stats.macd || 0).toFixed(6);
+                        macdEl.className = 'monitor-value ' + (stats.macd_hist > 0 ? 'up' : 'down');
+                    }
+
+                    const tsiEl = document.getElementById('val-tsi');
+                    if (tsiEl) {
+                        tsiEl.textContent = (stats.tsi || 0).toFixed(2);
+                    }
+
+                    const gliEl = document.getElementById('val-gli');
+                    if (gliEl) {
+                        gliEl.textContent = (stats.gli || 0).toFixed(4);
+                        gliEl.className = 'monitor-value ' + (stats.gli < 1.0 ? 'up' : (stats.gli > 1.0 ? 'down' : ''));
+                    }
+
+                    // --- Update Chart with Stats ---
+                    if (lastCandle) {
+                        const now = Math.floor(Date.now() / 1000);
+                        const time = Math.max(now, lastCandle.time);
+
+                        if (obiSeries) obiSeries.update({ time, value: stats.obi || 0 });
+                        if (macdSeries) {
+                            macdSeries.update({ time, value: stats.macd || 0 });
+                            macdHistSeries.update({
+                                time,
+                                value: stats.macd_hist || 0,
+                                color: (stats.macd_hist || 0) >= 0 ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 82, 82, 0.3)'
+                            });
+                        }
+                        if (tsiSeries) tsiSeries.update({ time, value: stats.tsi || 0 });
+                        if (gliSeries) gliSeries.update({ time, value: stats.gli || 0 });
+                    }
+                }
+
+                // 2. Fetch Liquidity Analysis
+                const liResp = await fetch(`/api/orderbook/analyze-imbalance?symbol=${symbol}`);
+                if (liResp.ok) {
+                    const li = await liResp.json();
+
+                    const ratioEl = document.getElementById('val-li-ratio');
+                    if (ratioEl) {
+                        ratioEl.textContent = (li.ratio || 0).toFixed(2);
+                        ratioEl.className = 'monitor-value ' + (li.ratio > 2.0 ? 'up' : '');
+                    }
+
+                    const clustersEl = document.getElementById('val-li-clusters');
+                    if (clustersEl) {
+                        clustersEl.textContent = li.clusters || '0';
+                    }
+
+                    const wallEl = document.getElementById('val-li-wall');
+                    if (wallEl) {
+                        wallEl.textContent = (li.wall_pct || 0).toFixed(1) + '%';
+                        wallEl.className = 'monitor-value ' + (li.wall_pct < 20 ? 'up' : (li.wall_pct > 50 ? 'down' : ''));
+                    }
+
+                    // --- Update Chart with Liquidity ---
+                    if (lastCandle) {
+                        const now = Math.floor(Date.now() / 1000);
+                        const time = Math.max(now, lastCandle.time);
+                        if (ratioSeries) ratioSeries.update({ time, value: li.ratio || 0 });
+                        if (wallSeries) wallSeries.update({ time, value: li.wall_pct || 0 });
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to update market monitor", e);
+            }
+        }
+
+        async function loadResearchHistory() {
+            try {
+                // Try to find the latest research log for this symbol
+                const resp = await fetch('/api/research/files');
+                const allFiles = await resp.json();
+                const myFiles = allFiles.filter(f => f.symbol === symbol);
+                if (myFiles.length === 0) return;
+
+                // Sort by filename desc to get latest
+                const latest = myFiles[0];
+                const contentResp = await fetch('/api/research/files/content?path=' + encodeURIComponent(latest.path));
+                const content = await contentResp.text();
+                const lines = content.trim().split('\n');
+
+                const fileName = latest.file_name;
+                const dateParts = fileName.split('-')[0];
+                const year = dateParts.substring(0, 4);
+                const month = dateParts.substring(4, 6);
+                const day = dateParts.substring(6, 8);
+                const baseDate = `${year}-${month}-${day}`;
+
+                let histOBI = [], histRatio = [], histWall = [], histMACD = [], histMACDHist = [], histGLI = [], histTSI = [];
+                let lastTimestamp = 0;
+
+                lines.forEach(line => {
+                    const parts = line.split(' | ');
+                    if (parts.length < 10) return;
+
+                    const timeStr = parts[0].trim();
+                    const ratioVal = parseFloat(parts[5]);
+                    const wallVal = parseFloat(parts[7].replace('%', ''));
+                    const gliVal = parseFloat(parts[9]);
+
+                    const obiVal = parts.length > 13 ? parseFloat(parts[13]) : 0;
+                    const macdValStr = parts.length > 14 ? parts[14] : '0(0)';
+                    const macdVal = parseFloat(macdValStr.split('(')[0]) || 0;
+                    const macdHistVal = parseFloat(macdValStr.split('(')[1]?.replace(')', '')) || 0;
+                    const tsiVal = parts.length > 15 ? parseFloat(parts[15]) : 0;
+
+                    const dt = new Date(`${baseDate}T${timeStr}`);
+                    let timestamp = Math.floor(dt.getTime() / 1000);
+                    if (timestamp <= lastTimestamp) timestamp = lastTimestamp + 1;
+                    lastTimestamp = timestamp;
+
+                    histRatio.push({ time: timestamp, value: ratioVal });
+                    histWall.push({ time: timestamp, value: wallVal });
+                    histOBI.push({ time: timestamp, value: obiVal });
+                    histMACD.push({ time: timestamp, value: macdVal });
+                    histMACDHist.push({
+                        time: timestamp,
+                        value: macdHistVal,
+                        color: macdHistVal >= 0 ? 'rgba(0, 255, 136, 0.3)' : 'rgba(255, 82, 82, 0.3)'
+                    });
+                    histGLI.push({ time: timestamp, value: gliVal });
+                    histTSI.push({ time: timestamp, value: tsiVal });
+                });
+
+                if (ratioSeries) ratioSeries.setData(histRatio);
+                if (wallSeries) wallSeries.setData(histWall);
+                if (obiSeries) obiSeries.setData(histOBI);
+                if (macdSeries) macdSeries.setData(histMACD);
+                if (macdHistSeries) macdHistSeries.setData(histMACDHist);
+                if (gliSeries) gliSeries.setData(histGLI);
+                if (tsiSeries) tsiSeries.setData(histTSI);
+
+            } catch (e) {
+                console.error("Failed to load research history", e);
             }
         }
 
@@ -1018,6 +1446,9 @@
         document.addEventListener('DOMContentLoaded', async function () {
             initChart();
 
+            // Load extra history
+            loadResearchHistory();
+
             // Load chart data
             await loadChartData();
 
@@ -1069,6 +1500,10 @@
             // Update funding countdown every second
             updateCountdown(); // Initial update
             setInterval(updateCountdown, 1000);
+
+            // Update Market Monitor every 2 seconds
+            updateMarketMonitor();
+            setInterval(updateMarketMonitor, 2000);
 
 
         });

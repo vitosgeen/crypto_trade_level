@@ -1249,6 +1249,11 @@ type LiquidityAnalysis struct {
 	IsImbalanced      bool    `json:"is_imbalanced"`
 	WeakSide          string  `json:"weak_side"`
 	Ratio             float64 `json:"ratio"`
+	Clusters          int     `json:"clusters"` // Legacy/Weak side
+	BidClusters       int     `json:"bid_clusters"`
+	AskClusters       int     `json:"ask_clusters"`
+	WallPct           float64 `json:"wall_pct"`
+	GLI               float64 `json:"gli"`
 	Reason            string  `json:"reason"`
 	DominantMaxVolume float64 `json:"dominant_max_volume"`
 	WeakMaxVolume     float64 `json:"weak_max_volume"`
@@ -1262,6 +1267,12 @@ func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol st
 
 	analysis := &LiquidityAnalysis{
 		IsImbalanced: false,
+	}
+
+	// Fetch GLI from MarketStats
+	stats, err := s.GetMarketStats(ctx, symbol)
+	if err == nil && stats != nil {
+		analysis.GLI = stats.GLI
 	}
 
 	// Range for cumulative volume (e.g., 2%)
@@ -1321,6 +1332,12 @@ func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol st
 	analysis.WeakSide = weakSide
 	analysis.DominantMaxVolume = dominantMaxVol
 	analysis.WeakMaxVolume = weakMaxVol
+	analysis.Clusters = len(weakClusters)
+	analysis.BidClusters = len(bidClusters)
+	analysis.AskClusters = len(askClusters)
+	if dominantMaxVol > 0 {
+		analysis.WallPct = (weakMaxVol / dominantMaxVol) * 100.0
+	}
 
 	// Condition 1: Imbalance Ratio
 	if ratio < minRatio {

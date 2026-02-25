@@ -551,6 +551,7 @@
             <a href="/speed-bot">Speed Bot</a>
             <a href="/funding-bot">Funding Bot</a>
             <a href="/wallet">Wallet</a>
+            <a href="/research">Research</a>
             <a href="/dashboard" style="color: var(--accent-color);">Dashboard</a>
         </div>
         <div id="ws-status"
@@ -2819,6 +2820,8 @@
             <th>Mark Price</th>
             <th>Eval Price</th>
             <th>RSI (1m)</th>
+            <th>Level</th>
+            <th>Ratio/Clusters/Wall %</th>
             <th>Unrealized PnL</th>
             <th>Lev</th>
             <th>Margin</th>
@@ -2839,6 +2842,20 @@
             <td
                 style="font-family: monospace; font-weight: 700; color: {{if ge .RSI 70.0}}var(--danger){{else if le .RSI 30.0}}var(--success){{else}}var(--text-color){{end}}">
                 {{printf "%.2f" .RSI}}
+            </td>
+            <td style="font-family: monospace; font-weight: 700; color: var(--accent-color)">
+                {{ if gt .LevelPrice 0.0 }}{{ printf "%.6f" .LevelPrice }}{{ else }}-{{ end }}
+            </td>
+            <td style="font-family: monospace; font-size: 0.85rem;">
+                <span style="color: {{ if eq .DominantSide " bid" }}var(--success){{ else }}var(--danger){{ end }};
+                    font-weight: bold;">
+                    {{ if eq .DominantSide "bid" }}BUY{{ else }}SELL{{ end }}
+                </span>
+                <span class="text-info">{{ printf "%.1f" .LiquidityRatio }}</span> /
+                <span class="text-success">{{ .BidClusters }}B</span>:<span class="text-danger">{{ .AskClusters
+                    }}A</span> /
+                <span class="text-success">{{ printf "%.0f%%" .LiquidityWallPct }}</span> /
+                <span style="color: var(--secondary-color)">{{ printf "%.1f" .GLI }}G</span>
             </td>
             <td
                 style="color: {{ if gt .UnrealizedPnL 0.0 }}var(--success){{ else if lt .UnrealizedPnL 0.0 }}var(--danger){{ else }}var(--text-muted){{ end }}; font-weight: bold;">

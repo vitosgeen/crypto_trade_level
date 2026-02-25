@@ -184,6 +184,11 @@ func (s *SQLiteStore) initSchema() error {
 	_, _ = s.db.Exec(`ALTER TABLE position_history ADD COLUMN opened_at DATETIME`)
 	_, _ = s.db.Exec(`ALTER TABLE exchange_position_history ADD COLUMN opened_at DATETIME`)
 	_, _ = s.db.Exec(`ALTER TABLE position_pnl_history ADD COLUMN rsi REAL NOT NULL DEFAULT 0`)
+	_, _ = s.db.Exec(`ALTER TABLE position_pnl_history ADD COLUMN liquidity_ratio REAL NOT NULL DEFAULT 0`)
+	_, _ = s.db.Exec(`ALTER TABLE position_pnl_history ADD COLUMN bid_clusters INTEGER NOT NULL DEFAULT 0`)
+	_, _ = s.db.Exec(`ALTER TABLE position_pnl_history ADD COLUMN ask_clusters INTEGER NOT NULL DEFAULT 0`)
+	_, _ = s.db.Exec(`ALTER TABLE position_pnl_history ADD COLUMN liquidity_wall_pct REAL NOT NULL DEFAULT 0`)
+	_, _ = s.db.Exec(`ALTER TABLE position_pnl_history ADD COLUMN gli REAL NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE wallet_balances ADD COLUMN margin_balance REAL NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE wallet_balances ADD COLUMN initial_margin REAL NOT NULL DEFAULT 0`)
 	_, _ = s.db.Exec(`ALTER TABLE wallet_balances ADD COLUMN maintenance_margin REAL NOT NULL DEFAULT 0`)
@@ -521,15 +526,16 @@ func (s *SQLiteStore) GetTradeSessionLog(ctx context.Context, id string) (*domai
 }
 
 func (s *SQLiteStore) SavePositionPnLHistory(ctx context.Context, history *domain.PositionPnLHistory) error {
-	query := `INSERT INTO position_pnl_history (symbol, side, size, entry_price, mark_price, unrealized_pnl, rsi, timestamp)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO position_pnl_history (symbol, side, size, entry_price, mark_price, unrealized_pnl, rsi, liquidity_ratio, bid_clusters, ask_clusters, liquidity_wall_pct, gli, timestamp)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, query,
-		history.Symbol, history.Side, history.Size, history.EntryPrice, history.MarkPrice, history.UnrealizedPnL, history.RSI, history.Timestamp)
+		history.Symbol, history.Side, history.Size, history.EntryPrice, history.MarkPrice, history.UnrealizedPnL, history.RSI,
+		history.LiquidityRatio, history.BidClusters, history.AskClusters, history.LiquidityWallPct, history.GLI, history.Timestamp)
 	return err
 }
 
 func (s *SQLiteStore) ListPositionPnLHistory(ctx context.Context, symbol string, limit int) ([]*domain.PositionPnLHistory, error) {
-	query := `SELECT id, symbol, side, size, entry_price, mark_price, unrealized_pnl, rsi, timestamp FROM position_pnl_history`
+	query := `SELECT id, symbol, side, size, entry_price, mark_price, unrealized_pnl, rsi, liquidity_ratio, bid_clusters, ask_clusters, liquidity_wall_pct, gli, timestamp FROM position_pnl_history`
 	var args []interface{}
 	if symbol != "" {
 		query += ` WHERE symbol = ?`
@@ -547,7 +553,7 @@ func (s *SQLiteStore) ListPositionPnLHistory(ctx context.Context, symbol string,
 	var history []*domain.PositionPnLHistory
 	for rows.Next() {
 		var h domain.PositionPnLHistory
-		if err := rows.Scan(&h.ID, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.MarkPrice, &h.UnrealizedPnL, &h.RSI, &h.Timestamp); err != nil {
+		if err := rows.Scan(&h.ID, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.MarkPrice, &h.UnrealizedPnL, &h.RSI, &h.LiquidityRatio, &h.BidClusters, &h.AskClusters, &h.LiquidityWallPct, &h.GLI, &h.Timestamp); err != nil {
 			return nil, err
 		}
 		history = append(history, &h)
@@ -556,7 +562,7 @@ func (s *SQLiteStore) ListPositionPnLHistory(ctx context.Context, symbol string,
 }
 
 func (s *SQLiteStore) ListPositionPnLHistoryRange(ctx context.Context, symbol string, start, end time.Time) ([]*domain.PositionPnLHistory, error) {
-	query := `SELECT id, symbol, side, size, entry_price, mark_price, unrealized_pnl, rsi, timestamp FROM position_pnl_history
+	query := `SELECT id, symbol, side, size, entry_price, mark_price, unrealized_pnl, rsi, liquidity_ratio, bid_clusters, ask_clusters, liquidity_wall_pct, gli, timestamp FROM position_pnl_history
 			  WHERE symbol = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC`
 	rows, err := s.db.QueryContext(ctx, query, symbol, start, end)
 	if err != nil {
@@ -567,7 +573,7 @@ func (s *SQLiteStore) ListPositionPnLHistoryRange(ctx context.Context, symbol st
 	var history []*domain.PositionPnLHistory
 	for rows.Next() {
 		var h domain.PositionPnLHistory
-		if err := rows.Scan(&h.ID, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.MarkPrice, &h.UnrealizedPnL, &h.RSI, &h.Timestamp); err != nil {
+		if err := rows.Scan(&h.ID, &h.Symbol, &h.Side, &h.Size, &h.EntryPrice, &h.MarkPrice, &h.UnrealizedPnL, &h.RSI, &h.LiquidityRatio, &h.BidClusters, &h.AskClusters, &h.LiquidityWallPct, &h.GLI, &h.Timestamp); err != nil {
 			return nil, err
 		}
 		history = append(history, &h)

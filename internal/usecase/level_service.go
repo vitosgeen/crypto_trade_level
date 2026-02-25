@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -729,7 +731,24 @@ func (s *LevelService) CheckSafety(ctx context.Context) {
 
 // ClosePosition manually closes a position for a symbol
 func (s *LevelService) ClosePosition(ctx context.Context, symbol string) error {
-	_, err := s.finalizePosition(ctx, symbol, "Manual Close", "manual-close", s.GetLatestPrice(symbol))
+	// Try to identify which level was likely active for this position
+	levelID := "manual-close"
+	s.mu.RLock()
+	levels := s.levelsCache[symbol]
+	s.mu.RUnlock()
+
+	for _, l := range levels {
+		state := s.engine.GetState(l.ID)
+		// If ANY tier was triggered, this level is "active"
+		if state.Tier1Triggered || state.Tier2Triggered || state.Tier3Triggered {
+			levelID = l.ID
+			break
+		}
+	}
+
+	log.Printf("MANUAL CLOSE: Identified level %s for symbol %s", levelID, symbol)
+
+	_, err := s.finalizePosition(ctx, symbol, "Manual Close", levelID, s.GetLatestPrice(symbol))
 	return err
 }
 
@@ -990,7 +1009,7 @@ func (s *LevelService) finalizePosition(ctx context.Context, symbol, reason, lev
 
 	// 8. Close level if profit was achieved
 	if realizedPnL > 0 && levelID != "" && levelID != "unknown" &&
-		levelID != "sentiment-exit" && levelID != "safety-exit" && levelID != "manual-close" {
+		levelID != "sentiment-exit" && levelID != "safety-exit" {
 		log.Printf("FINALIZE: Level %s achieved profit (%f). Deleting level.", levelID, realizedPnL)
 		if err := s.levelRepo.DeleteLevel(ctx, levelID); err != nil {
 			log.Printf("FINALIZE: Failed to delete level %s after profit: %v", levelID, err)
@@ -1403,6 +1422,47 @@ func (s *LevelService) IncrementBaseCloses(ctx context.Context, levelID string) 
 	return nil
 }
 
+// RecordResearchMetrics logs current market stats for a symbol to the research file
+func (s *LevelService) RecordResearchMetrics(ctx context.Context, symbol string) {
+	stats, err := s.market.GetMarketStats(ctx, symbol)
+	if err != nil {
+		return
+	}
+
+	analysis, err := s.market.AnalyzeLiquidityImbalance(ctx, symbol, stats.LastPrice, 2.0, 5, 0.25)
+
+	history := &domain.PositionPnLHistory{
+		Symbol:    symbol,
+		Side:      "RESEARCH", // Marker side
+		MarkPrice: stats.LastPrice,
+		RSI:       stats.RSI,
+		Timestamp: time.Now(),
+	}
+
+	if stats != nil {
+		history.Volume60s = stats.SpeedBuy + stats.SpeedSell
+		history.DepthBid = stats.DepthBid
+		history.DepthAsk = stats.DepthAsk
+		history.PriceChange60s = stats.PriceChange60s
+		history.OBI = stats.OBI
+		history.MACD = stats.MACD
+		history.MACDSignal = stats.MACDSignal
+		history.MACDHist = stats.MACDHist
+		history.TSI = stats.TSI
+	}
+
+	if err == nil && analysis != nil {
+		history.LiquidityRatio = analysis.Ratio
+		history.BidClusters = analysis.BidClusters
+		history.AskClusters = analysis.AskClusters
+		history.LiquidityWallPct = analysis.WallPct
+		history.GLI = analysis.GLI
+	}
+
+	// Log to file for research
+	s.logMetricsToFile(history)
+}
+
 // RecordActivePositionsPnL fetches all active positions and records their unrealized PnL to history.
 func (s *LevelService) RecordActivePositionsPnL(ctx context.Context) {
 	positions, err := s.exchange.GetPositions(ctx)
@@ -1416,7 +1476,17 @@ func (s *LevelService) RecordActivePositionsPnL(ctx context.Context) {
 			continue
 		}
 
-		rsi, _ := s.market.GetRSI(ctx, pos.Symbol, "1", 14)
+		stats, _ := s.market.GetMarketStats(ctx, pos.Symbol)
+		rsi := 0.0
+		if stats != nil {
+			rsi = stats.RSI
+		} else {
+			rsi, _ = s.market.GetRSI(ctx, pos.Symbol, "1", 14)
+		}
+
+		// Fetch Liquidity Analysis
+		analysis, err := s.market.AnalyzeLiquidityImbalance(ctx, pos.Symbol, pos.MarkPrice, 2.0, 5, 0.25)
+
 		history := &domain.PositionPnLHistory{
 			Symbol:        pos.Symbol,
 			Side:          pos.Side,
@@ -1428,9 +1498,79 @@ func (s *LevelService) RecordActivePositionsPnL(ctx context.Context) {
 			Timestamp:     time.Now(),
 		}
 
+		if stats != nil {
+			history.Volume60s = stats.SpeedBuy + stats.SpeedSell
+			history.DepthBid = stats.DepthBid
+			history.DepthAsk = stats.DepthAsk
+			history.PriceChange60s = stats.PriceChange60s
+			history.OBI = stats.OBI
+			history.MACD = stats.MACD
+			history.MACDSignal = stats.MACDSignal
+			history.MACDHist = stats.MACDHist
+			history.TSI = stats.TSI
+		}
+
+		if err == nil && analysis != nil {
+			history.LiquidityRatio = analysis.Ratio
+			history.BidClusters = analysis.BidClusters
+			history.AskClusters = analysis.AskClusters
+			history.LiquidityWallPct = analysis.WallPct
+			history.GLI = analysis.GLI
+		}
+
 		if err := s.tradeRepo.SavePositionPnLHistory(ctx, history); err != nil {
 			log.Printf("ERROR: Failed to save position PnL history for %s: %v", pos.Symbol, err)
 		}
+
+		// Log to file for research
+		s.logMetricsToFile(history)
+	}
+}
+
+func (s *LevelService) logMetricsToFile(h *domain.PositionPnLHistory) {
+	// dir: logs/research/SYMBOL/YYYYMMDD-HH.log
+	now := time.Now()
+	dir := filepath.Join("logs", "research", h.Symbol)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("ERROR: Failed to create log directory %s: %v", dir, err)
+		return
+	}
+
+	fileName := fmt.Sprintf("%s.log", now.Format("20060102-15"))
+	path := filepath.Join(dir, fileName)
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("ERROR: Failed to open metric log file %s: %v", path, err)
+		return
+	}
+	defer f.Close()
+
+	// Format: Time | Symbol | Side | Price | RSI | Ratio | Clusters | Wall% | PnL | GLI | Vol60 | Depth B/A | Chg60 | OBI | MACD | TSI
+	line := fmt.Sprintf("%s | %s | %s | %.6f | %.2f | %.2f | %dB:%dA | %.1f%% | %.4f | %.2f | %.1f | %.0f/%.0f | %.2f%% | %.3f | %.6f(%.6f) | %.2f\n",
+		now.Format("15:04:05"),
+		h.Symbol,
+		h.Side,
+		h.MarkPrice,
+		h.RSI,
+		h.LiquidityRatio,
+		h.BidClusters,
+		h.AskClusters,
+		h.LiquidityWallPct,
+		h.UnrealizedPnL,
+		h.GLI,
+		h.Volume60s,
+		h.DepthBid,
+		h.DepthAsk,
+		h.PriceChange60s,
+		h.OBI,
+		h.MACD,
+		h.MACDHist,
+		h.TSI,
+	)
+
+	if _, err := f.WriteString(line); err != nil {
+		log.Printf("ERROR: Failed to write to metric log file %s: %v", path, err)
 	}
 }
 

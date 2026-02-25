@@ -1,11 +1,14 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
+	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -497,9 +500,38 @@ func (s *Server) handlePositionsTable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	levels, _ := s.levelRepo.ListLevels(r.Context()) // Fetch once outside loop
 	for _, p := range positions {
 		rsi, _ := s.marketService.GetRSI(r.Context(), p.Symbol, "1", 14)
 		p.RSI = rsi
+
+		// Fetch Liquidity Analysis
+		analysis, err := s.marketService.AnalyzeLiquidityImbalance(r.Context(), p.Symbol, p.EvalPrice, 2.0, 5, 0.25)
+		if err == nil && analysis != nil {
+			p.LiquidityRatio = analysis.Ratio
+			p.LiquidityClusters = analysis.Clusters
+			p.BidClusters = analysis.BidClusters
+			p.AskClusters = analysis.AskClusters
+			p.LiquidityWallPct = analysis.WallPct
+			p.GLI = analysis.GLI
+			if analysis.WeakSide == "ask" {
+				p.DominantSide = "bid"
+			} else {
+				p.DominantSide = "ask"
+			}
+		}
+
+		// Find associated level
+		for _, l := range levels {
+			if l.Symbol == p.Symbol {
+				state := s.service.GetLevelState(l.ID)
+				if state.Tier1Triggered || state.Tier2Triggered || state.Tier3Triggered {
+					p.LevelID = l.ID
+					p.LevelPrice = l.LevelPrice
+					break
+				}
+			}
+		}
 	}
 
 	if err := templates.ExecuteTemplate(w, "positions_table", positions); err != nil {
@@ -836,6 +868,9 @@ func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Trigger research logging for this symbol
+	go s.service.RecordResearchMetrics(context.Background(), symbol)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
@@ -1244,4 +1279,90 @@ func getIntParam(r *http.Request, name string, defaultVal int) int {
 		return defaultVal
 	}
 	return val
+}
+
+func (s *Server) handleResearchPage(w http.ResponseWriter, r *http.Request) {
+	if err := templates.ExecuteTemplate(w, "research.html", nil); err != nil {
+		s.logger.Error("Template error", zap.Error(err))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleListResearchFiles(w http.ResponseWriter, r *http.Request) {
+	baseDir := filepath.Join("logs", "research")
+
+	type FileInfo struct {
+		Symbol   string `json:"symbol"`
+		FileName string `json:"file_name"`
+		Path     string `json:"path"`
+	}
+
+	var files []FileInfo
+
+	symbols, err := os.ReadDir(baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			json.NewEncoder(w).Encode([]FileInfo{})
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	for _, sym := range symbols {
+		if !sym.IsDir() {
+			continue
+		}
+
+		logFiles, err := os.ReadDir(filepath.Join(baseDir, sym.Name()))
+		if err != nil {
+			continue
+		}
+
+		for _, lf := range logFiles {
+			if lf.IsDir() {
+				continue
+			}
+			files = append(files, FileInfo{
+				Symbol:   sym.Name(),
+				FileName: lf.Name(),
+				Path:     filepath.Join(sym.Name(), lf.Name()),
+			})
+		}
+	}
+
+	// Sort by symbol then by filename desc (latest first)
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].Symbol != files[j].Symbol {
+			return files[i].Symbol < files[j].Symbol
+		}
+		return files[i].FileName > files[j].FileName
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(files)
+}
+
+func (s *Server) handleGetResearchFileContent(w http.ResponseWriter, r *http.Request) {
+	relPath := r.URL.Query().Get("path")
+	if relPath == "" {
+		http.Error(w, "Path is required", http.StatusBadRequest)
+		return
+	}
+
+	// Prevent path traversal
+	if strings.Contains(relPath, "..") {
+		http.Error(w, "Invalid path", http.StatusForbidden)
+		return
+	}
+
+	fullPath := filepath.Join("logs", "research", relPath)
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write(content)
 }
