@@ -1423,13 +1423,20 @@ func (s *LevelService) IncrementBaseCloses(ctx context.Context, levelID string) 
 }
 
 // RecordResearchMetrics logs current market stats for a symbol to the research file
-func (s *LevelService) RecordResearchMetrics(ctx context.Context, symbol string) {
-	stats, err := s.market.GetMarketStats(ctx, symbol)
-	if err != nil {
-		return
+func (s *LevelService) RecordResearchMetrics(ctx context.Context, symbol string, optStats *MarketStats, optAnalysis *LiquidityAnalysis) {
+	stats := optStats
+	if stats == nil {
+		var err error
+		stats, err = s.market.GetMarketStats(ctx, symbol)
+		if err != nil {
+			return
+		}
 	}
 
-	analysis, err := s.market.AnalyzeLiquidityImbalance(ctx, symbol, stats.LastPrice, 2.0, 5, 0.25)
+	analysis := optAnalysis
+	if analysis == nil {
+		analysis, _ = s.market.AnalyzeLiquidityImbalance(ctx, symbol, stats.LastPrice, 2.0, 5, 0.25)
+	}
 
 	history := &domain.PositionPnLHistory{
 		Symbol:    symbol,
@@ -1451,7 +1458,7 @@ func (s *LevelService) RecordResearchMetrics(ctx context.Context, symbol string)
 		history.TSI = stats.TSI
 	}
 
-	if err == nil && analysis != nil {
+	if analysis != nil {
 		history.LiquidityRatio = analysis.Ratio
 		history.BidClusters = analysis.BidClusters
 		history.AskClusters = analysis.AskClusters
@@ -1487,6 +1494,8 @@ func (s *LevelService) RecordActivePositionsPnL(ctx context.Context) {
 		// Fetch Liquidity Analysis
 		analysis, err := s.market.AnalyzeLiquidityImbalance(ctx, pos.Symbol, pos.MarkPrice, 2.0, 5, 0.25)
 
+		s.RecordResearchMetrics(ctx, pos.Symbol, stats, analysis)
+
 		history := &domain.PositionPnLHistory{
 			Symbol:        pos.Symbol,
 			Side:          pos.Side,
@@ -1521,9 +1530,6 @@ func (s *LevelService) RecordActivePositionsPnL(ctx context.Context) {
 		if err := s.tradeRepo.SavePositionPnLHistory(ctx, history); err != nil {
 			log.Printf("ERROR: Failed to save position PnL history for %s: %v", pos.Symbol, err)
 		}
-
-		// Log to file for research
-		s.logMetricsToFile(history)
 	}
 }
 

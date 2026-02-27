@@ -361,6 +361,15 @@
                 </div>
                 <div id="chart-legend"
                     style="display: flex; flex-wrap: wrap; gap: 20px; margin-top: 10px; font-size: 0.85rem; padding: 12px; background: var(--input-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+                    <div
+                        style="width: 100%; display: flex; gap: 10px; margin-bottom: 5px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+                        <button onclick="toggleAllSeries(true)"
+                            style="padding: 4px 12px; font-size: 0.75rem; background: var(--success); color: white; border: none;">Show
+                            All</button>
+                        <button onclick="toggleAllSeries(false)"
+                            style="padding: 4px 12px; font-size: 0.75rem; background: var(--danger); color: white; border: none;">Hide
+                            All</button>
+                    </div>
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
                         <input type="checkbox" checked onchange="toggleSeries('pnl', this.checked)">
                         <span style="width: 12px; height: 12px; background: #00ff88; border-radius: 2px;"></span> PnL
@@ -430,6 +439,18 @@
             if (seriesObjects[name]) {
                 seriesObjects[name].applyOptions({ visible: visible });
             }
+            if (name === 'macd' && seriesObjects.macdHist) {
+                seriesObjects.macdHist.applyOptions({ visible: visible });
+            }
+        }
+
+        function toggleAllSeries(visible) {
+            Object.keys(seriesVisibility).forEach(name => {
+                toggleSeries(name, visible);
+            });
+            document.querySelectorAll('#chart-legend input[type="checkbox"]').forEach(cb => {
+                cb.checked = visible;
+            });
         }
 
         function switchView(view) {
@@ -624,7 +645,12 @@
                 lineWidth: 2,
                 priceScaleId: 'right',
                 visible: seriesVisibility.price,
-                title: 'Price'
+                title: 'Price',
+                priceFormat: {
+                    type: 'price',
+                    precision: 6,
+                    minMove: 0.000001,
+                },
             });
             seriesObjects.price.setData(currentData.map(d => ({ time: d.time, value: d.price })));
 
@@ -793,7 +819,7 @@
                 // Update Metric Bar
                 const dt = new Date(point.time * 1000);
                 document.getElementById('m-time').textContent = dt.toTimeString().split(' ')[0];
-                document.getElementById('m-price').textContent = point.price.toFixed(2);
+                document.getElementById('m-price').textContent = point.price.toFixed(6);
 
                 const pnlEl = document.getElementById('m-pnl');
                 pnlEl.textContent = point.pnl.toFixed(4);

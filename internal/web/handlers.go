@@ -870,7 +870,7 @@ func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Trigger research logging for this symbol
-	go s.service.RecordResearchMetrics(context.Background(), symbol)
+	go s.service.RecordResearchMetrics(context.Background(), symbol, stats, nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)

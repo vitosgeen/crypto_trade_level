@@ -248,7 +248,6 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 			}
 		}
 	}
-	defer s.mu.Unlock()
 
 	// 1. Calculate Speed (from trades)
 	var speedBuy, speedSell float64
@@ -293,10 +292,21 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		s.trades[symbol] = validTrades
 	}
 
-	// 2. Get Depth (Moving Average)
-	// Check if we need to update depth history (lazy fetch if stale)
-	s.updateOrderBook(ctx, symbol)
+	// 2. Check if we need to update depth history (lazy fetch if stale)
+	needsDepthUpdate := true
+	if history, ok := s.depthHistory[symbol]; ok && len(history) > 0 {
+		last := history[len(history)-1]
+		if s.timeNow().Sub(last.Time) < 5*time.Second {
+			needsDepthUpdate = false
+		}
+	}
+	s.mu.Unlock() // RELEASE LOCK for OrderBook fetch
 
+	if needsDepthUpdate {
+		s.updateOrderBook(ctx, symbol)
+	}
+
+	s.mu.Lock() // RE-ACQUIRE LOCK for depth calculations
 	var avgBid60, avgAsk60 float64
 	var avgBid30, avgAsk30 float64
 	var avgBid10, avgAsk10 float64
@@ -466,6 +476,9 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		}
 	}
 
+	wsStatus := s.exchange.GetWSStatus()
+	s.mu.Unlock() // FINAL UNLOCK
+
 	// 7. RSI (1m)
 	rsi, _ := s.GetRSI(ctx, symbol, "1", 14)
 
@@ -497,20 +510,11 @@ func (s *MarketService) GetMarketStats(ctx context.Context, symbol string) (*Mar
 		MACD:               macd,
 		MACDSignal:         signal,
 		MACDHist:           hist,
-		WSStatus:           s.exchange.GetWSStatus(),
+		WSStatus:           wsStatus,
 	}, nil
 }
 
 func (s *MarketService) updateOrderBook(ctx context.Context, symbol string) {
-	// Check if latest snapshot is fresh (< 5s)
-	if history, ok := s.depthHistory[symbol]; ok && len(history) > 0 {
-		last := history[len(history)-1]
-		if s.timeNow().Sub(last.Time) < 5*time.Second {
-			return // Fresh enough
-		}
-	}
-
-	// Fetch Linear (Futures) Order Book
 	// Fetch Linear (Futures) Order Book
 	// We use a separate context with timeout to avoid blocking too long
 	var cancel context.CancelFunc
@@ -561,6 +565,8 @@ func (s *MarketService) updateOrderBook(ctx context.Context, symbol string) {
 
 	now := s.timeNow()
 	// Append to history
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.depthHistory[symbol] = append(s.depthHistory[symbol], DepthSnapshot{
 		Time:     now,
 		TotalBid: totalBid,
@@ -1269,17 +1275,12 @@ func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol st
 		IsImbalanced: false,
 	}
 
-	// Fetch GLI from MarketStats
-	stats, err := s.GetMarketStats(ctx, symbol)
-	if err == nil && stats != nil {
-		analysis.GLI = stats.GLI
-	}
-
 	// Range for cumulative volume (e.g., 2%)
 	rangeLimit := 0.02
 	var bidVol, askVol float64
 	var bidClusters, askClusters []LiquidityCluster
 	var maxBidVol, maxAskVol float64
+	var speedBuy, speedSell float64
 
 	for _, c := range clusters {
 		dist := math.Abs(c.Price-currentPrice) / currentPrice
@@ -1298,6 +1299,31 @@ func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol st
 				}
 			}
 		}
+	}
+
+	// Calculate local GLI from trades if possible, or just skip if we don't have MarketStats
+	// We avoid calling GetMarketStats here to prevent recursion and redundant weight.
+	s.mu.Lock()
+	if trades, ok := s.trades[symbol]; ok {
+		cutoff := s.timeNow().Add(-60 * time.Second)
+		for _, t := range trades {
+			if t.Time.After(cutoff) {
+				if t.Side == "Buy" {
+					speedBuy += t.Size * t.Price
+				} else {
+					speedSell += t.Size * t.Price
+				}
+			}
+		}
+	}
+	s.mu.Unlock()
+
+	if speedBuy > 0 {
+		analysis.GLI = speedSell / speedBuy
+	} else if speedSell > 0 {
+		analysis.GLI = MaxGLI
+	} else {
+		analysis.GLI = 1.0
 	}
 
 	if bidVol == 0 || askVol == 0 {

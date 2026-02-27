@@ -201,37 +201,6 @@
                     <input type="checkbox" checked onchange="toggleSeries('rsi', this.checked)">
                     <span style="width: 10px; height: 10px; background: #9c27b0; border-radius: 2px;"></span> RSI
                 </label>
-                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" checked onchange="toggleSeries('vol', this.checked)">
-                    <span
-                        style="width: 10px; height: 10px; background: rgba(0, 150, 136, 0.8); border-radius: 2px;"></span>
-                    Vol
-                </label>
-                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" checked onchange="toggleSeries('ratio', this.checked)">
-                    <span style="width: 10px; height: 10px; background: #ff5722; border-radius: 2px;"></span> Ratio
-                </label>
-                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" checked onchange="toggleSeries('wall', this.checked)">
-                    <span style="width: 10px; height: 10px; background: #00bcd4; border-radius: 2px;"></span> Wall%
-                </label>
-                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" checked onchange="toggleSeries('obi', this.checked)">
-                    <span style="width: 10px; height: 10px; background: #cddc39; border-radius: 2px;"></span> OBI
-                </label>
-                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" checked onchange="toggleSeries('macd', this.checked)">
-                    <span style="width: 10px; height: 10px; background: #607d8b; border-radius: 2px;"></span> MACD
-                </label>
-                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" checked onchange="toggleSeries('gli', this.checked)">
-                    <span style="width: 10px; height: 10px; background: #e91e63; border-radius: 2px;"></span>
-                    GLI
-                </label>
-                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" checked onchange="toggleSeries('tsi', this.checked)">
-                    <span style="width: 10px; height: 10px; background: #ff9800; border-radius: 2px;"></span> TSI
-                </label>
             </div>
         </div>
 
@@ -692,7 +661,7 @@
                     borderColor: 'rgba(255, 255, 255, 0.2)',
                     scaleMargins: {
                         top: 0.05,
-                        bottom: 0.4, // Leave space for RSI and Volume
+                        bottom: 0.25, // Leave space for RSI
                     },
                 },
                 timeScale: {
@@ -713,21 +682,7 @@
             //     },
             // });
 
-            // Liquidity series (for price lines)
-            liquiditySeries = chart.addLineSeries({
-                color: 'transparent',
-                lineWidth: 0,
-                crosshairMarkerVisible: false,
-                lastValueVisible: false,
-                priceLineVisible: false,
-                priceFormat: {
-                    type: 'price',
-                    precision: 6,
-                    minMove: 0.000001,
-                },
-            });
-
-            // Candle series (foreground)
+            // Candle series
             candleSeries = chart.addCandlestickSeries({
                 upColor: '#26a69a',
                 downColor: '#ef5350',
@@ -753,89 +708,6 @@
                 title: 'RSI'
             });
 
-            // Volume Series
-            chart.priceScale('volume').applyOptions({
-                visible: false,
-                scaleMargins: { top: 0.85, bottom: 0.0 },
-            });
-            volumeSeries = chart.addHistogramSeries({
-                priceFormat: { type: 'volume' },
-                priceScaleId: 'volume',
-            });
-
-            // Ratio Series
-            chart.priceScale('ratio').applyOptions({
-                visible: false,
-                scaleMargins: { top: 0.45, bottom: 0.45 },
-            });
-            ratioSeries = chart.addLineSeries({
-                color: '#ff5722',
-                lineWidth: 1,
-                priceScaleId: 'ratio',
-                title: 'Ratio'
-            });
-
-            // Wall Series
-            chart.priceScale('wall').applyOptions({
-                visible: false,
-                scaleMargins: { top: 0.55, bottom: 0.35 },
-            });
-            wallSeries = chart.addAreaSeries({
-                lineColor: '#00bcd4',
-                topColor: 'rgba(0, 188, 212, 0.1)',
-                bottomColor: 'rgba(0, 188, 212, 0)',
-                priceScaleId: 'wall',
-                title: 'Wall%'
-            });
-
-            // OBI Series
-            chart.priceScale('obi').applyOptions({
-                visible: false,
-                scaleMargins: { top: 0.35, bottom: 0.55 },
-            });
-            obiSeries = chart.addLineSeries({
-                color: '#cddc39',
-                lineWidth: 1,
-                priceScaleId: 'obi',
-                title: 'OBI'
-            });
-
-            // MACD Series
-            chart.priceScale('macd').applyOptions({
-                visible: false,
-                scaleMargins: { top: 0.65, bottom: 0.25 },
-            });
-            macdSeries = chart.addLineSeries({
-                color: '#607d8b',
-                lineWidth: 1,
-                priceScaleId: 'macd',
-                title: 'MACD'
-            });
-            macdHistSeries = chart.addHistogramSeries({
-                priceScaleId: 'macd',
-            });
-
-            // GLI Series (Shares scale with Ratio)
-            gliSeries = chart.addAreaSeries({
-                lineColor: '#e91e63',
-                topColor: 'rgba(233, 30, 99, 0.1)',
-                bottomColor: 'rgba(233, 30, 99, 0)',
-                priceScaleId: 'ratio',
-                title: 'GLI'
-            });
-
-            // TSI Series
-            chart.priceScale('tsi').applyOptions({
-                visible: false,
-                scaleMargins: { top: 0.25, bottom: 0.65 },
-            });
-            tsiSeries = chart.addLineSeries({
-                color: '#ff9800',
-                lineWidth: 1,
-                priceScaleId: 'tsi',
-                title: 'TSI'
-            });
-
             // RSI Levels
             rsiSeries.createPriceLine({
                 price: 70,
@@ -859,8 +731,6 @@
             });
 
             loadChartData();
-            loadLiquidity();
-            loadLiquidityHistory();
         }
 
         async function loadLiquidityHistory() {
@@ -922,21 +792,9 @@
                     candles.sort((a, b) => a.time - b.time);
                     candleSeries.setData(candles);
 
-                    // Sync liquidity series
-                    const lineData = candles.map(c => ({ time: c.time, value: c.close }));
-                    liquiditySeries.setData(lineData);
-
                     // Calculate and set RSI
                     const rsiData = calculateRSI(candles);
                     rsiSeries.setData(rsiData);
-
-                    // Volume Data
-                    const volumeData = candles.map(c => ({
-                        time: c.time,
-                        value: c.volume,
-                        color: c.close >= c.open ? 'rgba(0, 150, 136, 0.5)' : 'rgba(255, 82, 82, 0.5)',
-                    }));
-                    volumeSeries.setData(volumeData);
 
                     chart.timeScale().fitContent();
 
@@ -981,14 +839,14 @@
                             : `rgba(255, 82, 82, ${opacity.toFixed(2)})`;
 
                         // Show current levels as lines for visibility
-                        currentLiquidityLines.push(liquiditySeries.createPriceLine({
-                            price: c.price,
-                            color: color,
-                            lineWidth: 1,
-                            lineStyle: LightweightCharts.LineStyle.Solid,
-                            axisLabelVisible: false,
-                            title: '',
-                        }));
+                        // currentLiquidityLines.push(liquiditySeries.createPriceLine({
+                        //     price: c.price,
+                        //     color: color,
+                        //     lineWidth: 1,
+                        //     lineStyle: LightweightCharts.LineStyle.Solid,
+                        //     axisLabelVisible: false,
+                        //     title: '',
+                        // }));
 
                         latestBuckets.push({
                             price: c.price,
@@ -1032,13 +890,9 @@
                     if (lastCandle && latestCandle.time === lastCandle.time) {
                         // Same candle, update it
                         candleSeries.update(latestCandle);
-                        liquiditySeries.update({ time: latestCandle.time, value: latestCandle.close });
                     } else if (latestCandle.time > (lastCandle?.time || 0)) {
                         // New candle
                         candleSeries.update(latestCandle);
-                        liquiditySeries.update({ time: latestCandle.time, value: latestCandle.close });
-                        // Also trigger a liquidity reload to fill the heatmap for the new candle
-                        loadLiquidity();
                     }
 
                     // Recalculate RSI for the latest data
@@ -1046,15 +900,6 @@
                     if (rsiData && rsiData.length > 0) {
                         const lastRSI = rsiData[rsiData.length - 1];
                         rsiSeries.update(lastRSI);
-                    }
-
-                    // Update Volume
-                    if (latestCandle) {
-                        volumeSeries.update({
-                            time: latestCandle.time,
-                            value: latestCandle.volume,
-                            color: latestCandle.close >= latestCandle.open ? 'rgba(0, 150, 136, 0.5)' : 'rgba(255, 82, 82, 0.5)',
-                        });
                     }
                 }
 

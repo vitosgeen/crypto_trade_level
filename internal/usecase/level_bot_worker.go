@@ -402,7 +402,7 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 	// Trigger Research Logging for Top 5 coins based on analysis (or just top OI)
 	// We do this to ensure research files are populated even without active positions
 	for i := 0; i < 5 && i < len(allCoins); i++ {
-		w.service.RecordResearchMetrics(ctx, allCoins[i].Symbol)
+		w.service.RecordResearchMetrics(ctx, allCoins[i].Symbol, nil, nil)
 	}
 
 	w.mu.Unlock()
