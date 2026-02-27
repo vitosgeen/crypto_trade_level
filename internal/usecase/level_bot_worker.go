@@ -48,13 +48,23 @@ func (w *LevelBotWorker) Start(ctx context.Context) {
 	// Prime history from file
 	w.primeHistory()
 
-	ticker := time.NewTicker(w.refreshInterval)
-
-	// Run immediately first time
-	go w.collectData(ctx)
-
+	// Data collection loop
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				w.logger.Error("LevelBotWorker: Recovered from panic in collection loop", zap.Any("error", r))
+				// Restart after a short delay
+				time.Sleep(5 * time.Second)
+				w.Start(ctx)
+			}
+		}()
+
+		ticker := time.NewTicker(w.refreshInterval)
 		defer ticker.Stop()
+
+		// Run immediately first time
+		w.collectData(ctx)
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -65,8 +75,14 @@ func (w *LevelBotWorker) Start(ctx context.Context) {
 		}
 	}()
 
-	// Run cleanup periodically
+	// Cleanup loop
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				w.logger.Error("LevelBotWorker: Recovered from panic in cleanup loop", zap.Any("error", r))
+			}
+		}()
+
 		cleanupTicker := time.NewTicker(1 * time.Hour)
 		defer cleanupTicker.Stop()
 		w.cleanupLogs() // Run immediately
@@ -143,6 +159,11 @@ func (w *LevelBotWorker) GetAnalysisResults() []AnalysisResult {
 }
 
 func (w *LevelBotWorker) collectData(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			w.logger.Error("LevelBotWorker: Recovered from panic in collectData", zap.Any("error", r))
+		}
+	}()
 	start := time.Now()
 
 	instruments, err := w.service.GetExchange().GetInstruments(ctx, "linear")
@@ -398,13 +419,6 @@ func (w *LevelBotWorker) collectData(ctx context.Context) {
 
 	// Run Analysis in memory
 	w.analysisResults = w.analyzer.AnalyzeMap(w.history)
-
-	// Trigger Research Logging for Top 5 coins based on analysis (or just top OI)
-	// We do this to ensure research files are populated even without active positions
-	for i := 0; i < 5 && i < len(allCoins); i++ {
-		w.service.RecordResearchMetrics(ctx, allCoins[i].Symbol, nil, nil)
-	}
-
 	w.mu.Unlock()
 
 	w.logData(allCoins)

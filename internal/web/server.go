@@ -22,6 +22,7 @@ type Server struct {
 	speedBotService   *usecase.SpeedBotService
 	fundingBotService *usecase.FundingBotService
 	levelBotWorker    *usecase.LevelBotWorker
+	researchBotWorker *usecase.ResearchWorker
 	rsiMonitorService *usecase.RSIMonitorService
 	logger            *zap.Logger
 }
@@ -38,6 +39,7 @@ func NewServer(
 	rsiMonitorService *usecase.RSIMonitorService,
 	logger *zap.Logger,
 	analysisRefreshInterval time.Duration,
+	researchRefreshInterval time.Duration,
 ) *Server {
 	s := &Server{
 		router:            http.NewServeMux(),
@@ -49,6 +51,7 @@ func NewServer(
 		speedBotService:   speedBotService,
 		fundingBotService: fundingBotService,
 		levelBotWorker:    usecase.NewLevelBotWorker(service, logger, analysisRefreshInterval),
+		researchBotWorker: usecase.NewResearchWorker(service, logger, researchRefreshInterval),
 		rsiMonitorService: rsiMonitorService,
 		logger:            logger,
 	}
@@ -58,6 +61,14 @@ func NewServer(
 		Handler: s.router,
 	}
 	return s
+}
+
+func (s *Server) GetLevelBotWorker() *usecase.LevelBotWorker {
+	return s.levelBotWorker
+}
+
+func (s *Server) GetResearchWorker() *usecase.ResearchWorker {
+	return s.researchBotWorker
 }
 
 func (s *Server) routes() {
@@ -150,11 +161,13 @@ func (s *Server) routes() {
 	s.router.HandleFunc("GET /research", s.handleResearchPage)
 	s.router.HandleFunc("GET /api/research/files", s.handleListResearchFiles)
 	s.router.HandleFunc("GET /api/research/files/content", s.handleGetResearchFileContent)
+	s.router.HandleFunc("GET /api/research/symbols", s.handleListResearchSymbols)
+	s.router.HandleFunc("POST /api/research/symbols", s.handleAddResearchSymbol)
+	s.router.HandleFunc("DELETE /api/research/symbols/{symbol}", s.handleRemoveResearchSymbol)
 }
 
 func (s *Server) Start() error {
 	s.logger.Info("Starting web server", zap.String("addr", s.server.Addr))
-	s.levelBotWorker.Start(context.Background())
 	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}

@@ -638,8 +638,23 @@ func (s *Server) handleHistoryTable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	// Return status HTML
-	w.Write([]byte("<div>System OK</div>"))
+	wsStatus := s.service.GetExchange().GetWSStatus()
+	rateLimit := s.service.GetExchange().GetRateLimit()
+
+	status := struct {
+		System    string           `json:"system"`
+		WS        domain.WSStatus  `json:"ws"`
+		RateLimit domain.RateLimit `json:"rate_limit"`
+		Time      time.Time        `json:"time"`
+	}{
+		System:    "OK",
+		WS:        wsStatus,
+		RateLimit: rateLimit,
+		Time:      time.Now(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
 }
 
 func (s *Server) handleGetCandles(w http.ResponseWriter, r *http.Request) {
@@ -879,8 +894,21 @@ func (s *Server) handleMarketStats(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLevelBot(w http.ResponseWriter, r *http.Request) {
 	allCoins := s.levelBotWorker.GetData()
 
+	// Get currently monitored research symbols
+	monitoredSymbols, err := s.levelRepo.ListResearchSymbols(r.Context())
+	if err != nil {
+		s.logger.Error("Failed to list research symbols", zap.Error(err))
+	}
+
+	// Create a map for quick lookup in template
+	monitoredMap := make(map[string]bool)
+	for _, sym := range monitoredSymbols {
+		monitoredMap[sym] = true
+	}
+
 	data := map[string]interface{}{
-		"Instruments": allCoins,
+		"Instruments":      allCoins,
+		"MonitoredSymbols": monitoredMap,
 	}
 
 	if err := templates.ExecuteTemplate(w, "level_coins.html", data); err != nil {
@@ -1365,4 +1393,48 @@ func (s *Server) handleGetResearchFileContent(w http.ResponseWriter, r *http.Req
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write(content)
+}
+
+func (s *Server) handleListResearchSymbols(w http.ResponseWriter, r *http.Request) {
+	symbols, err := s.levelRepo.ListResearchSymbols(r.Context())
+	if err != nil {
+		s.logger.Error("Failed to list research symbols", zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(symbols)
+}
+
+func (s *Server) handleAddResearchSymbol(w http.ResponseWriter, r *http.Request) {
+	symbol := strings.ToUpper(r.URL.Query().Get("symbol"))
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.levelRepo.AddResearchSymbol(r.Context(), symbol); err != nil {
+		s.logger.Error("Failed to add research symbol", zap.String("symbol", symbol), zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (s *Server) handleRemoveResearchSymbol(w http.ResponseWriter, r *http.Request) {
+	symbol := r.PathValue("symbol")
+	if symbol == "" {
+		http.Error(w, "Symbol is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.levelRepo.RemoveResearchSymbol(r.Context(), symbol); err != nil {
+		s.logger.Error("Failed to remove research symbol", zap.String("symbol", symbol), zap.Error(err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

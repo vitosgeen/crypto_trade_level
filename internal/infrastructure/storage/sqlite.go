@@ -148,6 +148,10 @@ func (s *SQLiteStore) initSchema() error {
 			timestamp DATETIME NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_wallet_coin_time ON wallet_balances(coin, timestamp DESC);`,
+		`CREATE TABLE IF NOT EXISTS research_symbols (
+			symbol TEXT PRIMARY KEY,
+			created_at DATETIME NOT NULL
+		);`,
 	}
 
 	for _, q := range queries {
@@ -430,6 +434,35 @@ func (s *SQLiteStore) CountActiveLevels(ctx context.Context, symbol string) (int
 		return 0, err
 	}
 	return count, nil
+}
+
+func (s *SQLiteStore) AddResearchSymbol(ctx context.Context, symbol string) error {
+	query := `INSERT INTO research_symbols (symbol, created_at) VALUES (?, ?) ON CONFLICT(symbol) DO NOTHING`
+	_, err := s.db.ExecContext(ctx, query, symbol, time.Now())
+	return err
+}
+
+func (s *SQLiteStore) RemoveResearchSymbol(ctx context.Context, symbol string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM research_symbols WHERE symbol = ?", symbol)
+	return err
+}
+
+func (s *SQLiteStore) ListResearchSymbols(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT symbol FROM research_symbols")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var symbols []string
+	for rows.Next() {
+		var sym string
+		if err := rows.Scan(&sym); err != nil {
+			return nil, err
+		}
+		symbols = append(symbols, sym)
+	}
+	return symbols, nil
 }
 
 func (s *SQLiteStore) SaveLiquiditySnapshot(ctx context.Context, snap *domain.LiquiditySnapshot) error {

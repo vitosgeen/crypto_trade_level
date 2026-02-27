@@ -115,6 +115,7 @@ func (m *MockTradeRepo) GetTotalExchangeRealizedPnL(ctx context.Context) (float6
 // Stubs for other interface methods
 func (m *MockFundingExchange) ConnectWS() error                                          { return nil }
 func (m *MockFundingExchange) Subscribe(channels []string) error                         { return nil }
+func (m *MockFundingExchange) Unsubscribe(channels []string) error                       { return nil }
 func (m *MockFundingExchange) OnPriceUpdate(callback func(symbol string, price float64)) {}
 func (m *MockFundingExchange) GetPrivateChannels() []string                              { return nil }
 func (m *MockFundingExchange) GetKlines(ctx context.Context, symbol, interval string, limit int) ([]domain.Candle, error) {
@@ -151,6 +152,10 @@ func (m *MockFundingExchange) GetWalletBalance(ctx context.Context) ([]*domain.W
 
 func (m *MockFundingExchange) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
 	return []*domain.PositionHistory{}, nil
+}
+
+func (m *MockFundingExchange) GetRateLimit() domain.RateLimit {
+	return domain.RateLimit{}
 }
 
 func TestEvaluate_ProfitableFunding(t *testing.T) {

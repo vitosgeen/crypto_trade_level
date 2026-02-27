@@ -12,9 +12,10 @@ import (
 
 // MockLevelRepo
 type MockLevelRepo struct {
-	Levels     []*domain.Level
-	Tiers      *domain.SymbolTiers
-	DeletedIDs []string
+	Levels          []*domain.Level
+	Tiers           *domain.SymbolTiers
+	DeletedIDs      []string
+	ResearchSymbols []string
 }
 
 func (m *MockLevelRepo) SaveLevel(ctx context.Context, level *domain.Level) error { return nil }
@@ -37,6 +38,25 @@ func (m *MockLevelRepo) GetSymbolTiers(ctx context.Context, exchange, symbol str
 }
 func (m *MockLevelRepo) SaveSymbolTiers(ctx context.Context, tiers *domain.SymbolTiers) error {
 	return nil
+}
+
+func (m *MockLevelRepo) AddResearchSymbol(ctx context.Context, symbol string) error {
+	m.ResearchSymbols = append(m.ResearchSymbols, symbol)
+	return nil
+}
+
+func (m *MockLevelRepo) RemoveResearchSymbol(ctx context.Context, symbol string) error {
+	for i, s := range m.ResearchSymbols {
+		if s == symbol {
+			m.ResearchSymbols = append(m.ResearchSymbols[:i], m.ResearchSymbols[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (m *MockLevelRepo) ListResearchSymbols(ctx context.Context) ([]string, error) {
+	return m.ResearchSymbols, nil
 }
 
 func (m *MockLevelRepo) CountActiveLevels(ctx context.Context, symbol string) (int, error) {
@@ -180,6 +200,10 @@ func (m *MockExchange) Subscribe(symbols []string) error {
 	return nil
 }
 
+func (m *MockExchange) Unsubscribe(symbols []string) error {
+	return nil
+}
+
 func (m *MockExchange) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
 	return order, nil
 }
@@ -204,6 +228,10 @@ func (m *MockExchange) GetClosedPnL(ctx context.Context, symbol string, limit in
 	return []*domain.PositionHistory{}, nil
 }
 
+func (m *MockExchange) GetRateLimit() domain.RateLimit {
+	return domain.RateLimit{}
+}
+
 func (m *MockExchangeForService) GetWalletBalance(ctx context.Context) ([]*domain.WalletBalance, error) {
 	return []*domain.WalletBalance{}, nil
 }
@@ -218,6 +246,10 @@ func (m *MockExchangeForService) GetOrder(ctx context.Context, symbol, orderID s
 
 func (m *MockExchangeForService) CancelOrder(ctx context.Context, symbol, orderID string) error {
 	return nil
+}
+
+func (m *MockExchangeForService) GetRateLimit() domain.RateLimit {
+	return domain.RateLimit{}
 }
 
 func TestLevelService_ClosePositionFailure_ResetsState(t *testing.T) {
@@ -362,6 +394,10 @@ func (m *MockExchangeForService) GetInstruments(ctx context.Context, category st
 }
 
 func (m *MockExchangeForService) Subscribe(symbols []string) error {
+	return nil
+}
+
+func (m *MockExchangeForService) Unsubscribe(symbols []string) error {
 	return nil
 }
 

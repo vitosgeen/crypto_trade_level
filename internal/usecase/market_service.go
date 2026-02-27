@@ -1434,3 +1434,18 @@ func (s *MarketService) AnalyzeLiquidityImbalance(ctx context.Context, symbol st
 	analysis.Reason = "Clear structural weakness on " + weakSide + " side"
 	return analysis, nil
 }
+
+func (s *MarketService) Unsubscribe(symbol string) {
+	s.mu.Lock()
+	delete(s.cache, symbol)
+	delete(s.trades, symbol)
+	delete(s.depthHistory, symbol)
+	delete(s.priceHistory, symbol)
+	delete(s.cvdAccumulator, symbol)
+	delete(s.liquidityHistory, symbol)
+	delete(s.subscribed, symbol)
+	s.mu.Unlock()
+
+	// Also unsubscribe from exchange
+	s.exchange.Unsubscribe([]string{symbol})
+}

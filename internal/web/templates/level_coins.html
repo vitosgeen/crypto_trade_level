@@ -432,6 +432,7 @@
                         <th onclick="sortTable(4)">1h Range ▼</th>
                         <th onclick="sortTable(5)">4h Range ▼</th>
                         <th onclick="sortTable(6)">24h Range ▼</th>
+                        <th>Monitor</th>
                         <th>Action</th>
                     </tr>
                 </thead>
@@ -579,6 +580,13 @@
                             {{else}}
                             <span class="text-muted">-</span>
                             {{end}}
+                        </td>
+                        <td>
+                            <button onclick="toggleMonitoring('{{.Symbol}}', this)"
+                                class="filter-btn {{if index $.MonitoredSymbols .Symbol}}active{{end}}"
+                                style="padding: 4px 8px; font-size: 0.75rem;">
+                                {{if index $.MonitoredSymbols .Symbol}}👁 Monitoring{{else}}👁 Monitor{{end}}
+                            </button>
                         </td>
                         <td><a href="/dashboard?symbol={{.Symbol}}" class="action-link">Set Level →</a></td>
                     </tr>
@@ -748,6 +756,25 @@
 
                 // Re-append rows in sorted order
                 rows.forEach(row => tbody.appendChild(row));
+            }
+
+            async function toggleMonitoring(symbol, btn) {
+                const isMonitoring = btn.classList.contains('active');
+                const method = isMonitoring ? 'DELETE' : 'POST';
+                const url = isMonitoring ? `/api/research/symbols/${symbol}` : `/api/research/symbols?symbol=${symbol}`;
+
+                try {
+                    const response = await fetch(url, { method });
+                    if (response.ok) {
+                        btn.classList.toggle('active');
+                        btn.innerHTML = btn.classList.contains('active') ? '👁 Monitoring' : '👁 Monitor';
+                    } else {
+                        const error = await response.text();
+                        alert('Failed to update monitoring: ' + error);
+                    }
+                } catch (err) {
+                    alert('Error: ' + err.message);
+                }
             }
         </script>
 </body>

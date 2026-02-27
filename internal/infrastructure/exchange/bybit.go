@@ -34,6 +34,10 @@ type BybitAdapter struct {
 	baseURL        string
 	wsURL          string
 	client         *http.Client
+	wsStatus       domain.WSStatus
+	wsWriteMu      sync.Mutex
+	rateLimit      domain.RateLimit
+	rateLimitMu    sync.Mutex
 	wsConn         *websocket.Conn
 	pingTicker     *time.Ticker
 	pingDone       chan struct{}
@@ -118,7 +122,44 @@ func (b *BybitAdapter) sendRequest(ctx context.Context, method, path string, pay
 		return nil, fmt.Errorf("API error: %s", string(respBody))
 	}
 
+	// Parse rate limit headers
+	b.updateRateLimit(resp.Header)
+
 	return respBody, nil
+}
+
+func (b *BybitAdapter) updateRateLimit(header http.Header) {
+	limitStr := header.Get("X-Bapi-Limit")
+	remStr := header.Get("X-Bapi-Limit-Remaining")
+	resetStr := header.Get("X-Bapi-Limit-Reset-Timestamp")
+
+	if limitStr == "" || remStr == "" || resetStr == "" {
+		return
+	}
+
+	limit, _ := strconv.Atoi(limitStr)
+	rem, _ := strconv.Atoi(remStr)
+	reset, _ := strconv.ParseInt(resetStr, 10, 64)
+
+	b.rateLimitMu.Lock()
+	b.rateLimit = domain.RateLimit{
+		Limit:     limit,
+		Remaining: rem,
+		ResetTime: reset,
+	}
+	b.rateLimitMu.Unlock()
+
+	// Log warning if low
+	if limit > 0 && float64(rem)/float64(limit) < 0.2 {
+		// Only log if it's been a while since last warning or if it's dropped significantly?
+		// For now just log.
+	}
+}
+
+func (b *BybitAdapter) GetRateLimit() domain.RateLimit {
+	b.rateLimitMu.Lock()
+	defer b.rateLimitMu.Unlock()
+	return b.rateLimit
 }
 
 func (b *BybitAdapter) GetCurrentPrice(ctx context.Context, symbol string) (float64, error) {
@@ -126,13 +167,10 @@ func (b *BybitAdapter) GetCurrentPrice(ctx context.Context, symbol string) (floa
 	// But implementing it for initial fetch or fallback.
 	// V5 Ticker
 	path := "/v5/market/tickers?category=linear&symbol=" + symbol
-	resp, err := http.Get(b.baseURL + path)
+	resp, err := b.sendRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
 
 	var result struct {
 		RetCode int `json:"retCode"`
@@ -143,8 +181,12 @@ func (b *BybitAdapter) GetCurrentPrice(ctx context.Context, symbol string) (floa
 		} `json:"result"`
 	}
 
-	if err := json.Unmarshal(body, &result); err != nil {
+	if err := json.Unmarshal(resp, &result); err != nil {
 		return 0, err
+	}
+
+	if result.RetCode != 0 {
+		return 0, fmt.Errorf("symbol not found or API error")
 	}
 
 	if len(result.Result.List) == 0 {
@@ -807,6 +849,57 @@ func (b *BybitAdapter) Subscribe(symbols []string) error {
 	b.mu.Unlock()
 
 	return b.subscribe(symbols, "Subscribe")
+}
+
+func (b *BybitAdapter) Unsubscribe(symbols []string) error {
+	if len(symbols) == 0 {
+		return nil
+	}
+
+	b.mu.Lock()
+	if b.wsConn == nil {
+		b.mu.Unlock()
+		return nil
+	}
+
+	// Remove from subscribedSymbols list
+	newSubscribed := make([]string, 0, len(b.subscribedSymbols))
+	for _, ex := range b.subscribedSymbols {
+		keep := true
+		for _, s := range symbols {
+			if ex == s {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			newSubscribed = append(newSubscribed, ex)
+		}
+	}
+	b.subscribedSymbols = newSubscribed
+	b.mu.Unlock()
+
+	// Send unsubscribe ops
+	tickerArgs := make([]interface{}, len(symbols))
+	tradeArgs := make([]interface{}, len(symbols))
+	for i, s := range symbols {
+		tickerArgs[i] = "tickers." + s
+		tradeArgs[i] = "publicTrade." + s
+	}
+
+	tickerMsg := map[string]interface{}{
+		"op":   "unsubscribe",
+		"args": tickerArgs,
+	}
+	if err := b.wsConn.WriteJSON(tickerMsg); err != nil {
+		return err
+	}
+
+	tradeMsg := map[string]interface{}{
+		"op":   "unsubscribe",
+		"args": tradeArgs,
+	}
+	return b.wsConn.WriteJSON(tradeMsg)
 }
 
 func (b *BybitAdapter) subscribe(symbols []string, caller string) error {

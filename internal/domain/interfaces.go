@@ -20,6 +20,7 @@ type Exchange interface {
 	GetTickers(ctx context.Context, category string) ([]Ticker, error)
 	OnTradeUpdate(callback func(symbol string, side string, size float64, price float64))
 	Subscribe(symbols []string) error
+	Unsubscribe(symbols []string) error
 
 	// Order management for funding bot
 	PlaceOrder(ctx context.Context, order *Order) (*Order, error)
@@ -28,6 +29,13 @@ type Exchange interface {
 	GetWalletBalance(ctx context.Context) ([]*WalletBalance, error)
 	GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*PositionHistory, error)
 	GetWSStatus() WSStatus
+	GetRateLimit() RateLimit
+}
+
+type RateLimit struct {
+	Limit     int   `json:"limit"`
+	Remaining int   `json:"remaining"`
+	ResetTime int64 `json:"reset_time"` // Unix timestamp in ms
 }
 
 type WSStatus struct {
@@ -74,6 +82,9 @@ type LevelRepository interface {
 	DeleteLevel(ctx context.Context, id string) error
 	DeleteAllLevels(ctx context.Context) error
 	CountActiveLevels(ctx context.Context, symbol string) (int, error)
+	AddResearchSymbol(ctx context.Context, symbol string) error
+	RemoveResearchSymbol(ctx context.Context, symbol string) error
+	ListResearchSymbols(ctx context.Context) ([]string, error)
 
 	SaveSymbolTiers(ctx context.Context, tiers *SymbolTiers) error
 	GetSymbolTiers(ctx context.Context, exchange, symbol string) (*SymbolTiers, error)

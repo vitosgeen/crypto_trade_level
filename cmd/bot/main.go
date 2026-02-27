@@ -29,6 +29,7 @@ type Config struct {
 	Polling struct {
 		LevelsReloadMs         int `yaml:"levels_reload_ms"`
 		AnalysisRefreshSeconds int `yaml:"analysis_refresh_seconds"`
+		ResearchRefreshSeconds int `yaml:"research_refresh_seconds"`
 	} `yaml:"polling"`
 	Logging struct {
 		Level string `yaml:"level"`
@@ -241,7 +242,13 @@ func main() {
 		rsiMonitorService,
 		log,
 		time.Duration(cfg.Polling.AnalysisRefreshSeconds)*time.Second,
+		time.Duration(cfg.Polling.ResearchRefreshSeconds)*time.Second,
 	)
+
+	// Start Workers independently
+	log.Info("Starting background workers...")
+	server.GetLevelBotWorker().Start(context.Background())
+	server.GetResearchWorker().Start(context.Background())
 
 	// 8. Start Server
 	go func() {

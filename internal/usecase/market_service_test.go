@@ -56,6 +56,10 @@ func (m *MockExchange) Subscribe(symbols []string) error {
 	return nil
 }
 
+func (m *MockExchange) Unsubscribe(symbols []string) error {
+	return nil
+}
+
 func (m *MockExchange) PlaceOrder(ctx context.Context, order *domain.Order) (*domain.Order, error) {
 	return order, nil
 }
@@ -78,6 +82,10 @@ func (m *MockExchange) GetWalletBalance(ctx context.Context) ([]*domain.WalletBa
 
 func (m *MockExchange) GetClosedPnL(ctx context.Context, symbol string, limit int) ([]*domain.PositionHistory, error) {
 	return []*domain.PositionHistory{}, nil
+}
+
+func (m *MockExchange) GetRateLimit() domain.RateLimit {
+	return domain.RateLimit{}
 }
 
 func TestMarketService_GetMarketStats_DepthAverage(t *testing.T) {
