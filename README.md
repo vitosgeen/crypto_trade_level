@@ -11,6 +11,7 @@ An autonomous crypto trading bot written in Go. It implements a "Defending" stra
   - **Short (Resistance)**: Sells when price rises to a resistance level.
 - **Sublevels (Tiers)**: Scales into positions using 3 tiers per level.
 - **Web UI**: Minimal dashboard to manage levels, view positions, and monitor trades.
+- **Comprehensive Documentation**: Detailed guides in the [docs/](docs/INDEX.md) directory.
 
 ## Getting Started
 
